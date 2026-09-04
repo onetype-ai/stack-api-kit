@@ -1,0 +1,34 @@
+{
+    "name": "@onetype/stack-api-kit",
+    "version": "0.0.0",
+    "type": "module",
+    "sideEffects": false,
+    "exports": {
+        ".": "./src/index.ts",
+        "./testing": "./src/testing.ts"
+    },
+    "scripts": {
+        "check": "tools/check.sh",
+        "test": "vitest run",
+        "typecheck": "tsc --noEmit",
+        "boundaries": "node tools/boundaries.mjs",
+        "docs": "node tools/docs.mjs"
+    },
+    "dependencies": {
+        "zod": "^4.5.4"
+    },
+    "peerDependencies": {
+        "better-sqlite3": ">=13",
+        "drizzle-orm": ">=0.45",
+        "hono": ">=4"
+    },
+    "devDependencies": {
+        "@types/better-sqlite3": "^7.6.13",
+        "@types/node": "^26.4.0",
+        "better-sqlite3": "^13.0.3",
+        "drizzle-orm": "^0.45.2",
+        "hono": "^4.13.5",
+        "typescript": "^5.7.0",
+        "vitest": "^4.1.11"
+    }
+}

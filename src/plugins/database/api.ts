@@ -1,0 +1,99 @@
+import { connect, type Opening } from "./internal/connect";
+import { migrate, MigrationFault, type Source, type Step, steps } from "./internal/migrate";
+import { narrowing } from "./internal/narrow";
+import { outbox } from "./internal/outbox";
+import { schedule } from "./internal/schedule";
+
+import type { Narrowing, Outbox, Schedule } from "../kernel/api";
+import { store, type Handle, type Tables } from "./internal/store";
+
+/** What building a store needs: where the file is, and who owns what. */
+export type Settings = Opening & {
+    tables: Readonly<Record<string, Tables>>;
+};
+
+/**
+ * What a project holds after opening a database.
+ *
+ * Wider than the kernel's `Storage`: this one also migrates and closes, which
+ * a plugin has no business doing and the kernel never asks for.
+ */
+/**
+ * What `start` needs of a database, whichever one it is.
+ *
+ * Wider than the kernel's `Storage`: this one also migrates and closes, which
+ * a plugin has no business doing and the kernel never asks for. `of` answers
+ * `unknown` because the kit does not know what database it was given; a
+ * plugin names the shape it expects through `definePlugin.over`.
+ */
+export type Store<Handed = unknown> = {
+    of: (plugin: string) => Handed;
+
+    /** An outbox in this same database, when the store can hold one. */
+    outbox?: () => Outbox;
+
+    /** A schedule in this same database, for work asked for later. */
+    schedule?: () => Schedule;
+
+    /** How a declared scope becomes a condition over the tables it was given. */
+    narrowing?: () => Narrowing;
+    tx: <Made>(plugin: string, run: (db: unknown) => Promise<Made>) => Promise<Made>;
+    write: <Made>(run: () => Promise<Made>) => Promise<Made>;
+    inTransaction: () => boolean;
+    migrate: (sources: readonly Source[]) => Step[];
+    close: () => void;
+};
+
+export { MigrationFault, narrowing, outbox, schedule, steps };
+export type { Handle, Opening, Source, Step, Tables };
+
+/**
+ * Opens a database and holds one handle per plugin over it.
+ *
+ * Built by the project rather than reached for: two stores can exist in one
+ * process without seeing each other, which is what a test needs.
+ */
+export function database(settings: Settings): Store<Handle>
+{
+    const connection = connect(settings);
+    const made = store({ connection, tables: settings.tables });
+
+    return {
+        of: made.of,
+        tx: made.tx,
+        write: made.write,
+        inTransaction: made.inTransaction,
+        close: made.close,
+
+        /** Runs every migration that has not run, in the order given. */
+        migrate: (sources: readonly Source[]): Step[] =>
+        {
+            return migrate(connection, sources);
+        },
+
+        /**
+         * Where events wait, in this same database.
+         *
+         * Built here rather than from a connection handed out, because an
+         * outbox that wrote somewhere else would be exactly the thing it
+         * exists to prevent: two places that can disagree about whether the
+         * work happened.
+         */
+        outbox: (): Outbox =>
+        {
+            return outbox(connection);
+        },
+
+        /** Where later work waits, in this same database. */
+        schedule: (): Schedule =>
+        {
+            return schedule(connection);
+        },
+
+        /** How a scope narrows a query, over the tables one plugin declared. */
+        narrowing: (): Narrowing =>
+        {
+            return narrowing(settings.tables);
+        },
+    };
+}
