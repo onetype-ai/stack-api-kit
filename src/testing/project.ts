@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,7 +23,16 @@ export type Checking = {
     limit?: number;
 };
 
-const CONTRACT = join(dirname(fileURLToPath(import.meta.url)), "..", "plugins", "kernel", "internal", "contract.ts");
+/**
+ * The kit's own contract, read to list the keys a plugin may declare.
+ *
+ * Two places because there are two shapes: the source tree when a project
+ * links this package, and beside the bundle when it installed it.
+ */
+const CONTRACT = [
+    join(dirname(fileURLToPath(import.meta.url)), "..", "plugins", "kernel", "internal", "contract.ts"),
+    join(dirname(fileURLToPath(import.meta.url)), "contract.ts"),
+].find((path) => existsSync(path)) ?? "";
 
 export const Project = {
     required: ["#docs/usage.md", "#docs/stack.md", "#docs/architecture.md", "README.md"] as const,
