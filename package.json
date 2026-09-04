@@ -1,18 +1,26 @@
 {
     "name": "@onetype/stack-api-kit",
-    "version": "0.0.0",
+    "version": "1.0.0",
     "type": "module",
     "sideEffects": false,
     "exports": {
-        ".": "./src/index.ts",
-        "./testing": "./src/testing.ts"
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        },
+        "./testing": {
+            "types": "./dist/testing.d.ts",
+            "import": "./dist/testing.js"
+        }
     },
     "scripts": {
         "check": "tools/check.sh",
         "test": "vitest run",
         "typecheck": "tsc --noEmit",
         "boundaries": "node tools/boundaries.mjs",
-        "docs": "node tools/docs.mjs"
+        "docs": "node tools/docs.mjs",
+        "build": "tsup",
+        "prepublishOnly": "tools/check.sh && tsup"
     },
     "dependencies": {
         "zod": "^4.5.4"
@@ -28,7 +36,40 @@
         "better-sqlite3": "^13.0.3",
         "drizzle-orm": "^0.45.2",
         "hono": "^4.13.5",
+        "tsup": "^8.5.1",
         "typescript": "^5.7.0",
         "vitest": "^4.1.11"
+    },
+    "description": "A kernel that holds plugins apart: contracts, routes, events, hooks, permissions and scope, refused at startup rather than in review.",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/onetype-ai/stack-api-kit.git"
+    },
+    "homepage": "https://github.com/onetype-ai/stack-api-kit#readme",
+    "bugs": {
+        "url": "https://github.com/onetype-ai/stack-api-kit/issues"
+    },
+    "keywords": [
+        "plugins",
+        "kernel",
+        "api",
+        "hono",
+        "drizzle",
+        "sqlite",
+        "typescript",
+        "multi-tenant"
+    ],
+    "engines": {
+        "node": ">=22"
+    },
+    "files": [
+        "dist",
+        "README.md"
+    ],
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "publishConfig": {
+        "access": "public"
     }
 }

@@ -6,6 +6,15 @@ plugins we ship behind it.
 This is a library. It carries no routes, no tables and no features: what the
 API is, the API writes.
 
+## Install
+
+```sh
+npm install @onetype/stack-api-kit better-sqlite3 drizzle-orm hono zod
+```
+
+Those four are peers, so a project holds one copy of each and the kit holds
+none.
+
 ## Use
 
 ```ts
@@ -27,16 +36,6 @@ contract, and either starts every plugin or throws naming the one that failed.
 
 Two entries: `.` is everything, `./testing` the checks a project runs on
 itself.
-
-## Layout
-
-```
-src/plugins/<name>/  one capability each, behind a declared contract
-src/testing/         the checks a project runs on itself
-src/index.ts         the one file that names our plugins
-#docs/               architecture, procedures, progress
-tools/               the checks CI runs
-```
 
 A plugin declares everything crossing its boundary: dependencies, tables,
 routes, events, hooks, config, and the hosts it may call. What is not declared
