@@ -13,7 +13,7 @@ const notes = sqliteTable("acting_notes", {
     body: text("body").notNull(),
 });
 
-function recording(recorded: string[]): Plugin[]
+function recorder(recorded: string[]): Plugin[]
 {
     return [
         definePlugin("source", {
@@ -66,7 +66,7 @@ describe("a listener acting for a scope", () =>
         const recorded: string[] = [];
 
         const kernel = createKernel({
-            plugins: recording(recorded),
+            plugins: recorder(recorded),
             db: store,
             ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
         });
@@ -88,7 +88,7 @@ describe("a listener acting for a scope", () =>
         const store = startServer();
 
         const kernel = createKernel({
-            plugins: recording([]),
+            plugins: recorder([]),
             db: store,
             ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
         });

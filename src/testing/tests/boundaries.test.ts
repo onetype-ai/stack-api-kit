@@ -35,7 +35,7 @@ function tree(plugins: Readonly<Record<string, Readonly<Record<string, string>>>
     return root;
 }
 
-const declares = (name: string, needs: readonly string[] = []): string =>
+const contractFor = (name: string, needs: readonly string[] = []): string =>
     `export default definePlugin("${name}", { dependsOn: [${needs.map((one) => `"${one}"`).join(", ")}] });`;
 
 describe("a plugin reaching another", () =>
@@ -44,9 +44,9 @@ describe("a plugin reaching another", () =>
     {
         const found = findImportViolations(
             tree({
-                auth: { "plugin.ts": declares("auth") },
+                auth: { "plugin.ts": contractFor("auth") },
                 demo: {
-                    "plugin.ts": declares("demo", ["auth"]),
+                    "plugin.ts": contractFor("demo", ["auth"]),
                     "services/items.ts": 'import { useAuth } from "@plugins/auth";',
                 },
             }),
@@ -59,9 +59,9 @@ describe("a plugin reaching another", () =>
     {
         const found = findImportViolations(
             tree({
-                auth: { "plugin.ts": declares("auth") },
+                auth: { "plugin.ts": contractFor("auth") },
                 demo: {
-                    "plugin.ts": declares("demo"),
+                    "plugin.ts": contractFor("demo"),
                     "services/items.ts": 'import { useAuth } from "@plugins/auth";',
                 },
             }),
@@ -75,9 +75,9 @@ describe("a plugin reaching another", () =>
     {
         const found = findImportViolations(
             tree({
-                auth: { "plugin.ts": declares("auth") },
+                auth: { "plugin.ts": contractFor("auth") },
                 demo: {
-                    "plugin.ts": declares("demo", ["auth"]),
+                    "plugin.ts": contractFor("demo", ["auth"]),
                     "services/items.ts": 'import { Session } from "@plugins/auth/types/Session";',
                 },
             }),
@@ -90,9 +90,9 @@ describe("a plugin reaching another", () =>
     {
         const found = findImportViolations(
             tree({
-                auth: { "plugin.ts": declares("auth"), "types/Session.ts": "export type Session = { id: string };" },
+                auth: { "plugin.ts": contractFor("auth"), "types/Session.ts": "export type Session = { id: string };" },
                 demo: {
-                    "plugin.ts": declares("demo", ["auth"]),
+                    "plugin.ts": contractFor("demo", ["auth"]),
                     "services/items.ts": 'import type { Session } from "../../auth/types/Session";',
                 },
             }),
@@ -107,7 +107,7 @@ describe("a plugin reaching another", () =>
         const found = findImportViolations(
             tree({
                 demo: {
-                    "plugin.ts": declares("demo"),
+                    "plugin.ts": contractFor("demo"),
                     "services/items.ts": 'import { DemoItem } from "../types/DemoItem";',
                     "types/DemoItem.ts": "export type DemoItem = { id: string };",
                 },
@@ -124,8 +124,8 @@ describe("cycles", () =>
     {
         const found = findImportViolations(
             tree({
-                a: { "plugin.ts": declares("a", ["b"]), "use.ts": 'import { b } from "@plugins/b";' },
-                b: { "plugin.ts": declares("b", ["a"]), "use.ts": 'import { a } from "@plugins/a";' },
+                a: { "plugin.ts": contractFor("a", ["b"]), "use.ts": 'import { b } from "@plugins/b";' },
+                b: { "plugin.ts": contractFor("b", ["a"]), "use.ts": 'import { a } from "@plugins/a";' },
             }),
         );
 
@@ -138,8 +138,8 @@ describe("cycles", () =>
     {
         const found = findImportViolations(
             tree({
-                auth: { "plugin.ts": declares("auth") },
-                demo: { "plugin.ts": declares("demo", ["auth"]), "use.ts": 'import { auth } from "@plugins/auth";' },
+                auth: { "plugin.ts": contractFor("auth") },
+                demo: { "plugin.ts": contractFor("demo", ["auth"]), "use.ts": 'import { auth } from "@plugins/auth";' },
             }),
         );
 

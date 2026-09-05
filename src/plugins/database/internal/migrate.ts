@@ -63,7 +63,7 @@ function read(plugin: string, from: string, name: string): Step
  * "2-b.sql" sorts before "10-a.sql" as text and after it as a number, and a
  * schema that depends on which is a schema nobody can reproduce.
  */
-export function steps(source: Source): Step[]
+export function migrationSteps(source: Source): Step[]
 {
     let found: string[];
 
@@ -125,7 +125,7 @@ export function migrate(connection: Database.Database, sources: readonly Source[
 
     for (const source of sources)
     {
-        for (const step of steps(source))
+        for (const step of migrationSteps(source))
         {
             const before = seen.get(`${step.plugin}/${step.name}`);
 

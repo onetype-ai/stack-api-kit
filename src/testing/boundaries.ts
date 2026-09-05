@@ -49,7 +49,7 @@ export function findImportViolations(root: string): ImportViolation[]
 
     const plugins = contracts.map((name) => read(root, name, contracts));
 
-    return [...missingContracts, ...undeclared(needed(plugins)), ...deep(needed(plugins)), ...cycles(plugins)];
+    return [...missingContracts, ...undeclared(needed(plugins)), ...deep(needed(plugins)), ...findCycles(plugins)];
 }
 
 /**
@@ -251,7 +251,7 @@ function deep(plugins: readonly PluginImports[]): ImportViolation[]
     );
 }
 
-function cycles(plugins: readonly PluginImports[]): ImportViolation[]
+function findCycles(plugins: readonly PluginImports[]): ImportViolation[]
 {
     const edges = new Map(plugins.map((one) => [one.name, new Set(one.crossings.map((crossing) => crossing.to))]));
     const found: ImportViolation[] = [];

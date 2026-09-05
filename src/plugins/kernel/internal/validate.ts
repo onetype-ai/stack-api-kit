@@ -60,22 +60,22 @@ export function validate(plugins: readonly Plugin[], config: Readonly<Record<str
 
     for (const [name, plugin] of by)
     {
-        declares(name, plugin, owned, say);
+        checkOwn(name, plugin, owned, say);
     }
 
     for (const [name, plugin] of by)
     {
-        refers(name, plugin, by, owned, say);
-        settings(name, plugin, config, say);
+        checkReferences(name, plugin, by, owned, say);
+        checkConfig(name, plugin, config, say);
     }
 
-    cycles(by, say);
+    checkCycles(by, say);
 
     return wrong;
 }
 
 /** What a plugin declares, and whether anyone claimed it first. */
-function declares(name: string, plugin: Plugin, owned: Claimed, say: Report): void
+function checkOwn(name: string, plugin: Plugin, owned: Claimed, say: Report): void
 {
     const claim = (kind: keyof Claimed, key: string, code: KernelFault["code"], label: string): void =>
     {
@@ -93,22 +93,22 @@ function declares(name: string, plugin: Plugin, owned: Claimed, say: Report): vo
 
     for (const key of Object.keys(plugin.definition.permissions ?? {}))
     {
-        named(name, key, "permission", say) && claim("permissions", key, "DUPLICATE_PERMISSION", "Permission");
+        checkNamespaced(name, key, "permission", say) && claim("permissions", key, "DUPLICATE_PERMISSION", "Permission");
     }
 
     for (const key of Object.keys(plugin.definition.emits ?? {}))
     {
-        named(name, key, "event", say) && claim("events", key, "DUPLICATE_EVENT", "Event");
+        checkNamespaced(name, key, "event", say) && claim("events", key, "DUPLICATE_EVENT", "Event");
     }
 
     for (const key of Object.keys(plugin.definition.hooks ?? {}))
     {
-        named(name, key, "hook", say) && claim("hooks", key, "DUPLICATE_HOOK", "Hook");
+        checkNamespaced(name, key, "hook", say) && claim("hooks", key, "DUPLICATE_HOOK", "Hook");
     }
 
     for (const key of Object.keys(plugin.definition.commands ?? {}))
     {
-        named(name, key, "command", say) && claim("commands", key, "DUPLICATE_COMMAND", "Command");
+        checkNamespaced(name, key, "command", say) && claim("commands", key, "DUPLICATE_COMMAND", "Command");
     }
 
     // A table name is global in SQLite, so two plugins claiming one would
@@ -134,8 +134,8 @@ function declares(name: string, plugin: Plugin, owned: Claimed, say: Report): vo
             say("INVALID_OUTPUT", name, `Route ${route.method} "${route.path}" has an output schema that cannot filter what leaves. Use z.object naming every field that may be sent: it strips the rest. z.any, z.unknown, z.record, z.looseObject, a catchall and a transform all forward whatever the handler returned.`);
         }
 
-        limits(name, route, say);
-        reads(name, route, say);
+        checkLimit(name, route, say);
+        checkHeaders(name, route, say);
     }
 
     const scope = plugin.definition.scope;
@@ -193,7 +193,7 @@ function declares(name: string, plugin: Plugin, owned: Claimed, say: Report): vo
 const SECRET: ReadonlySet<string> = new Set(["cookie", "authorization", "proxy-authorization", "set-cookie"]);
 
 /** The headers a route asks to read. */
-function reads(name: string, route: NonNullable<Plugin["definition"]["routes"]>[number], say: Report): void
+function checkHeaders(name: string, route: NonNullable<Plugin["definition"]["routes"]>[number], say: Report): void
 {
     for (const header of route.reads ?? [])
     {
@@ -277,7 +277,7 @@ function whyUnreachable(host: string): string | undefined
     return undefined;
 }
 
-function limits(name: string, route: NonNullable<Plugin["definition"]["routes"]>[number], say: Report): void
+function checkLimit(name: string, route: NonNullable<Plugin["definition"]["routes"]>[number], say: Report): void
 {
     const limit = route.limit;
 
@@ -358,7 +358,7 @@ function path(name: string, method: string, given: string, owned: Claimed, say: 
 }
 
 /** Checks one namespaced name, reporting rather than throwing. */
-function named(owner: string, key: string, kind: string, say: Report): boolean
+function checkNamespaced(owner: string, key: string, kind: string, say: Report): boolean
 {
     try
     {
@@ -375,12 +375,12 @@ function named(owner: string, key: string, kind: string, say: Report): boolean
 }
 
 /** What a plugin refers to: it must exist, and be reachable. */
-function refers(name: string, plugin: Plugin, by: ReadonlyMap<string, Plugin>, owned: Claimed, say: Report): void
+function checkReferences(name: string, plugin: Plugin, by: ReadonlyMap<string, Plugin>, owned: Claimed, say: Report): void
 {
     const declared = new Set(plugin.definition.dependsOn ?? []);
 
     /** Declared somewhere. What a listener needs, and all it needs. */
-    const exists = (kind: keyof Claimed, key: string, code: KernelFault["code"], label: string): void =>
+    const mustExist = (kind: keyof Claimed, key: string, code: KernelFault["code"], label: string): void =>
     {
         if (owned[kind].get(key) === undefined)
         {
@@ -428,14 +428,14 @@ function refers(name: string, plugin: Plugin, by: ReadonlyMap<string, Plugin>, o
     // other are a cycle only on paper.
     for (const key of Object.keys(plugin.definition.listens ?? {}))
     {
-        exists("events", key, "UNDECLARED_EVENT", "Event");
+        mustExist("events", key, "UNDECLARED_EVENT", "Event");
     }
 
     // A hook is the same: the owner runs it and reads what comes back, so the
     // participant is the one being called, not the one calling.
     for (const key of Object.keys(plugin.definition.participates ?? {}))
     {
-        exists("hooks", key, "UNDECLARED_HOOK", "Hook");
+        mustExist("hooks", key, "UNDECLARED_HOOK", "Hook");
     }
 
     for (const route of plugin.definition.routes ?? [])
@@ -463,7 +463,7 @@ function refers(name: string, plugin: Plugin, by: ReadonlyMap<string, Plugin>, o
 }
 
 /** Config is parsed by the plugin's own schema, where it enters. */
-function settings(name: string, plugin: Plugin, config: Readonly<Record<string, unknown>>, say: Report): void
+function checkConfig(name: string, plugin: Plugin, config: Readonly<Record<string, unknown>>, say: Report): void
 {
     const schema = plugin.definition.config;
 
@@ -484,7 +484,7 @@ function settings(name: string, plugin: Plugin, config: Readonly<Record<string, 
 }
 
 /** A cycle in dependsOn, named from where it was entered back to itself. */
-function cycles(by: ReadonlyMap<string, Plugin>, say: Report): void
+function checkCycles(by: ReadonlyMap<string, Plugin>, say: Report): void
 {
     const state = new Map<string, "open" | "done">();
     const walking: string[] = [];

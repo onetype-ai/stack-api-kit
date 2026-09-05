@@ -33,7 +33,7 @@ export function findUnusedFields(root: string, apart = true): UnusedField[]
 
         for (const { shape, field } of fieldsIn(source))
         {
-            if (!reads(field, owns, file))
+            if (!isRead(field, owns, file))
             {
                 unread.push({ file: relative(root, file), shape, field });
             }
@@ -189,7 +189,7 @@ function withoutParameters(body: string): string
 
 // Property access, destructuring, an object literal built from it, a string
 // key. A name in none of those is a name nothing consumes.
-function reads(field: string, sources: readonly [string, string][], where: string): boolean
+function isRead(field: string, sources: readonly [string, string][], where: string): boolean
 {
     const patterns = [
         new RegExp(`\\.${field}\\b`),
