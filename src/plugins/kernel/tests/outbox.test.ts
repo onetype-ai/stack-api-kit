@@ -122,4 +122,47 @@ describe("an event kept in an outbox", () =>
         store.close();
         connection.close();
     });
+
+    test("and never once a listener threw, so the next start tries again", async () =>
+    {
+        const connection = new Database(":memory:");
+        const waiting = outbox(connection);
+        const store = database({ file: ":memory:", tables: { orders: {} } });
+
+        const broken = definePlugin("ledger", {
+            version: "1.0.0",
+            describe: "The ledger plugin.",
+            listens: {
+                "orders.placed": {
+                    describe: "Cannot record anything.",
+                    handle: () => { throw new Error("the ledger is down"); },
+                },
+            },
+        });
+
+        const kernel = createKernel({ plugins: [emitter(), broken], db: store, outbox: waiting });
+
+        await kernel.start();
+
+        await kernel.context("orders").tx(async (inside) =>
+        {
+            inside.events.emit("orders.placed", { id: "order-3" });
+        });
+
+        await new Promise((settle) => setTimeout(settle, 10));
+
+        expect(await waiting.waiting()).toHaveLength(1);
+
+        await kernel.stop();
+
+        const heard: string[] = [];
+        const restarted = createKernel({ plugins: [emitter(), recorder(heard)], outbox: waiting });
+
+        await restarted.start();
+
+        expect(heard).toEqual(["order-3"]);
+
+        await restarted.stop();
+        connection.close();
+    });
 });

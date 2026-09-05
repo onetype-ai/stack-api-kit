@@ -301,7 +301,13 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
                     // Forgotten only once something has heard it. Marking it
                     // sent before that would lose exactly what the outbox
                     // exists to keep.
-                    void delivered.then(() => wiring.outbox?.sent(announcement.id));
+                    void delivered.then((heard) =>
+                    {
+                        if (heard)
+                        {
+                            void wiring.outbox?.sent(announcement.id);
+                        }
+                    });
                 }
 
                 return returned;

@@ -118,9 +118,12 @@ export function events<Context>(now: () => number = Date.now, told: Told = () =>
          * wait is an outbox, which cannot forget an event until something has
          * actually heard it.
          */
-        deliver: (plugin: string, name: string, payload: unknown, ctx: (plugin: string) => Context): Promise<void> =>
+        // Answers whether every listener heard it. An outbox may only forget an
+        // event once one did, and a failure recorded but not reported would let
+        // it forget one nobody heard at all.
+        deliver: (plugin: string, name: string, payload: unknown, ctx: (plugin: string) => Context): Promise<boolean> =>
         {
-            const heard: Promise<void>[] = [];
+            const heard: Promise<boolean>[] = [];
 
             for (const subscriber of subscribers.get(name) ?? [])
             {
@@ -133,18 +136,22 @@ export function events<Context>(now: () => number = Date.now, told: Told = () =>
                 {
                     const handling = subscriber.listener.handle(payload as never, ctx(subscriber.plugin));
 
-                    heard.push(Promise.resolve(handling).catch((error: unknown) =>
+                    heard.push(Promise.resolve(handling).then(() => true, (error: unknown) =>
                     {
                         record(name, subscriber.plugin, error);
+
+                        return false;
                     }));
                 }
                 catch (error)
                 {
                     record(name, subscriber.plugin, error);
+
+                    heard.push(Promise.resolve(false));
                 }
             }
 
-            return Promise.all(heard).then(() => undefined);
+            return Promise.all(heard).then((all) => all.every(Boolean));
         },
 
         failures: (): readonly Failure[] =>

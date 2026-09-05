@@ -523,9 +523,17 @@ export function createKernel(options: Options): Kernel
                     event: announcement.name,
                 });
 
-                await bus.deliver(announcement.plugin, announcement.name, announcement.payload, (to) => seenBy(to));
+                const heard = await bus.deliver(
+                    announcement.plugin,
+                    announcement.name,
+                    announcement.payload,
+                    (to) => seenBy(to),
+                );
 
-                await options.outbox?.sent(announcement.id);
+                if (heard)
+                {
+                    await options.outbox?.sent(announcement.id);
+                }
             }
         },
 
