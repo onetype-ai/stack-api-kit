@@ -116,14 +116,14 @@ export function events<Context>(now: () => number = Date.now, told: Told = () =>
          * The emitter never waits on this: it returns void from `emit`, and
          * one plugin's slow listener is not another's slow request. What does
          * wait is an outbox, which cannot forget an event until something has
-         * actually heard it.
+         * actually deliveries it.
          */
-        // Answers whether every listener heard it. An outbox may only forget an
+        // Answers whether every listener deliveries it. An outbox may only forget an
         // event once one did, and a failure recorded but not reported would let
-        // it forget one nobody heard at all.
+        // it forget one nobody deliveries at all.
         deliver: (plugin: string, name: string, payload: unknown, ctx: (plugin: string) => Context): Promise<boolean> =>
         {
-            const heard: Promise<boolean>[] = [];
+            const deliveries: Promise<boolean>[] = [];
 
             for (const subscriber of subscribers.get(name) ?? [])
             {
@@ -136,7 +136,7 @@ export function events<Context>(now: () => number = Date.now, told: Told = () =>
                 {
                     const handling = subscriber.listener.handle(payload as never, ctx(subscriber.plugin));
 
-                    heard.push(Promise.resolve(handling).then(() => true, (error: unknown) =>
+                    deliveries.push(Promise.resolve(handling).then(() => true, (error: unknown) =>
                     {
                         record(name, subscriber.plugin, error);
 
@@ -147,11 +147,11 @@ export function events<Context>(now: () => number = Date.now, told: Told = () =>
                 {
                     record(name, subscriber.plugin, error);
 
-                    heard.push(Promise.resolve(false));
+                    deliveries.push(Promise.resolve(false));
                 }
             }
 
-            return Promise.all(heard).then((all) => all.every(Boolean));
+            return Promise.all(deliveries).then((all) => all.every(Boolean));
         },
 
         failures: (): readonly Failure[] =>

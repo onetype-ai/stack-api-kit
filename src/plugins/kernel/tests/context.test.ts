@@ -116,13 +116,13 @@ describe("events", () =>
 {
     test("delivers to a listener in another plugin", async () =>
     {
-        const heard: unknown[] = [];
+        const recorded: unknown[] = [];
         const kernel = createKernel({
             plugins: [
                 made("auth", { emits: { "auth.gone": { describe: "Session ended.", schema: z.object({ id: z.string() }) } } }),
                 made("billing", {
                     dependsOn: ["auth"],
-                    listens: { "auth.gone": { describe: "Drops what it found.", handle: (payload) => void heard.push(payload) } },
+                    listens: { "auth.gone": { describe: "Drops what it found.", handle: (payload) => void recorded.push(payload) } },
                 }),
             ],
         });
@@ -131,7 +131,7 @@ describe("events", () =>
 
         kernel.context("auth").events.emit("auth.gone", { id: "u1" });
 
-        expect(heard).toEqual([{ id: "u1" }]);
+        expect(recorded).toEqual([{ id: "u1" }]);
     });
 
     test("refuses emitting an event another plugin owns", async () =>
@@ -150,13 +150,13 @@ describe("events", () =>
 
     test("refuses a payload failing the schema rather than delivering it", async () =>
     {
-        const heard: unknown[] = [];
+        const recorded: unknown[] = [];
         const kernel = createKernel({
             plugins: [
                 made("auth", { emits: { "auth.gone": { describe: "Session ended.", schema: z.object({ id: z.string() }) } } }),
                 made("billing", {
                     dependsOn: ["auth"],
-                    listens: { "auth.gone": { describe: "Hears it.", handle: (payload) => void heard.push(payload) } },
+                    listens: { "auth.gone": { describe: "Hears it.", handle: (payload) => void recorded.push(payload) } },
                 }),
             ],
         });
@@ -164,7 +164,7 @@ describe("events", () =>
         await kernel.start();
 
         expect(() => kernel.context("auth").events.emit("auth.gone", { id: 7 })).toThrow(/does not match its schema/);
-        expect(heard).toEqual([]);
+        expect(recorded).toEqual([]);
     });
 
     test("says so when a listener fails, rather than only recording it", async () =>
@@ -321,14 +321,14 @@ describe("transactions", () =>
 
     test("holds an event until the transaction commits", async () =>
     {
-        const heard: unknown[] = [];
+        const recorded: unknown[] = [];
         const db = storing();
         const kernel = createKernel({
             plugins: [
                 made("items", { emits: { "items.made": { describe: "An item was written.", schema: z.object({}) } } }),
                 made("audit", {
                     dependsOn: ["items"],
-                    listens: { "items.made": { describe: "Records it.", handle: () => void heard.push("heard") } },
+                    listens: { "items.made": { describe: "Records it.", handle: () => void recorded.push("recorded") } },
                 }),
             ],
             db,
@@ -342,24 +342,24 @@ describe("transactions", () =>
         {
             inside.events.emit("items.made", {});
 
-            expect(heard).toEqual([]);
+            expect(recorded).toEqual([]);
 
             return undefined;
         });
 
-        expect(heard).toEqual(["heard"]);
+        expect(recorded).toEqual(["recorded"]);
     });
 
     test("never delivers an event from a transaction that rolled back", async () =>
     {
-        const heard: unknown[] = [];
+        const recorded: unknown[] = [];
         const db = storing();
         const kernel = createKernel({
             plugins: [
                 made("items", { emits: { "items.made": { describe: "An item was written.", schema: z.object({}) } } }),
                 made("audit", {
                     dependsOn: ["items"],
-                    listens: { "items.made": { describe: "Records it.", handle: () => void heard.push("heard") } },
+                    listens: { "items.made": { describe: "Records it.", handle: () => void recorded.push("recorded") } },
                 }),
             ],
             db,
@@ -376,19 +376,19 @@ describe("transactions", () =>
             throw new Error("write failed");
         })).rejects.toThrow("write failed");
 
-        expect(heard).toEqual([]);
+        expect(recorded).toEqual([]);
     });
 
     test("holds an event emitted on the outer context, not just the one tx handed over", async () =>
     {
-        const heard: unknown[] = [];
+        const recorded: unknown[] = [];
         const db = storing();
         const kernel = createKernel({
             plugins: [
                 made("items", { emits: { "items.made": { describe: "Written.", schema: z.object({}) } } }),
                 made("audit", {
                     dependsOn: ["items"],
-                    listens: { "items.made": { describe: "Records it.", handle: () => void heard.push("heard") } },
+                    listens: { "items.made": { describe: "Records it.", handle: () => void recorded.push("recorded") } },
                 }),
             ],
             db,
@@ -406,12 +406,12 @@ describe("transactions", () =>
             throw new Error("the write failed");
         })).rejects.toThrow("the write failed");
 
-        expect(heard).toEqual([]);
+        expect(recorded).toEqual([]);
     });
 
     test("keeps an inner transaction's events and drops the ones it rolled back", async () =>
     {
-        const heard: string[] = [];
+        const recorded: string[] = [];
         const db = storing();
         const kernel = createKernel({
             plugins: [
@@ -425,7 +425,7 @@ describe("transactions", () =>
                     listens: {
                         "items.made": {
                             describe: "Records it.",
-                            handle: (payload) => void heard.push((payload as { id: string }).id),
+                            handle: (payload) => void recorded.push((payload as { id: string }).id),
                         },
                     },
                 }),
@@ -454,7 +454,7 @@ describe("transactions", () =>
             }).catch(() => undefined);
         });
 
-        expect(heard).toEqual(["outer", "kept"]);
+        expect(recorded).toEqual(["outer", "kept"]);
     });
 
     test("still refuses a bad payload inside a transaction, where it was written", async () =>
@@ -526,12 +526,12 @@ describe("outbound", () =>
 
     test("allows a host it declared", async () =>
     {
-        const called: string[] = [];
+        const dialled: string[] = [];
         const kernel = createKernel({
             plugins: [made("billing", { outbound: ["https://api.stripe.com"] })],
             dial: (call) =>
             {
-                called.push(call.url);
+                dialled.push(call.url);
 
                 return Promise.resolve({ ok: true });
             },
@@ -541,7 +541,7 @@ describe("outbound", () =>
 
         await expect(kernel.context("billing").fetch({ method: "GET", url: "https://api.stripe.com/v1/charges" }))
             .resolves.toEqual({ ok: true });
-        expect(called).toEqual(["https://api.stripe.com/v1/charges"]);
+        expect(dialled).toEqual(["https://api.stripe.com/v1/charges"]);
     });
 
     test("refuses a url whose host only looks like one it declared", async () =>

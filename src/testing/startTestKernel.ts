@@ -25,7 +25,7 @@ export type TestKernelOptions = {
     answers?: (call: Outbound) => unknown;
 
     /**
-     * Whether events are kept until a listener has heard them, as
+     * Whether events are kept until a listener has recorded them, as
      * `start({ outbox: true })` does.
      *
      * A test proving a listener survives hearing the same event twice needs
@@ -56,8 +56,8 @@ export type EmittedEvent = {
 export type TestKernel = {
     kernel: Kernel;
     store: Store<Handle>;
-    said: LogLine[];
-    called: () => OutboundCall[];
+    logLines: LogLine[];
+    outboundCalls: () => OutboundCall[];
 
     /**
      * Every event emitted since boot, in order.
@@ -66,7 +66,7 @@ export type TestKernel = {
      * otherwise mean writing a plugin whose only purpose is to hear. This
      * listens to everything declared, so a test asserts on the emit itself.
      */
-    heard: () => EmittedEvent[];
+    emittedEvents: () => EmittedEvent[];
 
     /**
      * Waits until every listener an emit started has finished.
@@ -76,7 +76,7 @@ export type TestKernel = {
      * Nothing in a plugin ever needs this; a test that asserts on what a
      * listener did always does.
      */
-    settled: () => Promise<void>;
+    settle: () => Promise<void>;
 
     /**
      * Runs whatever the schedule says is due, once.
@@ -124,9 +124,9 @@ export async function startTestKernel(given: TestKernelOptions): Promise<TestKer
 
     store.migrate(TestTables.migrations(given.plugins));
 
-    const said: LogLine[] = [];
-    const called: OutboundCall[] = [];
-    const heard: EmittedEvent[] = [];
+    const written: LogLine[] = [];
+    const dialled: OutboundCall[] = [];
+    const recorded: EmittedEvent[] = [];
 
     // A plugin that hears everything, added to the ones under test. Named so
     // it cannot collide with a real one, and declared as listening to every
@@ -149,7 +149,7 @@ export async function startTestKernel(given: TestKernelOptions): Promise<TestKer
                         // listener, which tells a test nothing.
                         handle: (payload: never): void =>
                         {
-                            heard.push({ plugin: plugin.name, event, payload });
+                            recorded.push({ plugin: plugin.name, event, payload });
                         },
                     }]),
                 ),
@@ -159,18 +159,18 @@ export async function startTestKernel(given: TestKernelOptions): Promise<TestKer
 
     const dial: Dialer = (call) =>
     {
-        called.push({ method: call.method, url: call.url, body: call.body, headers: call.headers });
+        dialled.push({ method: call.method, url: call.url, body: call.body, headers: call.headers });
 
         return Promise.resolve(given.answers?.(call) ?? {});
     };
 
-    const keeping = given.outbox === true ? store.outbox?.() : undefined;
+    const outbox = given.outbox === true ? store.outbox?.() : undefined;
     const later = given.schedule === true ? store.schedule?.() : undefined;
     const scoping = given.plugins.some((plugin) => plugin.definition.scope !== undefined);
 
     const kernel = createKernel({
         plugins: [...given.plugins, listening],
-        ...(keeping !== undefined && { outbox: keeping }),
+        ...(outbox !== undefined && { outbox }),
         ...(later !== undefined && { schedule: later }),
         ...(scoping && store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
         ...(given.now !== undefined && { now: given.now }),
@@ -184,7 +184,7 @@ export async function startTestKernel(given: TestKernelOptions): Promise<TestKer
         config: given.config ?? {},
         log: (level, plugin, line, about) =>
         {
-            said.push({ level, plugin, line, ...about });
+            written.push({ level, plugin, line, ...about });
         },
     });
 
@@ -193,13 +193,13 @@ export async function startTestKernel(given: TestKernelOptions): Promise<TestKer
     return {
         kernel,
         store,
-        said,
-        called: () => [...called],
-        heard: () => [...heard],
+        logLines: written,
+        outboundCalls: () => [...dialled],
+        emittedEvents: () => [...recorded],
 
         due: () => kernel.due(),
 
-        settled: async (): Promise<void> =>
+        settle: async (): Promise<void> =>
         {
             // Two turns, not one: a listener that writes hands its work to
             // the store's queue, and a chain of two listeners needs the

@@ -71,7 +71,7 @@ test("a listener, participant and command each read their payload without a cast
     const asked = z.object({ title: z.string() });
     const given = z.object({ ownerId: z.string() });
 
-    const heard: string[] = [];
+    const recorded: string[] = [];
 
     const kernel = createKernel({
         plugins: [
@@ -92,7 +92,7 @@ test("a listener, participant and command each read their payload without a cast
                         handle: (payload) =>
                         {
                             // No cast: id is a string, at is a number.
-                            heard.push(`${payload.id}@${String(payload.at)}`);
+                            recorded.push(`${payload.id}@${String(payload.at)}`);
                         },
                     }),
                 },
@@ -111,7 +111,7 @@ test("a listener, participant and command each read their payload without a cast
                         schema: given,
                         run: (input) =>
                         {
-                            heard.push(input.ownerId);
+                            recorded.push(input.ownerId);
                         },
                     }),
                 },
@@ -128,7 +128,7 @@ test("a listener, participant and command each read their payload without a cast
 
     await kernel.run("watcher.note", { ownerId: "u1" }, { id: "u1", permissions: ["watcher.run"], claims: {} });
 
-    expect(heard).toEqual(["a@1", "u1"]);
+    expect(recorded).toEqual(["a@1", "u1"]);
 });
 
 describe("finding a route", () =>

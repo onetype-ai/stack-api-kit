@@ -16,7 +16,7 @@ function emitter(): Plugin
     });
 }
 
-function recorder(heard: string[]): Plugin
+function recorder(recorded: string[]): Plugin
 {
     return definePlugin("ledger", {
         version: "1.0.0",
@@ -24,7 +24,7 @@ function recorder(heard: string[]): Plugin
         listens: {
             "orders.placed": {
                 describe: "Records what was placed.",
-                handle: (payload) => { heard.push((payload as { id: string }).id); },
+                handle: (payload) => { recorded.push((payload as { id: string }).id); },
             },
         },
     });
@@ -36,7 +36,7 @@ describe("an event kept in an outbox", () =>
     {
         const connection = new Database(":memory:");
         const waiting = outbox(connection);
-        const heard: string[] = [];
+        const recorded: string[] = [];
 
         // A process that committed the work and stopped before delivering:
         // the row is what it left behind.
@@ -44,18 +44,18 @@ describe("an event kept in an outbox", () =>
 
         expect(await waiting.waiting()).toHaveLength(1);
 
-        const restarted = createKernel({ plugins: [emitter(), recorder(heard)], outbox: waiting });
+        const restarted = createKernel({ plugins: [emitter(), recorder(recorded)], outbox: waiting });
 
         await restarted.start();
 
-        expect(heard).toEqual(["order-1"]);
+        expect(recorded).toEqual(["order-1"]);
         expect(await waiting.waiting()).toHaveLength(0);
 
         await restarted.stop();
         connection.close();
     });
 
-    test("is forgotten only once a listener has heard it", async () =>
+    test("is forgotten only once a listener has recorded it", async () =>
     {
         const connection = new Database(":memory:");
         const waiting = outbox(connection);
@@ -155,12 +155,12 @@ describe("an event kept in an outbox", () =>
 
         await kernel.stop();
 
-        const heard: string[] = [];
-        const restarted = createKernel({ plugins: [emitter(), recorder(heard)], outbox: waiting });
+        const recorded: string[] = [];
+        const restarted = createKernel({ plugins: [emitter(), recorder(recorded)], outbox: waiting });
 
         await restarted.start();
 
-        expect(heard).toEqual(["order-3"]);
+        expect(recorded).toEqual(["order-3"]);
 
         await restarted.stop();
         connection.close();

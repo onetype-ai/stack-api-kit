@@ -78,7 +78,7 @@ describe("what startTestKernel gives a test", () =>
     {
         const api = await startTestKernel({ plugins: [holding()] });
 
-        expect(api.said).toMatchObject([{ level: "info", plugin: "found", line: "found ready" }]);
+        expect(api.logLines).toMatchObject([{ level: "info", plugin: "found", line: "found ready" }]);
 
         await api.stop();
     });
@@ -105,7 +105,7 @@ describe("what startTestKernel gives a test", () =>
 
         await api.kernel.context("found").fetch({ method: "GET", url: "https://partner.test/x" });
 
-        expect(api.called()).toEqual([{
+        expect(api.outboundCalls()).toEqual([{
             method: "GET",
             url: "https://partner.test/x",
             body: undefined,
@@ -123,7 +123,7 @@ describe("what startTestKernel gives a test", () =>
         await ctx.fetch({ method: "POST", url: "https://partner.test/things", body: { name: "one" } });
         await ctx.fetch({ method: "DELETE", url: "https://partner.test/things/1" });
 
-        expect(api.called().map((one) => `${one.method} ${one.url}`)).toEqual([
+        expect(api.outboundCalls().map((one) => `${one.method} ${one.url}`)).toEqual([
             "POST https://partner.test/things",
             "DELETE https://partner.test/things/1",
         ]);
@@ -141,7 +141,7 @@ describe("what startTestKernel gives a test", () =>
             headers: { "idempotency-key": "abc" },
         });
 
-        expect(api.called()[0]?.headers).toEqual({ "idempotency-key": "abc" });
+        expect(api.outboundCalls()[0]?.headers).toEqual({ "idempotency-key": "abc" });
 
         await api.stop();
     });
@@ -158,7 +158,7 @@ describe("what startTestKernel gives a test", () =>
 
         api.kernel.context("announcing").events.emit("announcing.done", { id: "one" });
 
-        expect(api.heard()).toEqual([{ plugin: "announcing", event: "announcing.done", payload: { id: "one" } }]);
+        expect(api.emittedEvents()).toEqual([{ plugin: "announcing", event: "announcing.done", payload: { id: "one" } }]);
 
         await api.stop();
     });
@@ -181,7 +181,7 @@ describe("what startTestKernel gives a test", () =>
             throw new Error("it rolled back");
         }).catch(() => undefined);
 
-        expect(api.heard()).toEqual([]);
+        expect(api.emittedEvents()).toEqual([]);
 
         await api.stop();
     });

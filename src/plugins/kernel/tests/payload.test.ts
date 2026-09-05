@@ -5,7 +5,7 @@ import { createKernel, definePlugin } from "../api";
 
 test("an event payload failing its own schema is not blamed on the caller", async () =>
 {
-    const said: string[] = [];
+    const written: string[] = [];
 
     const kernel = createKernel({
         plugins: [definePlugin("orders", {
@@ -28,7 +28,7 @@ test("an event payload failing its own schema is not blamed on the caller", asyn
                 },
             }],
         })],
-        log: (level, _plugin, line) => { if (level === "error") { said.push(line); } },
+        log: (level, _plugin, line) => { if (level === "error") { written.push(line); } },
     });
 
     await kernel.start();

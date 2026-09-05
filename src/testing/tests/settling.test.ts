@@ -43,7 +43,7 @@ test("what a listener wrote is there once the test waits for it", async () =>
         seen.push(written.length);
     }
 
-    await api.settled();
+    await api.settle();
 
     await api.stop();
 
@@ -92,7 +92,7 @@ test("a chain of two listeners settles too", async () =>
 
     api.kernel.context("first").events.emit("first.done", { id: "one" });
 
-    await api.settled();
+    await api.settle();
 
     await api.stop();
 

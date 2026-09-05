@@ -110,8 +110,8 @@ describe("a name that lives on every object", () =>
                     path: "/billing/probe",
                     describe: "Asks to stamp a table nobody declared.",
                     input: z.object({}),
-                    output: z.object({ said: z.string() }),
-                    handle: (_given, ctx) => ({ said: JSON.stringify(ctx.stamped("toString")) }),
+                    output: z.object({ logLines: z.string() }),
+                    handle: (_given, ctx) => ({ logLines: JSON.stringify(ctx.stamped("toString")) }),
                 },
             ],
         });

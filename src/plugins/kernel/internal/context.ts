@@ -229,7 +229,7 @@ export function context(findUnusedFields: Wiring, plugin: string, caller?: Calle
 
         write: <Returned,>(run: () => Promise<Returned>): Promise<Returned> =>
         {
-            // Inside a transaction the ordering is already settled: the work
+            // Inside a transaction the ordering is already settle: the work
             // belongs to that transaction, and queueing it would wait on a
             // turn that cannot come until the transaction it is inside ends.
             if (within !== undefined || findUnusedFields.db?.write === undefined)
