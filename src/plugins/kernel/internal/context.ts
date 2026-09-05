@@ -156,7 +156,9 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
             );
         }
 
-        const column = scope.tables[table];
+        // hasOwn, not an index: "toString" would answer with a function, and
+        // a column nobody declared would be spread into a write.
+        const column = Object.hasOwn(scope.tables, table) ? scope.tables[table] : undefined;
 
         if (column === undefined)
         {
@@ -405,7 +407,9 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
 
                 const owns = wiring.known.get(plugin)?.definition.commands ?? {};
 
-                if (!(command in owns))
+                // hasOwn, not `in`: "constructor" and "toString" walk the
+                // prototype and would be scheduled as if they were declared.
+                if (!Object.hasOwn(owns, command))
                 {
                     throw new KernelFault(
                         "UNDECLARED_COMMAND",

@@ -166,6 +166,15 @@ function matched(
 
     const asked = path.split("/");
 
+    // A static route the caller wrote encoded: found here rather than left to
+    // the parameter routes below, which would answer for it.
+    const plain = routes.get(`${method} ${asked.map((one) => readable(one) ?? one).join("/")}`);
+
+    if (plain !== undefined)
+    {
+        return { mounted: plain, params: {} };
+    }
+
     for (const [key, mounted] of routes)
     {
         const [verb, declared] = key.split(" ");
@@ -189,7 +198,9 @@ function matched(
 
             if (!part.startsWith(":"))
             {
-                return part === given;
+                // Decoded before comparing, or "/users/%6de" misses the route
+                // "/users/me" declares and lands on "/users/:id" instead.
+                return part === readable(given);
             }
 
             const value = readable(given);
