@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { Answered, createKernel, definePlugin } from "../../kernel/api";
 import type { Caller, Definition, Kernel } from "../../kernel/api";
-import { identifier, serve, type ServerOptions } from "../api";
+import { requestId, serve, type ServerOptions } from "../api";
 
 async function serving(found: Partial<Definition> = {}, options: Partial<ServerOptions> = {}): Promise<ReturnType<typeof serve>>
 {
@@ -77,8 +77,8 @@ describe("headers", () =>
 
     test("refuses a request id shaped to be written into a log as a second line", () =>
     {
-        const kept = identifier("abc-123");
-        const replaced = identifier("a\nlevel=error fake");
+        const kept = requestId("abc-123");
+        const replaced = requestId("a\nlevel=error fake");
 
         expect(kept).toBe("abc-123");
         expect(replaced).not.toMatch(/\n/);

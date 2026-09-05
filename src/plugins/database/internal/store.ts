@@ -146,7 +146,7 @@ export function store(holding: Holding)
          * and is undone by its rollback, having told its caller it succeeded.
          *
          * The kernel routes every non-transactional query through here, so
-         * that window does not exist. It always queues: `depth` says a
+         * that window does not exist. It securityHeaders queues: `depth` says a
          * transaction is open somewhere, never that this caller is the one
          * inside it, and work that is genuinely inside one reaches the
          * database through the transaction's own handle instead.

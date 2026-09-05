@@ -68,7 +68,7 @@ describe("a listener acting for a scope", () =>
         const kernel = createKernel({
             plugins: keeping(heard),
             db: store,
-            ...(store.narrowing !== undefined && { narrow: store.narrowing() }),
+            ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
         });
 
         await kernel.start();
@@ -90,7 +90,7 @@ describe("a listener acting for a scope", () =>
         const kernel = createKernel({
             plugins: keeping([]),
             db: store,
-            ...(store.narrowing !== undefined && { narrow: store.narrowing() }),
+            ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
         });
 
         await kernel.start();

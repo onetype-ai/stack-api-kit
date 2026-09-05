@@ -54,7 +54,7 @@ type Within = {
 };
 
 /**
- * What a missing dependency answers: a refusal naming what to pass.
+ * What a findMissingDocs dependency answers: a refusal naming what to pass.
  *
  * `used` is what the plugin called; `pass` is the option that supplies it.
  * They are rarely the same word, and saying only the first sends a reader
@@ -100,18 +100,18 @@ function dialable(url: string): boolean
  * Made per request rather than kept: one kernel answers every request, and a
  * context holding a caller would hand the next request the previous one.
  */
-export function context(wiring: Wiring, plugin: string, caller?: Caller, within?: Within, headers: Readonly<Record<string, string>> = {}, acting?: string): Context
+export function context(findUnusedFields: Wiring, plugin: string, caller?: Caller, within?: Within, headers: Readonly<Record<string, string>> = {}, acting?: string): Context
 {
     const may = permissions(() => caller);
     const seenBy = (plugin: string, inside = within): Context =>
     {
-        return context(wiring, plugin, caller, inside, headers, acting);
+        return context(findUnusedFields, plugin, caller, inside, headers, acting);
     };
 
     /** What a listener is handed: this plugin, and nobody createCaller. */
     const heard = (plugin: string): Context =>
     {
-        return context(wiring, plugin, undefined, undefined, {});
+        return context(findUnusedFields, plugin, undefined, undefined, {});
     };
 
     // Built lazily and once per context: a service reads ctx.caller, so one
@@ -128,7 +128,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
 
         made.set(name, undefined);
 
-        const services = wiring.known.get(name)?.definition.services?.(
+        const services = findUnusedFields.known.get(name)?.definition.services?.(
             (name === plugin ? ctx : seenBy(name)) as never,
         );
 
@@ -145,7 +145,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
      */
     const scoping = (table: string): { column: string; held: string } =>
     {
-        const scope = wiring.known.get(plugin)?.definition.scope;
+        const scope = findUnusedFields.known.get(plugin)?.definition.scope;
 
         if (scope === undefined)
         {
@@ -186,7 +186,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
 
     const ctx: Context = {
         name: plugin,
-        config: wiring.parsed.get(plugin) ?? wiring.config[plugin],
+        config: findUnusedFields.parsed.get(plugin) ?? findUnusedFields.config[plugin],
 
         get services(): unknown
         {
@@ -196,24 +196,24 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
         caller,
         headers,
 
-        now: wiring.now,
+        now: findUnusedFields.now,
 
         log: {
             debug: (line, about) =>
             {
-                wiring.log("debug", plugin, line, about);
+                findUnusedFields.log("debug", plugin, line, about);
             },
             info: (line, about) =>
             {
-                wiring.log("info", plugin, line, about);
+                findUnusedFields.log("info", plugin, line, about);
             },
             warn: (line, about) =>
             {
-                wiring.log("warn", plugin, line, about);
+                findUnusedFields.log("warn", plugin, line, about);
             },
             error: (line, about) =>
             {
-                wiring.log("error", plugin, line, about);
+                findUnusedFields.log("error", plugin, line, about);
             },
         },
 
@@ -224,7 +224,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
                 return within.db;
             }
 
-            return wiring.db === undefined ? absent("store", "db", "db") : wiring.db.of(plugin);
+            return findUnusedFields.db === undefined ? absent("store", "db", "db") : findUnusedFields.db.of(plugin);
         },
 
         write: <Returned,>(run: () => Promise<Returned>): Promise<Returned> =>
@@ -232,17 +232,17 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
             // Inside a transaction the ordering is already settled: the work
             // belongs to that transaction, and queueing it would wait on a
             // turn that cannot come until the transaction it is inside ends.
-            if (within !== undefined || wiring.db?.write === undefined)
+            if (within !== undefined || findUnusedFields.db?.write === undefined)
             {
                 return run();
             }
 
-            return wiring.db.write(run);
+            return findUnusedFields.db.write(run);
         },
 
         tx: async <Returned,>(run: (ctx: Context) => Promise<Returned>): Promise<Returned> =>
         {
-            const store = wiring.db;
+            const store = findUnusedFields.db;
 
             if (store === undefined)
             {
@@ -250,17 +250,17 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
             }
 
             const mark = {};
-            const outer = wiring.open.getStore();
+            const outer = findUnusedFields.open.getStore();
             const nested = within !== undefined;
 
-            wiring.pending.set(mark, []);
+            findUnusedFields.pending.set(mark, []);
 
             try
             {
                 // An inner tx becomes a savepoint rather than a second
                 // transaction, but keeps its own buffer: work it rolled back
                 // must not be announced when the outer commits.
-                const returned = await wiring.open.run(mark, () =>
+                const returned = await findUnusedFields.open.run(mark, () =>
                     store.tx(plugin, async (db) =>
                     {
                         const made = await run(seenBy(plugin, { mark, db }));
@@ -268,11 +268,11 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
                         // Written with the work, not after it: an event kept
                         // once the transaction has closed is one the process
                         // can still die without.
-                        const waiting = wiring.pending.get(mark) ?? [];
+                        const waiting = findUnusedFields.pending.get(mark) ?? [];
 
-                        if (wiring.outbox !== undefined && waiting.length > 0 && !(nested && outer !== undefined))
+                        if (findUnusedFields.outbox !== undefined && waiting.length > 0 && !(nested && outer !== undefined))
                         {
-                            wiring.outbox.keep(db, waiting.map((one) => ({
+                            findUnusedFields.outbox.keep(db, waiting.map((one) => ({
                                 id: one.id,
                                 plugin: one.plugin,
                                 name: one.name,
@@ -283,13 +283,13 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
                         return made;
                     }));
 
-                const announced = wiring.pending.get(mark) ?? [];
+                const announced = findUnusedFields.pending.get(mark) ?? [];
 
                 if (nested && outer !== undefined)
                 {
                     // An inner transaction is a savepoint: the outer one may
                     // still roll back, so what this announced waits on that.
-                    wiring.pending.get(outer)?.push(...announced);
+                    findUnusedFields.pending.get(outer)?.push(...announced);
 
                     return returned;
                 }
@@ -298,7 +298,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
                 // and a listener acting on one cannot be undone.
                 for (const announcement of announced)
                 {
-                    const delivered = wiring.bus.deliver(announcement.plugin, announcement.name, announcement.payload, (to) => heard(to));
+                    const delivered = findUnusedFields.bus.deliver(announcement.plugin, announcement.name, announcement.payload, (to) => heard(to));
 
                     // Forgotten only once something has heard it. Marking it
                     // sent before that would lose exactly what the outbox
@@ -307,7 +307,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
                     {
                         if (heard)
                         {
-                            void wiring.outbox?.sent(announcement.id);
+                            void findUnusedFields.outbox?.sent(announcement.id);
                         }
                     });
                 }
@@ -316,7 +316,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
             }
             finally
             {
-                wiring.pending.delete(mark);
+                findUnusedFields.pending.delete(mark);
             }
         },
 
@@ -325,7 +325,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
         // case it was guarding against.
         fetch: async (call: Outbound): Promise<unknown> =>
         {
-            const allowed = wiring.known.get(plugin)?.definition.outbound ?? [];
+            const allowed = findUnusedFields.known.get(plugin)?.definition.outbound ?? [];
             const host = origin(call.url);
 
             if (host === undefined || !allowed.includes(host))
@@ -349,7 +349,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
                 );
             }
 
-            return wiring.dial === undefined ? absent("dialer", "dial", "dial") : wiring.dial(call);
+            return findUnusedFields.dial === undefined ? absent("dialer", "dial", "dial") : findUnusedFields.dial(call);
         },
 
         events: {
@@ -358,14 +358,14 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
                 // Checked here even when it is deferred: a payload rejected after
                 // a commit, from a stack with no caller in it, is one nobody
                 // can trace back to what emitted it.
-                const checked = wiring.bus.checked(plugin, event, payload);
+                const checked = findUnusedFields.bus.checked(plugin, event, payload);
 
                 // Kept against whatever transaction is open, not against the
                 // context this was called on. Emitting from the outer `ctx`
                 // inside a `tx` is the easy mistake, and it announced work
                 // that had not committed and might never.
-                const mark = within?.mark ?? wiring.open.getStore();
-                const waiting = mark === undefined ? undefined : wiring.pending.get(mark);
+                const mark = within?.mark ?? findUnusedFields.open.getStore();
+                const waiting = mark === undefined ? undefined : findUnusedFields.pending.get(mark);
 
                 if (waiting !== undefined)
                 {
@@ -374,19 +374,19 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
                     return;
                 }
 
-                // On nobody's behalf, always. A listener that inherited the
+                // On nobody's behalf, securityHeaders. A listener that inherited the
                 // emitter's caller would work in one process and answer as
                 // nobody after a restart, because an outbox keeps a payload
                 // and not a request. Whose work this was travels in the
                 // payload or not at all.
-                wiring.bus.deliver(plugin, event, checked, (to) => heard(to));
+                findUnusedFields.bus.deliver(plugin, event, checked, (to) => heard(to));
             },
         },
 
         hooks: {
             run: (hook, payload) =>
             {
-                return wiring.points.run(plugin, hook, payload, (to) => seenBy(to));
+                return findUnusedFields.points.run(plugin, hook, payload, (to) => seenBy(to));
             },
         },
 
@@ -395,17 +395,17 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
         commands: {
             run: (command, input) =>
             {
-                return wiring.run(command, input, caller);
+                return findUnusedFields.run(command, input, caller);
             },
 
             later: (command, input, inSeconds) =>
             {
-                if (wiring.schedule === undefined)
+                if (findUnusedFields.schedule === undefined)
                 {
                     absent("schedule", "commands.later", "schedule");
                 }
 
-                const owns = wiring.known.get(plugin)?.definition.commands ?? {};
+                const owns = findUnusedFields.known.get(plugin)?.definition.commands ?? {};
 
                 // hasOwn, not `in`: "constructor" and "toString" walk the
                 // prototype and would be scheduled as if they were declared.
@@ -421,12 +421,12 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
                 // Written by the transaction that asked, when there is one:
                 // work scheduled by something that rolled back is work about
                 // nothing, and it would run anyway.
-                wiring.schedule.keep(within?.db, {
+                findUnusedFields.schedule.keep(within?.db, {
                     id: crypto.randomUUID(),
                     plugin,
                     command,
                     input,
-                    at: wiring.now() + inSeconds * 1000,
+                    at: findUnusedFields.now() + inSeconds * 1000,
                     attempts: 0,
                 });
             },
@@ -434,14 +434,14 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
 
         owns: <Owned,>(owned: Owned): Owned =>
         {
-            wiring.owned.set(plugin, owned);
+            findUnusedFields.owned.set(plugin, owned);
 
             return owned;
         },
 
         owned: <Owned,>(): Owned | undefined =>
         {
-            return wiring.owned.get(plugin) as Owned | undefined;
+            return findUnusedFields.owned.get(plugin) as Owned | undefined;
         },
 
         forScope: (claim: string): Context =>
@@ -467,7 +467,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
                 );
             }
 
-            return context(wiring, plugin, undefined, within, headers, claim);
+            return context(findUnusedFields, plugin, undefined, within, headers, claim);
         },
 
         stamped: (table: string): Readonly<Record<string, string>> =>
@@ -481,14 +481,14 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
         {
             const { column, held } = scoping(table);
 
-            return (wiring.narrow === undefined
-                ? absent("narrowing", "scoped", "narrow")
-                : wiring.narrow(table, column, held)) as Condition;
+            return (findUnusedFields.narrow === undefined
+                ? absent("createScopeFilter", "scoped", "narrow")
+                : findUnusedFields.narrow(table, column, held)) as Condition;
         },
 
         use: <Reached,>(name: string): Reached =>
         {
-            const declared = wiring.known.get(plugin)?.definition.dependsOn ?? [];
+            const declared = findUnusedFields.known.get(plugin)?.definition.dependsOn ?? [];
 
             if (name !== plugin && !declared.includes(name))
             {

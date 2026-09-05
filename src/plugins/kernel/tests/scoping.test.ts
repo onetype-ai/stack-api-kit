@@ -79,7 +79,7 @@ describe("a table a plugin scoped", () =>
         const kernel = createKernel({
             plugins: [billing()],
             db: store,
-            ...(store.narrowing !== undefined && { narrow: store.narrowing() }),
+            ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
         });
 
         await kernel.start();
@@ -105,7 +105,7 @@ describe("a table a plugin scoped", () =>
         const kernel = createKernel({
             plugins: [billing()],
             db: store,
-            ...(store.narrowing !== undefined && { narrow: store.narrowing() }),
+            ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
         });
 
         await kernel.start();
@@ -125,7 +125,7 @@ describe("a table a plugin scoped", () =>
                 version: "1.0.0",
                 describe: "Scopes what it has not got.",
                 tables: { notes },
-                scope: { describe: "x", claim: "tenantId", tables: { missing: "tenantId" } },
+                scope: { describe: "x", claim: "tenantId", tables: { findMissingDocs: "tenantId" } },
             })],
         });
 

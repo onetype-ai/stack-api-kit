@@ -6,7 +6,7 @@ import { timingSafeEqual } from "node:crypto";
 //
 // The lengths are compared first and separately: that is public anyway, and
 // timingSafeEqual throws on a mismatch rather than answering false.
-export function same(left: string, right: string): boolean
+export function equalsInConstantTime(left: string, right: string): boolean
 {
     const first = Buffer.from(left, "utf8");
     const second = Buffer.from(right, "utf8");

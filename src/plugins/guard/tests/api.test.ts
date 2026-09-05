@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { limiter, same } from "../api";
+import { limiter, equalsInConstantTime } from "../api";
 
 describe("limiting", () =>
 {
@@ -66,20 +66,20 @@ describe("limiting", () =>
 
 describe("comparing", () =>
 {
-    test("answers true only for the same string", () =>
+    test("answers true only for the equalsInConstantTime string", () =>
     {
-        expect(same("token-abc", "token-abc")).toBe(true);
-        expect(same("token-abc", "token-abd")).toBe(false);
+        expect(equalsInConstantTime("token-abc", "token-abc")).toBe(true);
+        expect(equalsInConstantTime("token-abc", "token-abd")).toBe(false);
     });
 
     test("answers false on a length difference rather than throwing", () =>
     {
-        expect(same("short", "much longer secret")).toBe(false);
-        expect(same("", "x")).toBe(false);
+        expect(equalsInConstantTime("short", "much longer secret")).toBe(false);
+        expect(equalsInConstantTime("", "x")).toBe(false);
     });
 
     test("compares by bytes, so two different strings never match", () =>
     {
-        expect(same("é", "e")).toBe(false);
+        expect(equalsInConstantTime("é", "e")).toBe(false);
     });
 });

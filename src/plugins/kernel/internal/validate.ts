@@ -388,11 +388,11 @@ function refers(name: string, plugin: Plugin, by: ReadonlyMap<string, Plugin>, o
             // one nobody guesses: hearing does not depend, but the plugin
             // that declares the event still has to be here to declare it.
             const owner = key.split(".")[0] ?? "";
-            const missing = owner !== "" && owner !== name && !by.has(owner)
+            const findMissingDocs = owner !== "" && owner !== name && !by.has(owner)
                 ? ` "${owner}" would declare it and was not given to createKernel: pass it too, which a test of a listener has to do.`
                 : "";
 
-            say(code, name, `${label} "${key}" is not declared by any plugin. Declare it, or correct the name.${missing}`);
+            say(code, name, `${label} "${key}" is not declared by any plugin. Declare it, or correct the name.${findMissingDocs}`);
         }
     };
 

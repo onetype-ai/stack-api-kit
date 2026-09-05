@@ -11,7 +11,7 @@ type Column = Readonly<Record<string, unknown>>;
  * query is built. This knows Drizzle and nothing about tenants, so neither
  * half has to learn the other's business.
  */
-export function narrowing(owned: Readonly<Record<string, Readonly<Record<string, unknown>>>>): ScopeFilter
+export function createScopeFilter(owned: Readonly<Record<string, Readonly<Record<string, unknown>>>>): ScopeFilter
 {
     return (table: string, column: string, value: string): unknown =>
     {

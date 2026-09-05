@@ -75,7 +75,7 @@ export async function start(starting: StartOptions): Promise<RunningApp>
         db: store,
         ...(keeping !== undefined && { outbox: keeping }),
         ...(later !== undefined && { schedule: later }),
-        ...(scoping && store.narrowing !== undefined && { narrow: store.narrowing() }),
+        ...(scoping && store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
         budget,
         dial: typeof starting.outbound === "function" ? starting.outbound : dial(starting.outbound ?? {}),
         ...(starting.config !== undefined && { config: starting.config }),

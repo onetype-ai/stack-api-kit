@@ -1,6 +1,6 @@
 import { connect, type DatabaseOptions } from "./internal/connect";
 import { migrate, MigrationFault, type Source, type Step, steps } from "./internal/migrate";
-import { narrowing } from "./internal/narrow";
+import { createScopeFilter } from "./internal/narrow";
 import { outbox } from "./internal/outbox";
 import { schedule } from "./internal/schedule";
 
@@ -36,7 +36,7 @@ export type Store<Handed = unknown> = {
     schedule?: () => Schedule;
 
     /** How a declared scope becomes a condition over the tables it was given. */
-    narrowing?: () => ScopeFilter;
+    createScopeFilter?: () => ScopeFilter;
     tx: <Made>(plugin: string, run: (db: unknown) => Promise<Made>) => Promise<Made>;
     write: <Made>(run: () => Promise<Made>) => Promise<Made>;
     inTransaction: () => boolean;
@@ -44,7 +44,7 @@ export type Store<Handed = unknown> = {
     close: () => void;
 };
 
-export { MigrationFault, narrowing, outbox, schedule, steps };
+export { MigrationFault, createScopeFilter, outbox, schedule, steps };
 export type { Handle, DatabaseOptions, Source, Step, Tables };
 
 /**
@@ -91,9 +91,9 @@ export function database(settings: Settings): Store<Handle>
         },
 
         /** How a scope narrows a query, over the tables one plugin declared. */
-        narrowing: (): ScopeFilter =>
+        createScopeFilter: (): ScopeFilter =>
         {
-            return narrowing(settings.tables);
+            return createScopeFilter(settings.tables);
         },
     };
 }

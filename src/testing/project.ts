@@ -2,9 +2,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { boundaries } from "./boundaries";
-import { missing, oversized, undocumented, unexplained } from "./docs";
-import { wiring } from "./wiring";
+import { findImportViolations } from "./boundaries";
+import { findMissingDocs, findOversizedDocs, findUndocumentedKeys, findUnexplainedPlugins } from "./docs";
+import { findUnusedFields } from "./wiring";
 
 export type ProjectProblem = {
     check: "boundaries" | "wiring" | "oversized" | "missing" | "unexplained" | "undocumented";
@@ -44,35 +44,35 @@ export const Project = {
         const limit = checking.limit ?? 1800;
 
         return [
-            ...Project.boundaries(checking.plugins ?? join(root, "src", "plugins")),
-            ...Project.wiring(checking.plugins ?? join(root, "src", "plugins")),
+            ...Project.findImportViolations(checking.plugins ?? join(root, "src", "plugins")),
+            ...Project.findUnusedFields(checking.plugins ?? join(root, "src", "plugins")),
 
             // Utils shared between plugins are checked too: a field nothing
             // reads is the same defect wherever it is declared, and code no
             // plugin owns is code nobody notices going stale.
-            ...Project.wiring(checking.utils ?? join(root, "src", "utils"), false),
-            ...Project.unexplained(checking.plugins ?? join(root, "src", "plugins")),
+            ...Project.findUnusedFields(checking.utils ?? join(root, "src", "utils"), false),
+            ...Project.findUnexplainedPlugins(checking.plugins ?? join(root, "src", "plugins")),
             ...Project.docs(root, docs, checking.required ?? Project.required, limit),
             ...Project.contract(checking.procedure ?? join(docs, "procedures", "plugin", "contract.md")),
         ];
     },
 
-    boundaries: (at: string): ProjectProblem[] =>
+    findImportViolations: (at: string): ProjectProblem[] =>
     {
-        return boundaries(at).map((wrong) => ({ check: "boundaries" as const, message: wrong.message }));
+        return findImportViolations(at).map((wrong) => ({ check: "boundaries" as const, message: wrong.message }));
     },
 
-    wiring: (at: string, apart = true): ProjectProblem[] =>
+    findUnusedFields: (at: string, apart = true): ProjectProblem[] =>
     {
-        return wiring(at, apart).map((unread) => ({
+        return findUnusedFields(at, apart).map((unread) => ({
             check: "wiring" as const,
             message: `${unread.file}: ${unread.shape}.${unread.field} is declared and nothing reads it.`,
         }));
     },
 
-    unexplained: (at: string): ProjectProblem[] =>
+    findUnexplainedPlugins: (at: string): ProjectProblem[] =>
     {
-        return unexplained(at).map((name) => ({
+        return findUnexplainedPlugins(at).map((name) => ({
             check: "unexplained" as const,
             message: `"${name}" has no usage.md. A plugin nobody can read is one nobody can depend on.`,
         }));
@@ -81,11 +81,11 @@ export const Project = {
     docs: (root: string, at: string, required: readonly string[], limit: number): ProjectProblem[] =>
     {
         return [
-            ...oversized(at, limit).map((doc) => ({
+            ...findOversizedDocs(at, limit).map((doc) => ({
                 check: "oversized" as const,
                 message: `${doc.path.replace(`${root}/`, "")} is ${String(doc.size)} characters, over ${String(limit)}.`,
             })),
-            ...missing(root, required).map((path) => ({
+            ...findMissingDocs(root, required).map((path) => ({
                 check: "missing" as const,
                 message: `${path} is absent or says nothing.`,
             })),
@@ -94,7 +94,7 @@ export const Project = {
 
     contract: (procedure: string): ProjectProblem[] =>
     {
-        return undocumented(readFileSync(CONTRACT, "utf8"), readFileSync(procedure, "utf8")).map((key) => ({
+        return findUndocumentedKeys(readFileSync(CONTRACT, "utf8"), readFileSync(procedure, "utf8")).map((key) => ({
             check: "undocumented" as const,
             message: `The contract accepts "${key}" and ${procedure.split("/").slice(-1).join("")} never names it.`,
         }));

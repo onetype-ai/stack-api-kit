@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { Context as HonoContext } from "hono";
 
 import type { Caller, Kernel, Method } from "../../kernel/api";
-import { always } from "./headers";
+import { securityHeaders } from "./headers";
 import { cors, type Allowing } from "./origin";
 import { input } from "./input";
 
@@ -44,7 +44,7 @@ const CARRIES: ReadonlySet<string> = new Set(["POST", "PUT", "PATCH", "DELETE"])
 // Kept only when it is safe to write down: an id carrying a newline is how
 // one request writes a second line into the log and calls it whatever it
 // likes.
-export function identifier(sent: string | undefined): string
+export function requestId(sent: string | undefined): string
 {
     return sent !== undefined && /^[A-Za-z0-9_-]{1,64}$/.test(sent) ? sent : crypto.randomUUID();
 }
@@ -177,13 +177,13 @@ export function serve(serving: ServerOptions): Hono
 
     app.use("*", async (c, next) =>
     {
-        const requestId = identifier(c.req.header("x-request-id"));
+        const traced = requestId(c.req.header("x-request-id"));
 
-        requestIds.set(c.req.raw, requestId);
+        requestIds.set(c.req.raw, traced);
 
         await next();
 
-        for (const [name, value] of Object.entries(always))
+        for (const [name, value] of Object.entries(securityHeaders))
         {
             c.header(name, value);
         }
@@ -199,7 +199,7 @@ export function serve(serving: ServerOptions): Hono
             c.header(name, value);
         }
 
-        c.header("x-request-id", requestId);
+        c.header("x-request-id", traced);
     });
 
     // A preflight is answered only for a path some route declared, and only

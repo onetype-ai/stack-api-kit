@@ -49,10 +49,10 @@ describe("a handler saying what its answer carries", () =>
     test("redirects temporarily by default and permanently when asked", async () =>
     {
         const once = await serving(() => Answered.redirect("/elsewhere"));
-        const always = await serving(() => Answered.redirect("/elsewhere", true));
+        const securityHeaders = await serving(() => Answered.redirect("/elsewhere", true));
 
         expect((await once.handle({ method: "GET", path: "/thing", input: {} })).status).toBe(307);
-        expect((await always.handle({ method: "GET", path: "/thing", input: {} })).status).toBe(308);
+        expect((await securityHeaders.handle({ method: "GET", path: "/thing", input: {} })).status).toBe(308);
     });
 
     test("still filters the body through the output schema", async () =>
@@ -73,7 +73,7 @@ describe("a handler saying what its answer carries", () =>
         expect(answer.status).toBe(500);
     });
 
-    test("leaves a plain return answering as it always did", async () =>
+    test("leaves a plain return answering as it securityHeaders did", async () =>
     {
         const kernel = await serving(() => ({ to: "/elsewhere" }));
 

@@ -29,7 +29,7 @@ type Read = {
     crossings: ImportEdge[];
 };
 
-export function boundaries(root: string): ImportViolation[]
+export function findImportViolations(root: string): ImportViolation[]
 {
     const names = readdirSync(root, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
@@ -40,7 +40,7 @@ export function boundaries(root: string): ImportViolation[]
     // path inside the kit tells its author nothing about their own folder.
     const contracts = names.filter((name) => existsSync(join(root, name, "plugin.ts")));
 
-    const missing: ImportViolation[] = names
+    const findMissingDocs: ImportViolation[] = names
         .filter((name) => !contracts.includes(name))
         .map((name) => ({
             rule: "contract" as const,
@@ -49,7 +49,7 @@ export function boundaries(root: string): ImportViolation[]
 
     const plugins = contracts.map((name) => read(root, name, contracts));
 
-    return [...missing, ...undeclared(needed(plugins)), ...deep(needed(plugins)), ...cycles(plugins)];
+    return [...findMissingDocs, ...undeclared(needed(plugins)), ...deep(needed(plugins)), ...cycles(plugins)];
 }
 
 /**

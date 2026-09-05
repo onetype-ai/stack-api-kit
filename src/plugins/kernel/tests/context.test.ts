@@ -262,7 +262,7 @@ describe("events", () =>
         expect(seen).toBeUndefined();
     });
 
-    test("keeps only the newest failures, so a listener that always throws cannot exhaust the process", async () =>
+    test("keeps only the newest failures, so a listener that securityHeaders throws cannot exhaust the process", async () =>
     {
         let thrown = 0;
 

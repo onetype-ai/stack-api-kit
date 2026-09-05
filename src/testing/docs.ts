@@ -14,7 +14,7 @@ const LIMIT = 1800;
 
 // A contract nobody can read in one sitting is a contract nobody reads. What
 // grows past this is two documents, or a rule that belongs in code.
-export function oversized(root: string, limit: number = LIMIT): OversizedDoc[]
+export function findOversizedDocs(root: string, limit: number = LIMIT): OversizedDoc[]
 {
     if (!existsSync(root))
     {
@@ -39,8 +39,8 @@ export function oversized(root: string, limit: number = LIMIT): OversizedDoc[]
 }
 
 // A document that is present but empty reads as done and says nothing, which
-// is worse than one that is missing and obviously so.
-export function missing(root: string, required: readonly string[]): string[]
+// is worse than one that is findMissingDocs and obviously so.
+export function findMissingDocs(root: string, required: readonly string[]): string[]
 {
     return required.filter((path) =>
     {
@@ -63,7 +63,7 @@ export function missing(root: string, required: readonly string[]): string[]
  * why anyone would want it. A folder with no `usage.md` is one nobody can
  * decide about without reading its source.
  */
-export function unexplained(plugins: string): string[]
+export function findUnexplainedPlugins(plugins: string): string[]
 {
     if (!existsSync(plugins))
     {
@@ -88,7 +88,7 @@ export function unexplained(plugins: string): string[]
 
 // Every key the contract accepts is named in the procedure that explains it.
 // A key added to one and not the other is how a document starts lying.
-export function undocumented(contract: string, procedure: string): string[]
+export function findUndocumentedKeys(contract: string, procedure: string): string[]
 {
     const shape = /export type Definition[\s\S]*?\n\};/.exec(contract)?.[0] ?? "";
     const keys = [...shape.matchAll(/^\s{4}([a-zA-Z]+)\??:/gm)].map((match) =>

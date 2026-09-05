@@ -40,16 +40,16 @@ export type {
     ContractProblem,
 } from "./plugins/kernel/api";
 
-export { database, MigrationFault, narrowing, outbox, schedule } from "./plugins/database/api";
+export { database, MigrationFault, createScopeFilter, outbox, schedule } from "./plugins/database/api";
 export type { Handle, DatabaseOptions, Source, Step, Store, Tables } from "./plugins/database/api";
 
-export { always, identifier, serve } from "./plugins/http/api";
+export { securityHeaders, requestId, serve } from "./plugins/http/api";
 export type { Server, ServerOptions } from "./plugins/http/api";
 
 export { dial, OutboundFault } from "./plugins/outbound/api";
 export type { DialerOptions } from "./plugins/outbound/api";
 
-export { limiter, same } from "./plugins/guard/api";
+export { limiter, equalsInConstantTime } from "./plugins/guard/api";
 export type { Limiter, Verdict, Window } from "./plugins/guard/api";
 
 export { discover, start } from "./plugins/mount/api";

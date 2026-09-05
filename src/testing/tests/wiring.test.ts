@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { wiring } from "../wiring";
+import { findUnusedFields } from "../wiring";
 
 let root = "";
 
@@ -35,7 +35,7 @@ describe("a declared field", () =>
 {
     test("passes when something reads it", () =>
     {
-        const found = wiring(
+        const found = findUnusedFields(
             tree({
                 "shape.ts": "export type Item = { title: string };",
                 "use.ts": 'import type { Item } from "./shape";\nexport const name = (one: Item) => one.title;',
@@ -47,7 +47,7 @@ describe("a declared field", () =>
 
     test("is reported when nothing does", () =>
     {
-        const found = wiring(
+        const found = findUnusedFields(
             tree({
                 "shape.ts": "export type Item = { title: string; unused: number };",
                 "use.ts": 'import type { Item } from "./shape";\nexport const name = (one: Item) => one.title;',
@@ -60,7 +60,7 @@ describe("a declared field", () =>
 
     test("counts a read through destructuring", () =>
     {
-        const found = wiring(
+        const found = findUnusedFields(
             tree({
                 "shape.ts": "export type Item = { title: string };",
                 "use.ts": 'import type { Item } from "./shape";\nexport const name = (one: Item) => { const { title } = one; return title; };',
@@ -72,14 +72,14 @@ describe("a declared field", () =>
 
     test("does not count a parameter inside a function type", () =>
     {
-        const found = wiring(tree({ "shape.ts": "export type Log = { info: (line: string, about?: object) => void };\nexport const write = (log: Log) => log.info(\"x\");" }));
+        const found = findUnusedFields(tree({ "shape.ts": "export type Log = { info: (line: string, about?: object) => void };\nexport const write = (log: Log) => log.info(\"x\");" }));
 
         expect(found).toEqual([]);
     });
 
     test("sees a field read far below its own declaration", () =>
     {
-        const found = wiring(
+        const found = findUnusedFields(
             tree({
                 "shape.ts": "export type Item = { title: string };\n\nconst pad = 1;\nvoid pad;\n\nexport const name = (one: Item) => one.title;",
             }),
@@ -107,7 +107,7 @@ test("a field named only in a comment is not a read", () =>
         "}",
     ].join("\n"));
 
-    expect(wiring(at)).toEqual([{ file: "found/api.ts", shape: "Made", field: "promised" }]);
+    expect(findUnusedFields(at)).toEqual([{ file: "found/api.ts", shape: "Made", field: "promised" }]);
 
     rmSync(at, { recursive: true, force: true });
 });
@@ -130,7 +130,7 @@ test("a field read only by a test is not a read", () =>
     ].join("\n"));
     writeFileSync(join(at, "found", "tests", "api.test.ts"), 'const made = { used: "a", fixtured: "b" };\n');
 
-    expect(wiring(at)).toEqual([{ file: "found/api.ts", shape: "Made", field: "fixtured" }]);
+    expect(findUnusedFields(at)).toEqual([{ file: "found/api.ts", shape: "Made", field: "fixtured" }]);
 
     rmSync(at, { recursive: true, force: true });
 });

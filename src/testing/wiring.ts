@@ -15,7 +15,7 @@ export type UnusedField = {
  * fixture is a field the document promises and no code honours, which is the
  * defect this exists to catch.
  */
-export function wiring(root: string, apart = true): UnusedField[]
+export function findUnusedFields(root: string, apart = true): UnusedField[]
 {
     const sources = walk(root)
         .filter((file) => !tested(file))

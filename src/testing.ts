@@ -1,8 +1,8 @@
 export { startTestKernel, TestTables, createCaller } from "./testing/startTestKernel";
-export { boundaries } from "./testing/boundaries";
-export { missing, oversized, undocumented, unexplained } from "./testing/docs";
+export { findImportViolations } from "./testing/boundaries";
+export { findMissingDocs, findOversizedDocs, findUndocumentedKeys, findUnexplainedPlugins } from "./testing/docs";
 export { Project } from "./testing/project";
-export { wiring } from "./testing/wiring";
+export { findUnusedFields } from "./testing/wiring";
 
 export type { TestKernel, TestKernelOptions, OutboundCall, LogLine } from "./testing/startTestKernel";
 export type { Caller, Outbound } from "./plugins/kernel/api";

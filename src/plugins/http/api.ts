@@ -1,8 +1,8 @@
-import { always } from "./internal/headers";
-import { identifier, serve, type ServerOptions } from "./internal/serve";
+import { securityHeaders } from "./internal/headers";
+import { requestId, serve, type ServerOptions } from "./internal/serve";
 
 export type Server = ReturnType<typeof serve>;
 
-export { always, identifier, serve };
+export { securityHeaders, requestId, serve };
 export type { ServerOptions };
 

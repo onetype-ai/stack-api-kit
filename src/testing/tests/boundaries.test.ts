@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { boundaries } from "../boundaries";
+import { findImportViolations } from "../boundaries";
 
 let root = "";
 
@@ -42,7 +42,7 @@ describe("a plugin reaching another", () =>
 {
     test("passes when it is declared and goes through the public index", () =>
     {
-        const found = boundaries(
+        const found = findImportViolations(
             tree({
                 auth: { "plugin.ts": declares("auth") },
                 demo: {
@@ -57,7 +57,7 @@ describe("a plugin reaching another", () =>
 
     test("refuses an import nothing declared", () =>
     {
-        const found = boundaries(
+        const found = findImportViolations(
             tree({
                 auth: { "plugin.ts": declares("auth") },
                 demo: {
@@ -73,7 +73,7 @@ describe("a plugin reaching another", () =>
 
     test("refuses a reach past the public index", () =>
     {
-        const found = boundaries(
+        const found = findImportViolations(
             tree({
                 auth: { "plugin.ts": declares("auth") },
                 demo: {
@@ -88,7 +88,7 @@ describe("a plugin reaching another", () =>
 
     test("refuses a relative path that climbs into another plugin", () =>
     {
-        const found = boundaries(
+        const found = findImportViolations(
             tree({
                 auth: { "plugin.ts": declares("auth"), "types/Session.ts": "export type Session = { id: string };" },
                 demo: {
@@ -104,7 +104,7 @@ describe("a plugin reaching another", () =>
 
     test("ignores a relative import inside one plugin", () =>
     {
-        const found = boundaries(
+        const found = findImportViolations(
             tree({
                 demo: {
                     "plugin.ts": declares("demo"),
@@ -122,7 +122,7 @@ describe("cycles", () =>
 {
     test("names a loop between two plugins", () =>
     {
-        const found = boundaries(
+        const found = findImportViolations(
             tree({
                 a: { "plugin.ts": declares("a", ["b"]), "use.ts": 'import { b } from "@plugins/b";' },
                 b: { "plugin.ts": declares("b", ["a"]), "use.ts": 'import { a } from "@plugins/a";' },
@@ -136,7 +136,7 @@ describe("cycles", () =>
 
     test("a one-way dependency is not a cycle", () =>
     {
-        const found = boundaries(
+        const found = findImportViolations(
             tree({
                 auth: { "plugin.ts": declares("auth") },
                 demo: { "plugin.ts": declares("demo", ["auth"]), "use.ts": 'import { auth } from "@plugins/auth";' },
@@ -168,7 +168,7 @@ describe("what a test may reach", () =>
 
         writeFileSync(join(at, "orders", "tests", "api.test.ts"), 'import catalog from "@plugins/catalog/plugin";\n');
 
-        expect(boundaries(at)).toEqual([]);
+        expect(findImportViolations(at)).toEqual([]);
 
         rmSync(at, { recursive: true, force: true });
     });
@@ -179,7 +179,7 @@ describe("what a test may reach", () =>
 
         writeFileSync(join(at, "orders", "tests", "api.test.ts"), 'import catalog from "@plugins/catalog/plugin";\n');
 
-        expect(boundaries(at).map((wrong) => wrong.rule).sort()).toEqual(["deep", "undeclared"]);
+        expect(findImportViolations(at).map((wrong) => wrong.rule).sort()).toEqual(["deep", "undeclared"]);
 
         rmSync(at, { recursive: true, force: true });
     });
@@ -190,7 +190,7 @@ describe("what a test may reach", () =>
 
         writeFileSync(join(at, "orders", "tests", "api.test.ts"), 'import { rows } from "@plugins/catalog/tables/rows";\n');
 
-        expect(boundaries(at).map((wrong) => wrong.rule)).toEqual(["deep"]);
+        expect(findImportViolations(at).map((wrong) => wrong.rule)).toEqual(["deep"]);
 
         rmSync(at, { recursive: true, force: true });
     });
@@ -201,7 +201,7 @@ describe("what a test may reach", () =>
 
         writeFileSync(join(at, "orders", "services.ts"), 'import catalog from "@plugins/catalog/plugin";\n');
 
-        expect(boundaries(at).map((wrong) => wrong.rule)).toEqual(["deep"]);
+        expect(findImportViolations(at).map((wrong) => wrong.rule)).toEqual(["deep"]);
 
         rmSync(at, { recursive: true, force: true });
     });

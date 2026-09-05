@@ -13,7 +13,7 @@
  *   next.
  * - no-referrer keeps a path with an id in it from reaching another origin.
  */
-export const always: Readonly<Record<string, string>> = {
+export const securityHeaders: Readonly<Record<string, string>> = {
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY",
     "referrer-policy": "no-referrer",

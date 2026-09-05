@@ -36,7 +36,7 @@ test("a write carries the caller's scope, not the one it asked for", async () =>
             }),
         })],
         db: store,
-        ...(store.narrowing !== undefined && { narrow: store.narrowing() }),
+        ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
     });
 
     await kernel.start();
