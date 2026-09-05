@@ -125,7 +125,7 @@ describe("a table a plugin scoped", () =>
                 version: "1.0.0",
                 describe: "Scopes what it has not got.",
                 tables: { notes },
-                scope: { describe: "x", claim: "tenantId", tables: { findMissingDocs: "tenantId" } },
+                scope: { describe: "x", claim: "tenantId", tables: { items: "tenantId" } },
             })],
         });
 

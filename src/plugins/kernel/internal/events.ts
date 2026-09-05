@@ -116,11 +116,11 @@ export function events<Context>(now: () => number = Date.now, told: Told = () =>
          * The emitter never waits on this: it returns void from `emit`, and
          * one plugin's slow listener is not another's slow request. What does
          * wait is an outbox, which cannot forget an event until something has
-         * actually deliveries it.
+         * actually heard it.
          */
-        // Answers whether every listener deliveries it. An outbox may only forget an
+        // Answers whether every listener delivered it. An outbox may only forget an
         // event once one did, and a failure recorded but not reported would let
-        // it forget one nobody deliveries at all.
+        // it forget one nobody delivered at all.
         deliver: (plugin: string, name: string, payload: unknown, ctx: (plugin: string) => Context): Promise<boolean> =>
         {
             const deliveries: Promise<boolean>[] = [];

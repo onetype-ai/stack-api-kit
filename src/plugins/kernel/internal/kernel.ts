@@ -332,7 +332,7 @@ export function createKernel(options: Options): Kernel
     const inFlight = new Set<Promise<unknown>>();
     let started: Plugin[] = [];
 
-    const findUnusedFields: Wiring = {
+    const wiring: Wiring = {
         known,
         parsed,
         open: new AsyncLocalStorage<object>(),
@@ -353,7 +353,7 @@ export function createKernel(options: Options): Kernel
 
     const seenBy = (plugin: string, caller?: Caller, headers?: Readonly<Record<string, string>>): Context =>
     {
-        return context(findUnusedFields, plugin, caller, undefined, headers);
+        return context(wiring, plugin, caller, undefined, headers);
     };
 
     /** Runs a command, after its permission and its schema. */

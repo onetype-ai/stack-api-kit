@@ -352,7 +352,7 @@ describe("references", () =>
         expect(failed?.code).toBe("UNDECLARED_EVENT");
     });
 
-    test("still refuses createCaller a plugin it does not depend on", async () =>
+    test("still refuses reaching a plugin it does not depend on", async () =>
     {
         const kernel = createKernel({
             plugins: [made("auth", { services: () => ({ token: "x" }) }), made("billing")],

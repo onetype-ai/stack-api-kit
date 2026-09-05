@@ -39,7 +39,7 @@ export function findOversizedDocs(root: string, limit: number = LIMIT): Oversize
 }
 
 // A document that is present but empty reads as done and says nothing, which
-// is worse than one that is findMissingDocs and obviously so.
+// is worse than one that is missing and obviously so.
 export function findMissingDocs(root: string, required: readonly string[]): string[]
 {
     return required.filter((path) =>
