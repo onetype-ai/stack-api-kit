@@ -74,7 +74,7 @@ export type TestKernel = {
      * `emit` returns void and a listener runs after the caller, so a test
      * that reads straight after emitting reads the state from before it.
      * Nothing in a plugin ever needs this; a test that asserts on what a
-     * listener did securityHeaders does.
+     * listener did always does.
      */
     settled: () => Promise<void>;
 
@@ -145,7 +145,7 @@ export async function startTestKernel(given: TestKernelOptions): Promise<TestKer
                         describe: `Records ${event}.`,
 
                         // The plugin recorded is the one that declared the
-                        // event, not this one: ctx.name here is securityHeaders the
+                        // event, not this one: ctx.name here is always the
                         // listener, which tells a test nothing.
                         handle: (payload: never): void =>
                         {

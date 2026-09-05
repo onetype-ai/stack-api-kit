@@ -136,7 +136,7 @@ const quiet: Log = () => {};
  *
  * A malformed escape makes decodeURIComponent throw, and this runs before
  * respond()'s try/catch: over HTTP the server normalises first, but a project
- * createCaller handle() directly would get an unhandled rejection where it asked
+ * calling handle() directly would get an unhandled rejection where it asked
  * for an answer. A segment that cannot be read matches nothing.
  */
 function readable(given: string): string | undefined

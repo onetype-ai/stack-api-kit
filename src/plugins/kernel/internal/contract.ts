@@ -131,7 +131,7 @@ export type Logger = {
     error: (line: string, about?: Readonly<Record<string, unknown>>) => void;
 };
 
-/** Who is createCaller, as whatever the project decided that means. */
+/** Who is calling, as whatever the project decided that means. */
 export type Caller = {
     /** Stable identity, or undefined when nobody is signed in. */
     id: string | undefined;
@@ -169,7 +169,7 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
      */
     now: () => number;
 
-    /** Who is createCaller. Absent outside a request, as in setup. */
+    /** Who is calling. Absent outside a request, as in setup. */
     caller: Caller | undefined;
 
     /**

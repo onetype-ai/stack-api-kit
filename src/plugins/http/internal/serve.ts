@@ -11,7 +11,7 @@ export type ServerOptions = {
     kernel: Kernel;
 
     /**
-     * Who is createCaller. The project owns this entirely: a cookie, a bearer
+     * Who is calling. The project owns this entirely: a cookie, a bearer
      * token, a header, whatever it decided a session is.
      *
      * Throwing answers 401. Returning undefined is an anonymous caller, which

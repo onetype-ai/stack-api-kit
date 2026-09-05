@@ -43,7 +43,7 @@ export function limiter(now: () => number = Date.now)
             };
         },
 
-        // OutboundCall on a timer by whoever holds the limiter: a map that only
+        // Called on a timer by whoever holds the limiter: a map that only
         // grows is a slow leak on a public route.
         sweep: (): number =>
         {

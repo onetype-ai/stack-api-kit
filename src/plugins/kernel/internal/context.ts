@@ -108,7 +108,7 @@ export function context(findUnusedFields: Wiring, plugin: string, caller?: Calle
         return context(findUnusedFields, plugin, caller, inside, headers, acting);
     };
 
-    /** What a listener is handed: this plugin, and nobody createCaller. */
+    /** What a listener is handed: this plugin, and nobody calling. */
     const heard = (plugin: string): Context =>
     {
         return context(findUnusedFields, plugin, undefined, undefined, {});
@@ -337,7 +337,7 @@ export function context(findUnusedFields: Wiring, plugin: string, caller?: Calle
                 );
             }
 
-            // Declared, but not something this can carry. LogLine plainly,
+            // Declared, but not something this can carry. Said plainly,
             // because "add it to outbound" for a host already in outbound
             // sends the reader looking for a problem that is not there.
             if (!dialable(call.url))
@@ -374,7 +374,7 @@ export function context(findUnusedFields: Wiring, plugin: string, caller?: Calle
                     return;
                 }
 
-                // On nobody's behalf, securityHeaders. A listener that inherited the
+                // On nobody's behalf, always. A listener that inherited the
                 // emitter's caller would work in one process and answer as
                 // nobody after a restart, because an outbox keeps a payload
                 // and not a request. Whose work this was travels in the
@@ -446,7 +446,7 @@ export function context(findUnusedFields: Wiring, plugin: string, caller?: Calle
 
         forScope: (claim: string): Context =>
         {
-            // Only where nobody is createCaller. Inside a request the scope is
+            // Only where nobody is calling. Inside a request the scope is
             // decided by who is asking, and letting a handler name another
             // is how a caller reaches rows that are not theirs.
             if (caller !== undefined)

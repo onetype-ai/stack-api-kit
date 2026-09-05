@@ -432,7 +432,7 @@ function refers(name: string, plugin: Plugin, by: ReadonlyMap<string, Plugin>, o
     }
 
     // A hook is the same: the owner runs it and reads what comes back, so the
-    // participant is the one being called, not the one createCaller.
+    // participant is the one being called, not the one calling.
     for (const key of Object.keys(plugin.definition.participates ?? {}))
     {
         exists("hooks", key, "UNDECLARED_HOOK", "Hook");

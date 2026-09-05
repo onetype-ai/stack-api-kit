@@ -83,11 +83,11 @@ describe("cancelling", () =>
 
         const stopper = new AbortController();
 
-        const createCaller = dial()({ method: "GET", url: "https://api.example.test/x", signal: stopper.signal });
+        const aborted = dial()({ method: "GET", url: "https://api.example.test/x", signal: stopper.signal });
 
         stopper.abort();
 
-        await expect(createCaller).rejects.toMatchObject({ code: "ABORTED" });
+        await expect(aborted).rejects.toMatchObject({ code: "ABORTED" });
     });
 
     test("answers TIMEOUT when nothing came back in time", async () =>

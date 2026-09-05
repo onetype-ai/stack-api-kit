@@ -21,7 +21,7 @@ export type StartOptions = {
     config?: Readonly<Record<string, unknown>> | undefined;
 
     /**
-     * Who is createCaller.
+     * Who is calling.
      *
      * Given the kernel, because anything reading a session reads it from a
      * plugin, and the kernel is what reaches one. Passing the function
