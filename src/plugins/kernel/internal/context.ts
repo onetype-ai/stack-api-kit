@@ -48,7 +48,7 @@ export type Wiring = {
 };
 
 /** Where in a transaction a context sits, if it is in one at all. */
-type Within = {
+type OpenTx = {
     mark: object;
     db: unknown;
 };
@@ -100,7 +100,7 @@ function dialable(url: string): boolean
  * Built per request rather than kept: one kernel answers every request, and a
  * context holding a caller would hand the next request the previous one.
  */
-export function context(wiring: Wiring, plugin: string, caller?: Caller, within?: Within, headers: Readonly<Record<string, string>> = {}, acting?: string): Context
+export function context(wiring: Wiring, plugin: string, caller?: Caller, within?: OpenTx, headers: Readonly<Record<string, string>> = {}, acting?: string): Context
 {
     const may = permissions(() => caller);
     const seenBy = (plugin: string, inside = within): Context =>

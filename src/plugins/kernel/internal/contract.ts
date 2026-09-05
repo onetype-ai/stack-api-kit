@@ -319,7 +319,7 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
  * callback taking a context would otherwise be a second inference site, and
  * two candidates for one parameter resolve to unknown.
  */
-type Given<Result> = NoInfer<Result>;
+type Exactly<Result> = NoInfer<Result>;
 
 /** Everything a plugin declares about itself. */
 export type Definition<
@@ -372,18 +372,18 @@ export type Definition<
      * is sound here precisely because the kernel parses before it calls: what
      * failed the schema never arrives.
      */
-    routes?: readonly Endpoint<Context<z.infer<Schema>, Given<Services>, Db>>[];
+    routes?: readonly Endpoint<Context<z.infer<Schema>, Exactly<Services>, Db>>[];
 
     emits?: Readonly<Record<string, Event>>;
-    listens?: Readonly<Record<string, EmittedEvent<Context<z.infer<Schema>, Given<Services>, Db>>>>;
+    listens?: Readonly<Record<string, EmittedEvent<Context<z.infer<Schema>, Exactly<Services>, Db>>>>;
 
     hooks?: Readonly<Record<string, Hook>>;
-    participates?: Readonly<Record<string, Participation<Context<z.infer<Schema>, Given<Services>, Db>>>>;
+    participates?: Readonly<Record<string, Participation<Context<z.infer<Schema>, Exactly<Services>, Db>>>>;
 
-    commands?: Readonly<Record<string, Run<Context<z.infer<Schema>, Given<Services>, Db>>>>;
+    commands?: Readonly<Record<string, Run<Context<z.infer<Schema>, Exactly<Services>, Db>>>>;
 
-    setup?: (ctx: Context<z.infer<Schema>, Given<Services>, Db>) => void | Promise<void>;
-    teardown?: (ctx: Context<z.infer<Schema>, Given<Services>, Db>) => void | Promise<void>;
+    setup?: (ctx: Context<z.infer<Schema>, Exactly<Services>, Db>) => void | Promise<void>;
+    teardown?: (ctx: Context<z.infer<Schema>, Exactly<Services>, Db>) => void | Promise<void>;
 };
 
 /** A plugin: its name, and what it declared. */

@@ -9,7 +9,7 @@ export type Verdict = {
     resetsIn: number;
 };
 
-type Counted = {
+type Bucket = {
     hits: number;
     until: number;
 };
@@ -19,7 +19,7 @@ type Counted = {
 // in proportion to itself.
 export function limiter(now: () => number = Date.now)
 {
-    const counted = new Map<string, Counted>();
+    const counted = new Map<string, Bucket>();
 
     return {
         take: (key: string, window: Window): Verdict =>

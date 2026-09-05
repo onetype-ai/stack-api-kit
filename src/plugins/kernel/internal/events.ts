@@ -35,9 +35,9 @@ type Subscriber<Context> = {
     listener: EmittedEvent<Context>;
 };
 
-type Told = (plugin: string, line: string, about: Readonly<Record<string, unknown>>) => void;
+type Report = (plugin: string, line: string, about: Readonly<Record<string, unknown>>) => void;
 
-export function events<Context>(now: () => number = Date.now, told: Told = () => {})
+export function events<Context>(now: () => number = Date.now, told: Report = () => {})
 {
     const published = new Map<string, Published>();
     const subscribers = new Map<string, Subscriber<Context>[]>();

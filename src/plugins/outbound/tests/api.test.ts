@@ -2,13 +2,13 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { dial, OutboundFault } from "../api";
 
-type Answering = {
+type Stubbed = {
     status?: number;
     body?: string;
     redirected?: boolean;
 };
 
-function answering(answer: Answering = {}): void
+function answering(answer: Stubbed = {}): void
 {
     vi.stubGlobal("fetch", (_url: string, init?: RequestInit) =>
     {

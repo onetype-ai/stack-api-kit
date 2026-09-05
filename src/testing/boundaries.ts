@@ -12,7 +12,7 @@ export type ImportViolation = {
     message: string;
 };
 
-type Read = {
+type PluginImports = {
     name: string;
     declared: Set<string>;
 
@@ -62,7 +62,7 @@ export function findImportViolations(root: string): ImportViolation[]
  *
  * Dependencies are not widened this way: only what a test has to assemble.
  */
-function needed(plugins: readonly Read[]): Read[]
+function needed(plugins: readonly PluginImports[]): PluginImports[]
 {
     const answers = new Map(plugins.map((one) => [one.name, one.answers]));
     const declared = new Map(plugins.map((one) => [one.name, one.declared]));
@@ -97,7 +97,7 @@ function needed(plugins: readonly Read[]): Read[]
     });
 }
 
-function read(root: string, name: string, names: readonly string[]): Read
+function read(root: string, name: string, names: readonly string[]): PluginImports
 {
     const others = new Set(names.filter((one) => one !== name));
     const contract = readFileSync(join(root, name, "plugin.ts"), "utf8");
@@ -188,7 +188,7 @@ function crossings(name: string, path: string, source: string, others: ReadonlyS
     });
 }
 
-function undeclared(plugins: readonly Read[]): ImportViolation[]
+function undeclared(plugins: readonly PluginImports[]): ImportViolation[]
 {
     return plugins.flatMap((one) =>
         one.crossings
@@ -227,7 +227,7 @@ function tested(path: string): boolean
     return /(^|\/)tests?\//.test(path) || /\.test\.tsx?$/.test(path);
 }
 
-function deep(plugins: readonly Read[]): ImportViolation[]
+function deep(plugins: readonly PluginImports[]): ImportViolation[]
 {
     return plugins.flatMap((one) =>
         one.crossings
@@ -251,7 +251,7 @@ function deep(plugins: readonly Read[]): ImportViolation[]
     );
 }
 
-function cycles(plugins: readonly Read[]): ImportViolation[]
+function cycles(plugins: readonly PluginImports[]): ImportViolation[]
 {
     const edges = new Map(plugins.map((one) => [one.name, new Set(one.crossings.map((crossing) => crossing.to))]));
     const found: ImportViolation[] = [];

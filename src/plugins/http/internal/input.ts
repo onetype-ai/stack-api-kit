@@ -1,5 +1,5 @@
 /** What one request carries, before any schema has looked at it. */
-export type Carried = {
+export type RequestInput = {
     params: Readonly<Record<string, string>>;
     query: Readonly<Record<string, string[]>>;
     body: unknown;
@@ -20,7 +20,7 @@ const UNSAFE: ReadonlySet<string> = new Set(["__proto__", "constructor", "protot
  * ahead of the schema decides what "0x10" or "" mean before the schema that
  * owns the field gets a say.
  */
-export function input(carried: Carried): Record<string, unknown>
+export function input(carried: RequestInput): Record<string, unknown>
 {
     const merged: Record<string, unknown> = {};
 

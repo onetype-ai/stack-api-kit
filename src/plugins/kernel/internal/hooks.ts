@@ -9,7 +9,7 @@ type Opened = {
     hook: Hook;
 };
 
-type Participating<Context> = {
+type Enrolled<Context> = {
     plugin: string;
     participant: Participation<Context>;
 };
@@ -26,7 +26,7 @@ const PATIENCE = 5000;
 export function hooks<Context>(patience: number = PATIENCE)
 {
     const opened = new Map<string, Opened>();
-    const joined = new Map<string, Participating<Context>[]>();
+    const joined = new Map<string, Enrolled<Context>[]>();
 
     return {
         declare: (owner: string, name: string, hook: Hook): void =>

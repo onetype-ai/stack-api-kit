@@ -8,7 +8,7 @@ import { createKernel, definePlugin } from "../api";
 
 const items = sqliteTable("probe_items", { id: text("id").primaryKey(), title: text("title").notNull() });
 
-type Rows = BetterSQLite3Database<{ items: typeof items }>;
+type ItemsDb = BetterSQLite3Database<{ items: typeof items }>;
 
 describe("what a plugin gets without writing a cast", () =>
 {
@@ -18,7 +18,7 @@ describe("what a plugin gets without writing a cast", () =>
 
         type Services = { query: () => unknown; size: () => number };
 
-        const plugin = definePlugin.over<Rows, Services>()("probe", {
+        const plugin = definePlugin.over<ItemsDb, Services>()("probe", {
             version: "1.0.0",
             describe: "Queries its own tables.",
             tables: { items },

@@ -13,7 +13,7 @@ export async function start(starting: StartOptions): Promise<RunningApp>
 {
     const log = starting.log;
 
-    // A store the project built, or one opened here from a path. Told apart
+    // A store the project built, or one opened here from a path. Report apart
     // by what it answers to, not by a flag: a Store has methods, an DatabaseOptions
     // has a file.
     const given = starting.database;
