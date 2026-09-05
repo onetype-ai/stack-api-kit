@@ -50,7 +50,7 @@ function billing(): Plugin
     });
 }
 
-function serving()
+function startServer()
 {
     const store = database({ file: ":memory:", tables: { billing: { notes } } });
 
@@ -61,7 +61,7 @@ function serving()
     return store;
 }
 
-function who(tenant?: string): Caller
+function shopCaller(tenant?: string): Caller
 {
     return { id: "u1", permissions: [], claims: tenant === undefined ? {} : { tenantId: tenant } };
 }
@@ -70,7 +70,7 @@ describe("a table a plugin scoped", () =>
 {
     test("answers only the caller's rows, and the same 404 for another's", async () =>
     {
-        const store = serving();
+        const store = startServer();
 
         store.of("billing").$client.exec(
             "INSERT INTO billing_notes VALUES ('a', 'acme', 'ours'), ('b', 'other', 'theirs')",
@@ -86,7 +86,7 @@ describe("a table a plugin scoped", () =>
 
         type Reached = { list: () => Promise<string[]>; one: (id: string) => Promise<string | undefined> };
 
-        const mine = kernel.context("billing", who("acme")).services as Reached;
+        const mine = kernel.context("billing", shopCaller("acme")).services as Reached;
 
         expect(await mine.list()).toEqual(["ours"]);
         expect(await mine.one("a")).toBe("ours");
@@ -100,7 +100,7 @@ describe("a table a plugin scoped", () =>
 
     test("refuses a caller carrying no such claim, rather than defaulting", async () =>
     {
-        const store = serving();
+        const store = startServer();
 
         const kernel = createKernel({
             plugins: [billing()],
@@ -110,7 +110,7 @@ describe("a table a plugin scoped", () =>
 
         await kernel.start();
 
-        const nobody = kernel.context("billing", who()).services as { list: () => Promise<string[]> };
+        const nobody = kernel.context("billing", shopCaller()).services as { list: () => Promise<string[]> };
 
         await expect(nobody.list()).rejects.toThrow(Refusal);
 

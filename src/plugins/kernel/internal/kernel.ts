@@ -139,7 +139,7 @@ const quiet: Log = () => {};
  * calling handle() directly would get an unhandled rejection where it asked
  * for an answer. A segment that cannot be read matches nothing.
  */
-function readable(given: string): string | undefined
+function decodeSegment(given: string): string | undefined
 {
     try
     {
@@ -151,7 +151,7 @@ function readable(given: string): string | undefined
     }
 }
 
-function matched(
+function routeFor(
     routes: ReadonlyMap<string, Mounted>,
     method: Method,
     path: string,
@@ -168,7 +168,7 @@ function matched(
 
     // A static route the caller wrote encoded: found here rather than left to
     // the parameter routes below, which would answer for it.
-    const plain = routes.get(`${method} ${asked.map((one) => readable(one) ?? one).join("/")}`);
+    const plain = routes.get(`${method} ${asked.map((one) => decodeSegment(one) ?? one).join("/")}`);
 
     if (plain !== undefined)
     {
@@ -200,10 +200,10 @@ function matched(
             {
                 // Decoded before comparing, or "/users/%6de" misses the route
                 // "/users/me" declares and lands on "/users/:id" instead.
-                return part === readable(given);
+                return part === decodeSegment(given);
             }
 
-            const value = readable(given);
+            const value = decodeSegment(given);
 
             if (value === undefined)
             {
@@ -225,7 +225,7 @@ function matched(
 }
 
 /** The input a route sees: what the caller passed, with the path on top. */
-function taken(input: unknown, params: Readonly<Record<string, string>>): unknown
+function withPathParams(input: unknown, params: Readonly<Record<string, string>>): unknown
 {
     if (Object.keys(params).length === 0)
     {
@@ -602,7 +602,7 @@ export function createKernel(options: Options): Kernel
                 return Promise.resolve(notServing);
             }
 
-            const found = matched(routes, incoming.method, incoming.path);
+            const found = routeFor(routes, incoming.method, incoming.path);
 
             if (found === undefined)
             {
@@ -615,7 +615,7 @@ export function createKernel(options: Options): Kernel
             // for rather than like the routing table.
             const answering = respond(
                 found.mounted,
-                { ...incoming, input: taken(incoming.input, found.params) },
+                { ...incoming, input: withPathParams(incoming.input, found.params) },
                 seenBy,
                 log,
                 options.budget,

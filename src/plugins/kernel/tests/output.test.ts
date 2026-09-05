@@ -6,7 +6,7 @@ import type { Definition, Plugin } from "../api";
 
 const SECRET = { id: "u1", email: "a@b.test", passwordHash: "$2b$LEAK", totpSecret: "LEAK2" };
 
-function serving(output: z.ZodType): Plugin
+function startServer(output: z.ZodType): Plugin
 {
     return definePlugin("probe", {
         version: "1.0.0",
@@ -25,7 +25,7 @@ function serving(output: z.ZodType): Plugin
 
 async function refused(output: z.ZodType): Promise<string | undefined>
 {
-    const kernel = createKernel({ plugins: [serving(output)] });
+    const kernel = createKernel({ plugins: [startServer(output)] });
 
     try
     {
@@ -159,7 +159,7 @@ describe("what a filtering schema actually sends", () =>
 {
     test("drops every field the schema does not name", async () =>
     {
-        const kernel = createKernel({ plugins: [serving(z.object({ id: z.string() }))] });
+        const kernel = createKernel({ plugins: [startServer(z.object({ id: z.string() }))] });
 
         await kernel.start();
 

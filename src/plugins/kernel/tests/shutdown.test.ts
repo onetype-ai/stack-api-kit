@@ -6,7 +6,7 @@ import { createKernel, definePlugin } from "../api";
 
 import type { Definition, Plugin } from "../api";
 
-function made(name: string, found: Partial<Definition> = {}): Plugin
+function participant(name: string, found: Partial<Definition> = {}): Plugin
 {
     return definePlugin(name, { version: "1.0.0", describe: `The ${name} plugin.`, ...found });
 }
@@ -17,7 +17,7 @@ test("a request in flight is answered before the plugins are torn down", async (
     const store = database({ file: ":memory:", tables: { a: {} } });
 
     const kernel = createKernel({
-        plugins: [made("a", {
+        plugins: [participant("a", {
             teardown: () => { order.push("teardown"); },
             routes: [{
                 method: "POST",
@@ -64,7 +64,7 @@ test("a request in flight is answered before the plugins are torn down", async (
 test("a kernel that has stopped refuses rather than answering", async () =>
 {
     const kernel = createKernel({
-        plugins: [made("a", {
+        plugins: [participant("a", {
             routes: [{
                 method: "GET",
                 path: "/ping",

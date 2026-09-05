@@ -7,7 +7,7 @@ import { createKernel, definePlugin } from "../api";
 
 import type { Plugin } from "../api";
 
-function holding(ran: string[], throwsFirst = false): Plugin
+function scheduled(ran: string[], throwsFirst = false): Plugin
 {
     let tries = 0;
 
@@ -45,7 +45,7 @@ describe("work asked for later", () =>
         let clock = 1_000_000;
 
         const kernel = createKernel({
-            plugins: [holding(ran)],
+            plugins: [scheduled(ran)],
             schedule: waiting,
             now: () => clock,
             beat: 5,
@@ -78,7 +78,7 @@ describe("work asked for later", () =>
         let clock = 1_000_000;
 
         const kernel = createKernel({
-            plugins: [holding(ran, true)],
+            plugins: [scheduled(ran, true)],
             schedule: waiting,
             now: () => clock,
             beat: 5,
@@ -181,7 +181,7 @@ describe("work asked for later", () =>
     test("refuses a command the plugin does not declare", async () =>
     {
         const connection = new Database(":memory:");
-        const kernel = createKernel({ plugins: [holding([])], schedule: schedule(connection) });
+        const kernel = createKernel({ plugins: [scheduled([])], schedule: schedule(connection) });
 
         await kernel.start();
 

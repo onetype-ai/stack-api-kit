@@ -131,7 +131,7 @@ export async function respond(
             throw new Refusal(400, "INVALID_INPUT", "The request is not valid.", fields(parsed.error));
         }
 
-        const returned = await route.handle(parsed.data, context(plugin, caller, declared(route, incoming.headers)));
+        const returned = await route.handle(parsed.data, context(plugin, caller, headersFor(route, incoming.headers)));
 
         // A handler may say what status and headers its answer carries. The
         // body still passes the schema either way: what a route sends is
@@ -154,7 +154,7 @@ export async function respond(
 
         if (carried !== undefined)
         {
-            return { status: carried.status, body: filtered.data, headers: sendable(carried.headers, plugin, route, log) };
+            return { status: carried.status, body: filtered.data, headers: filterHeaders(carried.headers, plugin, route, log) };
         }
 
         return { status: route.method === "POST" ? 201 : 200, body: filtered.data };
@@ -171,7 +171,7 @@ export async function respond(
         // why, which is the moment the log existed for.
         if (refusal.status >= 500)
         {
-            log("error", plugin, `${route.method} ${route.path} threw`, told(cause));
+            log("error", plugin, `${route.method} ${route.path} threw`, logRecord(cause));
         }
 
         return {
@@ -186,7 +186,7 @@ export async function respond(
 }
 
 /** What a thrown thing says, in a shape that survives being written down. */
-function told(cause: unknown): Readonly<Record<string, unknown>>
+function logRecord(cause: unknown): Readonly<Record<string, unknown>>
 {
     if (cause instanceof Error)
     {
@@ -194,7 +194,7 @@ function told(cause: unknown): Readonly<Record<string, unknown>>
             error: cause.message,
             kind: cause.name,
             ...(cause.stack !== undefined && { stack: cause.stack }),
-            ...(cause.cause !== undefined && { cause: told(cause.cause) }),
+            ...(cause.cause !== undefined && { cause: logRecord(cause.cause) }),
         };
     }
 
@@ -219,7 +219,7 @@ const KEPT: ReadonlySet<string> = new Set([
 ]);
 
 /** The headers a handler asked for, minus the ones it may not set. */
-function sendable(
+function filterHeaders(
     asked: Readonly<Record<string, string>>,
     plugin: string,
     route: Route<Context>,
@@ -260,7 +260,7 @@ function sendable(
  * A handler that could read any header could read the cookie carrying the
  * session, and anything logging its input would then be logging a credential.
  */
-function declared(route: Route<Context>, sent: Readonly<Record<string, string>> = {}): Readonly<Record<string, string>>
+function headersFor(route: Route<Context>, sent: Readonly<Record<string, string>> = {}): Readonly<Record<string, string>>
 {
     const sending: Record<string, string> = {};
 

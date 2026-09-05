@@ -18,7 +18,7 @@ export type UnusedField = {
 export function findUnusedFields(root: string, apart = true): UnusedField[]
 {
     const sources = walk(root)
-        .filter((file) => !tested(file))
+        .filter((file) => !isTest(file))
         .map((file): [string, string] => [file, withoutComments(readFileSync(file, "utf8"))]);
 
     const unread: UnusedField[] = [];
@@ -31,7 +31,7 @@ export function findUnusedFields(root: string, apart = true): UnusedField[]
         // somewhere in any codebase, and would be certified everywhere.
         const owns = apart ? within(sources, file) : sources;
 
-        for (const { shape, field } of declared(source))
+        for (const { shape, field } of fieldsIn(source))
         {
             if (!reads(field, owns, file))
             {
@@ -66,7 +66,7 @@ function within(sources: readonly [string, string][], file: string): [string, st
 }
 
 /** Whether a file is a test rather than the code a contract is honoured by. */
-function tested(file: string): boolean
+function isTest(file: string): boolean
 {
     return /(^|\/)tests?\//.test(file) || /\.test\.tsx?$/.test(file);
 }
@@ -114,7 +114,7 @@ function walk(path: string): string[]
 
 // A contract is what crosses a boundary, so only exported shapes count: an
 // internal type is read by whoever wrote it or it would not compile.
-function declared(source: string): { shape: string; field: string }[]
+function fieldsIn(source: string): { shape: string; field: string }[]
 {
     const found: { shape: string; field: string }[] = [];
 

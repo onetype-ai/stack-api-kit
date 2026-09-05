@@ -11,7 +11,7 @@ function createCaller(permissions: readonly string[] = [], id: string | undefine
 }
 
 /** A kernel holding one plugin, started and ready to answer. */
-async function serving(found: Partial<Definition>, lines: unknown[] = []): Promise<Kernel>
+async function startServer(found: Partial<Definition>, lines: unknown[] = []): Promise<Kernel>
 {
     const kernel = createKernel({
         plugins: [definePlugin("items", { version: "1.0.0", describe: "Owns items.", ...found } as Definition)],
@@ -30,7 +30,7 @@ describe("finding a route", () =>
 {
     test("answers 404 for a path nothing declared", async () =>
     {
-        const kernel = await serving({});
+        const kernel = await startServer({});
 
         const answered = await kernel.handle({ method: "GET", path: "/nope", input: {} });
 
@@ -39,7 +39,7 @@ describe("finding a route", () =>
 
     test("answers 404 the same way whether or not the caller is signed in", async () =>
     {
-        const kernel = await serving({});
+        const kernel = await startServer({});
 
         const anonymous = await kernel.handle({ method: "GET", path: "/nope", input: {} });
         const signedIn = await kernel.handle({ method: "GET", path: "/nope", input: {}, caller: createCaller() });
@@ -52,7 +52,7 @@ describe("authentication", () =>
 {
     test("refuses a caller with no id", async () =>
     {
-        const kernel = await serving({
+        const kernel = await startServer({
             routes: [{
                 method: "GET",
                 path: "/items",
@@ -70,7 +70,7 @@ describe("authentication", () =>
 
     test("lets a public route through with no caller", async () =>
     {
-        const kernel = await serving({
+        const kernel = await startServer({
             routes: [{
                 method: "GET",
                 path: "/health",
@@ -90,7 +90,7 @@ describe("authentication", () =>
     test("never reaches the handler when the caller is refused", async () =>
     {
         let ran = false;
-        const kernel = await serving({
+        const kernel = await startServer({
             routes: [{
                 method: "GET",
                 path: "/items",
@@ -129,7 +129,7 @@ describe("permissions", () =>
 
     test("refuses a caller lacking the permission", async () =>
     {
-        const kernel = await serving(guarded);
+        const kernel = await startServer(guarded);
 
         const answered = await kernel.handle({ method: "GET", path: "/items", input: {}, caller: createCaller() });
 
@@ -138,7 +138,7 @@ describe("permissions", () =>
 
     test("allows a caller carrying it", async () =>
     {
-        const kernel = await serving(guarded);
+        const kernel = await startServer(guarded);
 
         const answered = await kernel.handle({ method: "GET", path: "/items", input: {}, caller: createCaller(["items.read"]) });
 
@@ -147,7 +147,7 @@ describe("permissions", () =>
 
     test("never names the permission a caller lacks", async () =>
     {
-        const kernel = await serving(guarded);
+        const kernel = await startServer(guarded);
 
         const answered = await kernel.handle({ method: "GET", path: "/items", input: {}, caller: createCaller() });
 
@@ -156,7 +156,7 @@ describe("permissions", () =>
 
     test("answers one caller without remembering the previous one", async () =>
     {
-        const kernel = await serving(guarded);
+        const kernel = await startServer(guarded);
 
         const allowed = await kernel.handle({ method: "GET", path: "/items", input: {}, caller: createCaller(["items.read"]) });
         const refused = await kernel.handle({ method: "GET", path: "/items", input: {}, caller: createCaller() });
@@ -182,7 +182,7 @@ describe("input", () =>
 
     test("refuses a body failing the schema, naming the field", async () =>
     {
-        const kernel = await serving(taking);
+        const kernel = await startServer(taking);
 
         const answered = await kernel.handle({ method: "POST", path: "/items", input: { title: "" } });
 
@@ -193,7 +193,7 @@ describe("input", () =>
     test("hands the handler only what the schema parsed", async () =>
     {
         let seen: unknown;
-        const kernel = await serving({
+        const kernel = await startServer({
             routes: [{
                 method: "POST",
                 path: "/items",
@@ -217,7 +217,7 @@ describe("input", () =>
 
     test("answers 201 for a POST that succeeded", async () =>
     {
-        const kernel = await serving(taking);
+        const kernel = await startServer(taking);
 
         const answered = await kernel.handle({ method: "POST", path: "/items", input: { title: "one" } });
 
@@ -229,7 +229,7 @@ describe("output", () =>
 {
     test("drops what the output schema does not name", async () =>
     {
-        const kernel = await serving({
+        const kernel = await startServer({
             routes: [{
                 method: "GET",
                 path: "/me",
@@ -248,7 +248,7 @@ describe("output", () =>
 
     test("answers 500 rather than sending something the schema refuses", async () =>
     {
-        const kernel = await serving({
+        const kernel = await startServer({
             routes: [{
                 method: "GET",
                 path: "/broken",
@@ -271,7 +271,7 @@ describe("failures", () =>
 {
     test("tells the caller nothing about a handler that threw", async () =>
     {
-        const kernel = await serving({
+        const kernel = await startServer({
             routes: [{
                 method: "GET",
                 path: "/items",
@@ -295,7 +295,7 @@ describe("failures", () =>
     test("logs what it refused to tell the caller", async () =>
     {
         const lines: unknown[] = [];
-        const kernel = await serving({
+        const kernel = await startServer({
             routes: [{
                 method: "GET",
                 path: "/items",
@@ -317,7 +317,7 @@ describe("failures", () =>
 
     test("sends a Refusal exactly as the plugin wrote it", async () =>
     {
-        const kernel = await serving({
+        const kernel = await startServer({
             routes: [{
                 method: "GET",
                 path: "/items",

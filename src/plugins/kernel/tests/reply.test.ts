@@ -4,7 +4,7 @@ import { z } from "zod";
 import { Reply, createKernel, definePlugin } from "../api";
 import type { Definition, Kernel } from "../api";
 
-async function serving(handle: () => unknown, lines: unknown[] = []): Promise<Kernel>
+async function startServer(handle: () => unknown, lines: unknown[] = []): Promise<Kernel>
 {
     const kernel = createKernel({
         plugins: [definePlugin("probe", {
@@ -35,7 +35,7 @@ describe("a handler saying what its answer carries", () =>
 {
     test("sends the status and headers it named", async () =>
     {
-        const kernel = await serving(() => new Reply(302, { to: "/elsewhere" }, { location: "/elsewhere" }));
+        const kernel = await startServer(() => new Reply(302, { to: "/elsewhere" }, { location: "/elsewhere" }));
 
         const answer = await kernel.handle({ method: "GET", path: "/thing", input: {} });
 
@@ -48,8 +48,8 @@ describe("a handler saying what its answer carries", () =>
 
     test("redirects temporarily by default and permanently when asked", async () =>
     {
-        const once = await serving(() => Reply.redirect("/elsewhere"));
-        const permanent = await serving(() => Reply.redirect("/elsewhere", true));
+        const once = await startServer(() => Reply.redirect("/elsewhere"));
+        const permanent = await startServer(() => Reply.redirect("/elsewhere", true));
 
         expect((await once.handle({ method: "GET", path: "/thing", input: {} })).status).toBe(307);
         expect((await permanent.handle({ method: "GET", path: "/thing", input: {} })).status).toBe(308);
@@ -57,7 +57,7 @@ describe("a handler saying what its answer carries", () =>
 
     test("still filters the body through the output schema", async () =>
     {
-        const kernel = await serving(() => new Reply(302, { to: "/elsewhere", secret: "LEAK" }, {}));
+        const kernel = await startServer(() => new Reply(302, { to: "/elsewhere", secret: "LEAK" }, {}));
 
         const answer = await kernel.handle({ method: "GET", path: "/thing", input: {} });
 
@@ -66,7 +66,7 @@ describe("a handler saying what its answer carries", () =>
 
     test("answers 500 when the body it carries fails the schema", async () =>
     {
-        const kernel = await serving(() => new Reply(302, { wrong: true }, {}));
+        const kernel = await startServer(() => new Reply(302, { wrong: true }, {}));
 
         const answer = await kernel.handle({ method: "GET", path: "/thing", input: {} });
 
@@ -75,7 +75,7 @@ describe("a handler saying what its answer carries", () =>
 
     test("leaves a plain return answering as it always did", async () =>
     {
-        const kernel = await serving(() => ({ to: "/elsewhere" }));
+        const kernel = await startServer(() => ({ to: "/elsewhere" }));
 
         const answer = await kernel.handle({ method: "GET", path: "/thing", input: {} });
 
@@ -97,7 +97,7 @@ describe("headers a handler may not set", () =>
         test(`drops "${name}" and says so`, async () =>
         {
             const lines: unknown[] = [];
-            const kernel = await serving(() => new Reply(200, { to: "/x" }, { [name]: "anything" }), lines);
+            const kernel = await startServer(() => new Reply(200, { to: "/x" }, { [name]: "anything" }), lines);
 
             const answer = await kernel.handle({ method: "GET", path: "/thing", input: {} });
 
@@ -109,7 +109,7 @@ describe("headers a handler may not set", () =>
     test("drops a value carrying a newline rather than splitting the response", async () =>
     {
         const lines: unknown[] = [];
-        const kernel = await serving(
+        const kernel = await startServer(
             () => new Reply(200, { to: "/x" }, { "x-note": "fine\r\nset-cookie: stolen=1" }),
             lines,
         );
@@ -122,7 +122,7 @@ describe("headers a handler may not set", () =>
 
     test("lowercases what it does send", async () =>
     {
-        const kernel = await serving(() => new Reply(200, { to: "/x" }, { "X-Note": "kept" }));
+        const kernel = await startServer(() => new Reply(200, { to: "/x" }, { "X-Note": "kept" }));
 
         const answer = await kernel.handle({ method: "GET", path: "/thing", input: {} });
 

@@ -78,7 +78,7 @@ export function store(holding: StoreParts)
      * releases it, and SQLite answers "no such savepoint" to the request that
      * did nothing wrong.
      */
-    async function within<Result>(plugin: string, run: (db: unknown) => Promise<Result>): Promise<Result>
+    async function inTx<Result>(plugin: string, run: (db: unknown) => Promise<Result>): Promise<Result>
     {
         const db = of(plugin);
         const nested = inside.getStore() !== undefined;
@@ -134,7 +134,7 @@ export function store(holding: StoreParts)
             // Already inside one on this call stack: a savepoint, and never
             // queued behind the transaction it is inside, which would wait
             // for itself.
-            return inside.getStore() === undefined ? waiting.run(() => within(plugin, run)) : within(plugin, run);
+            return inside.getStore() === undefined ? waiting.run(() => inTx(plugin, run)) : inTx(plugin, run);
         },
 
         /**

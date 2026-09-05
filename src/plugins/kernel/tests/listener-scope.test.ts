@@ -13,7 +13,7 @@ const notes = sqliteTable("acting_notes", {
     body: text("body").notNull(),
 });
 
-function keeping(recorded: string[]): Plugin[]
+function recording(recorded: string[]): Plugin[]
 {
     return [
         definePlugin("source", {
@@ -47,7 +47,7 @@ function keeping(recorded: string[]): Plugin[]
     ];
 }
 
-function serving()
+function startServer()
 {
     const store = database({ file: ":memory:", tables: { keeper: { notes } } });
 
@@ -62,11 +62,11 @@ describe("a listener acting for a scope", () =>
 {
     test("reaches the scope its payload named", async () =>
     {
-        const store = serving();
+        const store = startServer();
         const recorded: string[] = [];
 
         const kernel = createKernel({
-            plugins: keeping(recorded),
+            plugins: recording(recorded),
             db: store,
             ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
         });
@@ -85,10 +85,10 @@ describe("a listener acting for a scope", () =>
 
     test("is refused inside a request, where the caller decides the scope", async () =>
     {
-        const store = serving();
+        const store = startServer();
 
         const kernel = createKernel({
-            plugins: keeping([]),
+            plugins: recording([]),
             db: store,
             ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
         });

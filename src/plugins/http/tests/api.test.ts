@@ -5,7 +5,7 @@ import { Reply, createKernel, definePlugin } from "../../kernel/api";
 import type { Caller, Definition, Kernel } from "../../kernel/api";
 import { requestId, serve, type ServerOptions } from "../api";
 
-async function serving(found: Partial<Definition> = {}, options: Partial<ServerOptions> = {}): Promise<ReturnType<typeof serve>>
+async function startServer(found: Partial<Definition> = {}, options: Partial<ServerOptions> = {}): Promise<ReturnType<typeof serve>>
 {
     const kernel: Kernel = createKernel({
         plugins: [definePlugin("items", { version: "1.0.0", describe: "Owns items.", ...found } as Definition)],
@@ -44,7 +44,7 @@ describe("headers", () =>
 {
     test("carries the security headers on every answer", async () =>
     {
-        const app = await serving(listing);
+        const app = await startServer(listing);
 
         const answer = await app.request("/items");
 
@@ -56,7 +56,7 @@ describe("headers", () =>
 
     test("carries them on a refusal too", async () =>
     {
-        const app = await serving(listing);
+        const app = await startServer(listing);
 
         const answer = await app.request("/nothing");
 
@@ -66,7 +66,7 @@ describe("headers", () =>
 
     test("answers with a request id, and keeps the one it was sent", async () =>
     {
-        const app = await serving(listing);
+        const app = await startServer(listing);
 
         const made = await app.request("/items");
         const kept = await app.request("/items", { headers: { "x-request-id": "abc-123" } });
@@ -90,7 +90,7 @@ describe("origins", () =>
 {
     test("allows one it was given", async () =>
     {
-        const app = await serving(listing, { origins: ["https://app.example.test"] });
+        const app = await startServer(listing, { origins: ["https://app.example.test"] });
 
         const answer = await app.request("/items", { headers: { origin: "https://app.example.test" } });
 
@@ -100,7 +100,7 @@ describe("origins", () =>
 
     test("never echoes one it was not given", async () =>
     {
-        const app = await serving(listing, { origins: ["https://app.example.test"] });
+        const app = await startServer(listing, { origins: ["https://app.example.test"] });
 
         const answer = await app.request("/items", { headers: { origin: "https://evil.test" } });
 
@@ -109,7 +109,7 @@ describe("origins", () =>
 
     test("says the answer varies by origin even when the origin is refused", async () =>
     {
-        const app = await serving(listing, { origins: ["https://app.example.test"] });
+        const app = await startServer(listing, { origins: ["https://app.example.test"] });
 
         const refused = await app.request("/items", { headers: { origin: "https://evil.test" } });
         const none = await app.request("/items");
@@ -120,7 +120,7 @@ describe("origins", () =>
 
     test("answers a preflight for a path some route declares", async () =>
     {
-        const app = await serving(listing, { origins: ["https://app.example.test"] });
+        const app = await startServer(listing, { origins: ["https://app.example.test"] });
 
         const answer = await app.request("/items", {
             method: "OPTIONS",
@@ -133,7 +133,7 @@ describe("origins", () =>
 
     test("refuses a preflight for a path nothing declares", async () =>
     {
-        const app = await serving(listing, { origins: ["https://app.example.test"] });
+        const app = await startServer(listing, { origins: ["https://app.example.test"] });
 
         const answer = await app.request("/no-such-route", {
             method: "OPTIONS",
@@ -145,7 +145,7 @@ describe("origins", () =>
 
     test("names only the methods the path actually answers", async () =>
     {
-        const app = await serving({
+        const app = await startServer({
             routes: [
                 { method: "GET", path: "/items", describe: "Lists.", public: true, input: z.object({}), output: z.object({}), handle: () => ({}) },
                 { method: "POST", path: "/items", describe: "Creates.", public: true, input: z.object({}), output: z.object({}), handle: () => ({}) },
@@ -163,7 +163,7 @@ describe("origins", () =>
 
     test("answers a preflight for a path holding a parameter", async () =>
     {
-        const app = await serving({
+        const app = await startServer({
             routes: [{
                 method: "GET",
                 path: "/items/:id",
@@ -200,7 +200,7 @@ describe("query parameters", () =>
 
     test("hands one value to a schema expecting one value", async () =>
     {
-        const app = await serving(asking);
+        const app = await startServer(asking);
 
         const answer = await app.request("/items?q=hello");
 
@@ -210,7 +210,7 @@ describe("query parameters", () =>
 
     test("hands a repeated parameter over as a list", async () =>
     {
-        const app = await serving({
+        const app = await startServer({
             routes: [{
                 method: "GET",
                 path: "/items",
@@ -229,7 +229,7 @@ describe("query parameters", () =>
 
     test("lets a coerced number arrive as the string a query carries", async () =>
     {
-        const app = await serving(asking);
+        const app = await startServer(asking);
 
         const answer = await app.request("/items?q=hello&page=3");
 
@@ -238,7 +238,7 @@ describe("query parameters", () =>
 
     test("drops a query key that would reach Object.prototype", async () =>
     {
-        const app = await serving(asking);
+        const app = await startServer(asking);
 
         await app.request("/items?q=hello&__proto__=polluted");
 
@@ -250,7 +250,7 @@ describe("bodies", () =>
 {
     test("refuses a body larger than the limit", async () =>
     {
-        const app = await serving(taking, { bodyBytes: 100 });
+        const app = await startServer(taking, { bodyBytes: 100 });
 
         const answer = await app.request("/items", {
             method: "POST",
@@ -267,7 +267,7 @@ describe("bodies", () =>
     // was about to be refused for asking to spend.
     test("and stops reading one that arrives without saying how big it is", async () =>
     {
-        const app = await serving(taking, { bodyBytes: 100 });
+        const app = await startServer(taking, { bodyBytes: 100 });
 
         let sent = 0;
 
@@ -299,7 +299,7 @@ describe("bodies", () =>
 
     test("refuses a body that is not JSON", async () =>
     {
-        const app = await serving(taking);
+        const app = await startServer(taking);
 
         const answer = await app.request("/items", { method: "POST", body: "{ broken" });
 
@@ -309,7 +309,7 @@ describe("bodies", () =>
 
     test("bounds a DELETE body like any other", async () =>
     {
-        const app = await serving({
+        const app = await startServer({
             routes: [{
                 method: "DELETE",
                 path: "/items",
@@ -332,7 +332,7 @@ describe("bodies", () =>
 
     test("takes a body the schema accepts", async () =>
     {
-        const app = await serving(taking);
+        const app = await startServer(taking);
 
         const answer = await app.request("/items", {
             method: "POST",
@@ -349,7 +349,7 @@ describe("input", () =>
 {
     test("hands a path parameter to the schema", async () =>
     {
-        const app = await serving({
+        const app = await startServer({
             routes: [{
                 method: "GET",
                 path: "/items/:id",
@@ -368,7 +368,7 @@ describe("input", () =>
 
     test("never lets a body override the path it was sent to", async () =>
     {
-        const app = await serving({
+        const app = await startServer({
             routes: [{
                 method: "POST",
                 path: "/items/:id",
@@ -391,7 +391,7 @@ describe("input", () =>
 
     test("drops a body key that would reach Object.prototype", async () =>
     {
-        const app = await serving({
+        const app = await startServer({
             routes: [{
                 method: "POST",
                 path: "/items",
@@ -417,7 +417,7 @@ describe("an answer carrying its own status", () =>
 {
     test("reaches the wire as a redirect a client can follow", async () =>
     {
-        const app = await serving({
+        const app = await startServer({
             routes: [{
                 method: "GET",
                 path: "/go",
@@ -437,7 +437,7 @@ describe("an answer carrying its own status", () =>
 
     test("carries a header a route set, alongside the ones the kit sets", async () =>
     {
-        const app = await serving({
+        const app = await startServer({
             routes: [{
                 method: "GET",
                 path: "/thing",
@@ -457,7 +457,7 @@ describe("an answer carrying its own status", () =>
 
     test("never lets a route override what the kit answers for", async () =>
     {
-        const app = await serving({
+        const app = await startServer({
             routes: [{
                 method: "GET",
                 path: "/thing",
@@ -499,7 +499,7 @@ describe("headers a route declared", () =>
 
     test("reaches the handler off a real request", async () =>
     {
-        const app = await serving(reading);
+        const app = await startServer(reading);
 
         const answer = await app.request("/thing", { headers: { "accept-language": "ja,en;q=0.8" } });
 
@@ -508,7 +508,7 @@ describe("headers a route declared", () =>
 
     test("matches however the caller cased the name", async () =>
     {
-        const app = await serving(reading);
+        const app = await startServer(reading);
 
         const answer = await app.request("/thing", { headers: { "Accept-Language": "de" } });
 
@@ -517,7 +517,7 @@ describe("headers a route declared", () =>
 
     test("never carries a header the route did not declare", async () =>
     {
-        const app = await serving(reading);
+        const app = await startServer(reading);
 
         const answer = await app.request("/thing", {
             headers: { "accept-language": "en", cookie: "session=secret", "x-trace": "abc" },
@@ -534,7 +534,7 @@ describe("callers", () =>
 {
     test("answers 401 when identify throws rather than 500", async () =>
     {
-        const app = await serving({
+        const app = await startServer({
             routes: [{
                 method: "GET",
                 path: "/items",
@@ -559,7 +559,7 @@ describe("callers", () =>
     test("passes the caller identify returned to the kernel", async () =>
     {
         const caller: Caller = { id: "u1", permissions: ["items.read"], claims: {} };
-        const app = await serving({
+        const app = await startServer({
             permissions: { "items.read": { describe: "See items." } },
             routes: [{
                 method: "GET",

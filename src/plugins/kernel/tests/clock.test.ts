@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import { createKernel, definePlugin } from "../api";
 
-function asking(now?: () => number)
+function kernelAt(now?: () => number)
 {
     return createKernel({
         plugins: [definePlugin("thing", {
@@ -18,7 +18,7 @@ describe("the time a plugin reads", () =>
 {
     test("is the project's, so a test can pin it", async () =>
     {
-        const kernel = asking(() => 1_700_000_000_000);
+        const kernel = kernelAt(() => 1_700_000_000_000);
 
         await kernel.start();
 
@@ -29,7 +29,7 @@ describe("the time a plugin reads", () =>
 
     test("is the real one when the project named none", async () =>
     {
-        const kernel = asking();
+        const kernel = kernelAt();
 
         await kernel.start();
 

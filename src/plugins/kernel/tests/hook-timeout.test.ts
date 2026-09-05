@@ -5,7 +5,7 @@ import { createKernel, definePlugin } from "../api";
 
 import type { Definition, Plugin } from "../api";
 
-function made(name: string, found: Partial<Definition> = {}): Plugin
+function participant(name: string, found: Partial<Definition> = {}): Plugin
 {
     return definePlugin(name, { version: "1.0.0", describe: `The ${name} plugin.`, ...found });
 }
@@ -15,8 +15,8 @@ test("a participant that never answers is a refusal, not a request held open", a
     const kernel = createKernel({
         patience: 50,
         plugins: [
-            made("owner", { hooks: { "owner.check": { describe: "A check.", schema: z.object({}) } } }),
-            made("silent", {
+            participant("owner", { hooks: { "owner.check": { describe: "A check.", schema: z.object({}) } } }),
+            participant("silent", {
                 participates: {
                     "owner.check": {
                         describe: "Never answers at all.",
@@ -42,8 +42,8 @@ test("a participant that answers in time is still heard", async () =>
     const kernel = createKernel({
         patience: 500,
         plugins: [
-            made("owner", { hooks: { "owner.check": { describe: "A check.", schema: z.object({}) } } }),
-            made("slow", {
+            participant("owner", { hooks: { "owner.check": { describe: "A check.", schema: z.object({}) } } }),
+            participant("slow", {
                 participates: {
                     "owner.check": {
                         describe: "Answers, but not at once.",

@@ -8,7 +8,7 @@ type Stubbed = {
     redirected?: boolean;
 };
 
-function answering(answer: Stubbed = {}): void
+function stubbing(answer: Stubbed = {}): void
 {
     vi.stubGlobal("fetch", (_url: string, init?: RequestInit) =>
     {
@@ -33,28 +33,28 @@ describe("answers", () =>
 {
     test("returns the parsed body", async () =>
     {
-        answering({ body: '{"ok":true}' });
+        stubbing({ body: '{"ok":true}' });
 
         await expect(dial()({ method: "GET", url: "https://api.example.test/x" })).resolves.toEqual({ ok: true });
     });
 
     test("returns undefined for an empty body", async () =>
     {
-        answering({ status: 204, body: "" });
+        stubbing({ status: 204, body: "" });
 
         await expect(dial()({ method: "GET", url: "https://api.example.test/x" })).resolves.toBeUndefined();
     });
 
     test("refuses a body that is not JSON", async () =>
     {
-        answering({ body: "not json" });
+        stubbing({ body: "not json" });
 
         await expect(dial()({ method: "GET", url: "https://api.example.test/x" })).rejects.toMatchObject({ code: "MALFORMED" });
     });
 
     test("refuses a non-2xx status, carrying it", async () =>
     {
-        answering({ status: 402, body: '{"error":"card declined"}' });
+        stubbing({ status: 402, body: '{"error":"card declined"}' });
 
         const failed = await dial()({ method: "GET", url: "https://api.example.test/x" }).catch((cause: unknown) => cause);
 
@@ -64,7 +64,7 @@ describe("answers", () =>
 
     test("refuses an answer past the size it was given", async () =>
     {
-        answering({ body: "x".repeat(2_000) });
+        stubbing({ body: "x".repeat(2_000) });
 
         await expect(dial({ maxBytes: 100 })({ method: "GET", url: "https://api.example.test/x" }))
             .rejects.toMatchObject({ code: "TOO_LARGE" });

@@ -9,7 +9,7 @@ import type { Definition, Plugin, Storage } from "../api";
  * becomes a savepoint rather than a second transaction, so only the outermost
  * one commits.
  */
-function storing(): Storage & { rolled: () => number; committed: () => number; saved: () => number }
+function withStore(): Storage & { rolled: () => number; committed: () => number; saved: () => number }
 {
     let rolled = 0;
     let committed = 0;
@@ -49,7 +49,7 @@ function storing(): Storage & { rolled: () => number; committed: () => number; s
     };
 }
 
-function made(name: string, found: Partial<Definition> = {}): Plugin
+function participant(name: string, found: Partial<Definition> = {}): Plugin
 {
     return definePlugin(name, { version: "1.0.0", describe: `The ${name} plugin.`, ...found } as Definition);
 }
@@ -59,7 +59,7 @@ describe("services", () =>
     test("builds them against the caller of this request, never the first one", async () =>
     {
         const kernel = createKernel({
-            plugins: [made("items", { services: (ctx) => ({ who: (): string | undefined => ctx.caller?.id }) })],
+            plugins: [participant("items", { services: (ctx) => ({ who: (): string | undefined => ctx.caller?.id }) })],
         });
 
         await kernel.start();
@@ -75,7 +75,7 @@ describe("services", () =>
     {
         let built = 0;
         const kernel = createKernel({
-            plugins: [made("items", {
+            plugins: [participant("items", {
                 services: () =>
                 {
                     built += 1;
@@ -99,8 +99,8 @@ describe("services", () =>
     {
         const kernel = createKernel({
             plugins: [
-                made("auth", { services: (ctx) => ({ who: (): string | undefined => ctx.caller?.id }) }),
-                made("billing", { dependsOn: ["auth"] }),
+                participant("auth", { services: (ctx) => ({ who: (): string | undefined => ctx.caller?.id }) }),
+                participant("billing", { dependsOn: ["auth"] }),
             ],
         });
 
@@ -119,8 +119,8 @@ describe("events", () =>
         const recorded: unknown[] = [];
         const kernel = createKernel({
             plugins: [
-                made("auth", { emits: { "auth.gone": { describe: "Session ended.", schema: z.object({ id: z.string() }) } } }),
-                made("billing", {
+                participant("auth", { emits: { "auth.gone": { describe: "Session ended.", schema: z.object({ id: z.string() }) } } }),
+                participant("billing", {
                     dependsOn: ["auth"],
                     listens: { "auth.gone": { describe: "Drops what it found.", handle: (payload) => void recorded.push(payload) } },
                 }),
@@ -138,8 +138,8 @@ describe("events", () =>
     {
         const kernel = createKernel({
             plugins: [
-                made("auth", { emits: { "auth.gone": { describe: "Session ended.", schema: z.object({}) } } }),
-                made("billing", { dependsOn: ["auth"] }),
+                participant("auth", { emits: { "auth.gone": { describe: "Session ended.", schema: z.object({}) } } }),
+                participant("billing", { dependsOn: ["auth"] }),
             ],
         });
 
@@ -153,8 +153,8 @@ describe("events", () =>
         const recorded: unknown[] = [];
         const kernel = createKernel({
             plugins: [
-                made("auth", { emits: { "auth.gone": { describe: "Session ended.", schema: z.object({ id: z.string() }) } } }),
-                made("billing", {
+                participant("auth", { emits: { "auth.gone": { describe: "Session ended.", schema: z.object({ id: z.string() }) } } }),
+                participant("billing", {
                     dependsOn: ["auth"],
                     listens: { "auth.gone": { describe: "Hears it.", handle: (payload) => void recorded.push(payload) } },
                 }),
@@ -172,8 +172,8 @@ describe("events", () =>
         const lines: unknown[] = [];
         const kernel = createKernel({
             plugins: [
-                made("auth", { emits: { "auth.gone": { describe: "Session ended.", schema: z.object({}) } } }),
-                made("billing", {
+                participant("auth", { emits: { "auth.gone": { describe: "Session ended.", schema: z.object({}) } } }),
+                participant("billing", {
                     listens: {
                         "auth.gone": {
                             describe: "Fails asynchronously.",
@@ -207,8 +207,8 @@ describe("events", () =>
     {
         const kernel = createKernel({
             plugins: [
-                made("auth", { emits: { "auth.gone": { describe: "Session ended.", schema: z.object({}) } } }),
-                made("billing", {
+                participant("auth", { emits: { "auth.gone": { describe: "Session ended.", schema: z.object({}) } } }),
+                participant("billing", {
                     dependsOn: ["auth"],
                     listens: {
                         "auth.gone": {
@@ -235,8 +235,8 @@ describe("events", () =>
 
         const kernel = createKernel({
             plugins: [
-                made("auth", { emits: { "auth.gone": { describe: "Session ended.", schema: z.object({}) } } }),
-                made("billing", {
+                participant("auth", { emits: { "auth.gone": { describe: "Session ended.", schema: z.object({}) } } }),
+                participant("billing", {
                     dependsOn: ["auth"],
                     listens: {
                         "auth.gone": {
@@ -268,8 +268,8 @@ describe("events", () =>
 
         const kernel = createKernel({
             plugins: [
-                made("auth", { emits: { "auth.gone": { describe: "Session ended.", schema: z.object({}) } } }),
-                made("billing", {
+                participant("auth", { emits: { "auth.gone": { describe: "Session ended.", schema: z.object({}) } } }),
+                participant("billing", {
                     dependsOn: ["auth"],
                     listens: {
                         "auth.gone": {
@@ -309,8 +309,8 @@ describe("transactions", () =>
 {
     test("rolls back when the work throws", async () =>
     {
-        const db = storing();
-        const kernel = createKernel({ plugins: [made("items")], db });
+        const db = withStore();
+        const kernel = createKernel({ plugins: [participant("items")], db });
 
         await kernel.start();
 
@@ -322,11 +322,11 @@ describe("transactions", () =>
     test("holds an event until the transaction commits", async () =>
     {
         const recorded: unknown[] = [];
-        const db = storing();
+        const db = withStore();
         const kernel = createKernel({
             plugins: [
-                made("items", { emits: { "items.made": { describe: "An item was written.", schema: z.object({}) } } }),
-                made("audit", {
+                participant("items", { emits: { "items.made": { describe: "An item was written.", schema: z.object({}) } } }),
+                participant("audit", {
                     dependsOn: ["items"],
                     listens: { "items.made": { describe: "Records it.", handle: () => void recorded.push("recorded") } },
                 }),
@@ -353,11 +353,11 @@ describe("transactions", () =>
     test("never delivers an event from a transaction that rolled back", async () =>
     {
         const recorded: unknown[] = [];
-        const db = storing();
+        const db = withStore();
         const kernel = createKernel({
             plugins: [
-                made("items", { emits: { "items.made": { describe: "An item was written.", schema: z.object({}) } } }),
-                made("audit", {
+                participant("items", { emits: { "items.made": { describe: "An item was written.", schema: z.object({}) } } }),
+                participant("audit", {
                     dependsOn: ["items"],
                     listens: { "items.made": { describe: "Records it.", handle: () => void recorded.push("recorded") } },
                 }),
@@ -382,11 +382,11 @@ describe("transactions", () =>
     test("holds an event emitted on the outer context, not just the one tx handed over", async () =>
     {
         const recorded: unknown[] = [];
-        const db = storing();
+        const db = withStore();
         const kernel = createKernel({
             plugins: [
-                made("items", { emits: { "items.made": { describe: "Written.", schema: z.object({}) } } }),
-                made("audit", {
+                participant("items", { emits: { "items.made": { describe: "Written.", schema: z.object({}) } } }),
+                participant("audit", {
                     dependsOn: ["items"],
                     listens: { "items.made": { describe: "Records it.", handle: () => void recorded.push("recorded") } },
                 }),
@@ -412,15 +412,15 @@ describe("transactions", () =>
     test("keeps an inner transaction's events and drops the ones it rolled back", async () =>
     {
         const recorded: string[] = [];
-        const db = storing();
+        const db = withStore();
         const kernel = createKernel({
             plugins: [
-                made("items", {
+                participant("items", {
                     emits: {
                         "items.made": { describe: "Written.", schema: z.object({ id: z.string() }) },
                     },
                 }),
-                made("audit", {
+                participant("audit", {
                     dependsOn: ["items"],
                     listens: {
                         "items.made": {
@@ -459,9 +459,9 @@ describe("transactions", () =>
 
     test("still refuses a bad payload inside a transaction, where it was written", async () =>
     {
-        const db = storing();
+        const db = withStore();
         const kernel = createKernel({
-            plugins: [made("items", { emits: { "items.made": { describe: "Written.", schema: z.object({ id: z.string() }) } } })],
+            plugins: [participant("items", { emits: { "items.made": { describe: "Written.", schema: z.object({ id: z.string() }) } } })],
             db,
         });
 
@@ -479,8 +479,8 @@ describe("transactions", () =>
 
     test("joins an inner transaction to the outer one rather than opening a second", async () =>
     {
-        const db = storing();
-        const kernel = createKernel({ plugins: [made("items")], db });
+        const db = withStore();
+        const kernel = createKernel({ plugins: [participant("items")], db });
 
         await kernel.start();
 
@@ -499,7 +499,7 @@ describe("transactions", () =>
 
     test("refuses a transaction when no store was given, naming what to pass", async () =>
     {
-        const kernel = createKernel({ plugins: [made("items")] });
+        const kernel = createKernel({ plugins: [participant("items")] });
 
         await kernel.start();
 
@@ -512,7 +512,7 @@ describe("outbound", () =>
     test("refuses a host the plugin never declared", async () =>
     {
         const kernel = createKernel({
-            plugins: [made("billing", { outbound: ["https://api.stripe.com"] })],
+            plugins: [participant("billing", { outbound: ["https://api.stripe.com"] })],
             dial: () => Promise.resolve({}),
         });
 
@@ -528,7 +528,7 @@ describe("outbound", () =>
     {
         const dialled: string[] = [];
         const kernel = createKernel({
-            plugins: [made("billing", { outbound: ["https://api.stripe.com"] })],
+            plugins: [participant("billing", { outbound: ["https://api.stripe.com"] })],
             dial: (call) =>
             {
                 dialled.push(call.url);
@@ -547,7 +547,7 @@ describe("outbound", () =>
     test("refuses a url whose host only looks like one it declared", async () =>
     {
         const kernel = createKernel({
-            plugins: [made("billing", { outbound: ["https://api.stripe.com"] })],
+            plugins: [participant("billing", { outbound: ["https://api.stripe.com"] })],
             dial: () => Promise.resolve({}),
         });
 
@@ -560,7 +560,7 @@ describe("outbound", () =>
     test("refuses plain http even to a declared host", async () =>
     {
         const kernel = createKernel({
-            plugins: [made("billing", { outbound: ["https://api.stripe.com"] })],
+            plugins: [participant("billing", { outbound: ["https://api.stripe.com"] })],
             dial: () => Promise.resolve({}),
         });
 

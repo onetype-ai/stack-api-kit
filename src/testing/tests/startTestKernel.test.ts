@@ -23,7 +23,7 @@ afterEach(() =>
     }
 });
 
-function holding(): Plugin
+function scheduled(): Plugin
 {
     at = mkdtempSync(join(tmpdir(), "startTestKernel-"));
 
@@ -56,7 +56,7 @@ describe("what startTestKernel gives a test", () =>
 {
     test("opens a database from what the plugins declared", async () =>
     {
-        const api = await startTestKernel({ plugins: [holding()] });
+        const api = await startTestKernel({ plugins: [scheduled()] });
 
         await expect(api.store.of("found").select().from(items)).resolves.toEqual([]);
 
@@ -65,7 +65,7 @@ describe("what startTestKernel gives a test", () =>
 
     test("runs the migrations the plugins named", async () =>
     {
-        const api = await startTestKernel({ plugins: [holding()] });
+        const api = await startTestKernel({ plugins: [scheduled()] });
 
         await api.store.of("found").insert(items).values({ id: "a" });
 
@@ -76,7 +76,7 @@ describe("what startTestKernel gives a test", () =>
 
     test("keeps what each plugin said", async () =>
     {
-        const api = await startTestKernel({ plugins: [holding()] });
+        const api = await startTestKernel({ plugins: [scheduled()] });
 
         expect(api.logLines).toMatchObject([{ level: "info", plugin: "found", line: "found ready" }]);
 
@@ -85,7 +85,7 @@ describe("what startTestKernel gives a test", () =>
 
     test("carries a budget, so a declared limit starts", async () =>
     {
-        const api = await startTestKernel({ plugins: [holding()] });
+        const api = await startTestKernel({ plugins: [scheduled()] });
 
         const answers = [];
 
@@ -101,7 +101,7 @@ describe("what startTestKernel gives a test", () =>
 
     test("records what a plugin called out to", async () =>
     {
-        const api = await startTestKernel({ plugins: [holding()], answers: () => ({ ok: true }) });
+        const api = await startTestKernel({ plugins: [scheduled()], answers: () => ({ ok: true }) });
 
         await api.kernel.context("found").fetch({ method: "GET", url: "https://partner.test/x" });
 
@@ -117,7 +117,7 @@ describe("what startTestKernel gives a test", () =>
 
     test("records the verb, so a test can tell a delete from a write", async () =>
     {
-        const api = await startTestKernel({ plugins: [holding()], answers: () => ({ ok: true }) });
+        const api = await startTestKernel({ plugins: [scheduled()], answers: () => ({ ok: true }) });
         const ctx = api.kernel.context("found");
 
         await ctx.fetch({ method: "POST", url: "https://partner.test/things", body: { name: "one" } });
@@ -133,7 +133,7 @@ describe("what startTestKernel gives a test", () =>
 
     test("records the headers a plugin sent", async () =>
     {
-        const api = await startTestKernel({ plugins: [holding()], answers: () => ({ ok: true }) });
+        const api = await startTestKernel({ plugins: [scheduled()], answers: () => ({ ok: true }) });
 
         await api.kernel.context("found").fetch({
             method: "POST",
@@ -188,7 +188,7 @@ describe("what startTestKernel gives a test", () =>
 
     test("closes the database when it stops", async () =>
     {
-        const api = await startTestKernel({ plugins: [holding()] });
+        const api = await startTestKernel({ plugins: [scheduled()] });
 
         await api.stop();
 
@@ -200,7 +200,7 @@ describe("reading a contract", () =>
 {
     test("takes the tables and migrations off the plugins themselves", () =>
     {
-        const plugin = holding();
+        const plugin = scheduled();
 
         expect(Object.keys(TestTables.tables([plugin]))).toEqual(["found"]);
         expect(TestTables.migrations([plugin])).toEqual([{ plugin: "found", from: at }]);

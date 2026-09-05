@@ -6,7 +6,7 @@ import Database from "better-sqlite3";
 import { schedule } from "../../database/api";
 import { createKernel, definePlugin } from "../api";
 
-function serving(): ReturnType<typeof createKernel>
+function startServer(): ReturnType<typeof createKernel>
 {
     const people = definePlugin("people", {
         version: "1.0.0",
@@ -48,7 +48,7 @@ describe("a path a caller wrote encoded", () =>
     // open one, past a route that was closed.
     test("reaches the route it spells, not the open one beside it", async () =>
     {
-        const kernel = serving();
+        const kernel = startServer();
 
         await kernel.start();
 

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { createKernel, definePlugin } from "../../kernel/api";
 import { serve } from "../api";
 
-function serving()
+function startServer()
 {
     return createKernel({
         plugins: [definePlugin("thing", {
@@ -27,7 +27,7 @@ describe("what a deployment asks", () =>
 {
     test("live answers before the kernel has started", async () =>
     {
-        const app = serve({ kernel: serving() });
+        const app = serve({ kernel: startServer() });
 
         const answer = await app.request("/live");
 
@@ -37,7 +37,7 @@ describe("what a deployment asks", () =>
 
     test("ready refuses until the kernel has started", async () =>
     {
-        const kernel = serving();
+        const kernel = startServer();
         const app = serve({ kernel });
 
         const before = await app.request("/ready");
@@ -55,7 +55,7 @@ describe("what a deployment asks", () =>
 
     test("ready refuses again once it has stopped", async () =>
     {
-        const kernel = serving();
+        const kernel = startServer();
         const app = serve({ kernel });
 
         await kernel.start();

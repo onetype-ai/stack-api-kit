@@ -117,7 +117,7 @@ export function answer(cause: unknown): Answer
  * Anything answering 500 is logged in full, because nobody saw it. A 4xx was
  * already explained to whoever caused it.
  */
-export function ours(given: Answer): boolean
+export function isServerFault(given: Answer): boolean
 {
     return given.status >= 500;
 }

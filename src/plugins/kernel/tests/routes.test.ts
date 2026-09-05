@@ -133,7 +133,7 @@ test("a listener, participant and command each read their payload without a cast
 
 describe("finding a route", () =>
 {
-    async function serving()
+    async function startServer()
     {
         const kernel = createKernel({
             plugins: [definePlugin("probe", {
@@ -169,7 +169,7 @@ describe("finding a route", () =>
 
     test("takes the path a caller actually asked for", async () =>
     {
-        const kernel = await serving();
+        const kernel = await startServer();
 
         const answer = await kernel.handle({ method: "GET", path: "/things/abc", input: {} });
 
@@ -178,7 +178,7 @@ describe("finding a route", () =>
 
     test("still takes the declared path with its parameters in input", async () =>
     {
-        const kernel = await serving();
+        const kernel = await startServer();
 
         const answer = await kernel.handle({
             method: "GET",
@@ -191,7 +191,7 @@ describe("finding a route", () =>
 
     test("lets the real path win over a body claiming otherwise", async () =>
     {
-        const kernel = await serving();
+        const kernel = await startServer();
 
         const answer = await kernel.handle({
             method: "GET",
@@ -204,7 +204,7 @@ describe("finding a route", () =>
 
     test("decodes what a path segment carried", async () =>
     {
-        const kernel = await serving();
+        const kernel = await startServer();
 
         const answer = await kernel.handle({ method: "GET", path: "/things/a%20b", input: {} });
 
@@ -213,7 +213,7 @@ describe("finding a route", () =>
 
     test("prefers the literal path over one that only matches by parameter", async () =>
     {
-        const kernel = await serving();
+        const kernel = await startServer();
 
         const answer = await kernel.handle({ method: "GET", path: "/things", input: {} });
 
@@ -222,7 +222,7 @@ describe("finding a route", () =>
 
     test("still answers 404 for a path nothing declared", async () =>
     {
-        const kernel = await serving();
+        const kernel = await startServer();
 
         const answer = await kernel.handle({ method: "GET", path: "/things/a/b", input: {} });
 

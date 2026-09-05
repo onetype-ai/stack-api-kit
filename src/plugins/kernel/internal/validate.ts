@@ -165,7 +165,7 @@ function declares(name: string, plugin: Plugin, owned: Claimed, say: Report): vo
 
     for (const host of plugin.definition.outbound ?? [])
     {
-        const wrong = unreachable(host);
+        const wrong = whyUnreachable(host);
 
         if (wrong !== undefined)
         {
@@ -247,7 +247,7 @@ const PLAIN: ReadonlySet<string> = new Set(["http", "ws", "ftp"]);
  * contract should see, and refusing to let them be written does not stop them
  * being used, only being declared.
  */
-function unreachable(host: string): string | undefined
+function whyUnreachable(host: string): string | undefined
 {
     const at = host.indexOf("://");
 

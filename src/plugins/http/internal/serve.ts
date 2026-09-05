@@ -57,7 +57,7 @@ export function requestId(sent: string | undefined): string
  * forget once.
  */
 /** The headers a route declared, read off the request in lowercase. */
-function named(c: HonoContext, reads: readonly string[]): Readonly<Record<string, string>>
+function headersOf(c: HonoContext, reads: readonly string[]): Readonly<Record<string, string>>
 {
     const reading: Record<string, string> = {};
 
@@ -75,7 +75,7 @@ function named(c: HonoContext, reads: readonly string[]): Readonly<Record<string
 }
 
 /** Which methods a declared path answers, matching `:param` segments. */
-function matching(answering: ReadonlyMap<string, Set<string>>, path: string): Set<string> | undefined
+function methodsFor(answering: ReadonlyMap<string, Set<string>>, path: string): Set<string> | undefined
 {
     const direct = answering.get(path);
 
@@ -111,7 +111,7 @@ function matching(answering: ReadonlyMap<string, Set<string>>, path: string): Se
  * Counted chunk by chunk and abandoned the moment it is too big, so a caller
  * cannot make the server hold what it is about to refuse.
  */
-async function taken(stream: ReadableStream<Uint8Array> | null, bytes: number): Promise<Uint8Array | undefined>
+async function bodyOf(stream: ReadableStream<Uint8Array> | null, bytes: number): Promise<Uint8Array | undefined>
 {
     if (stream === null)
     {
@@ -233,7 +233,7 @@ export function serve(serving: ServerOptions): Hono
 
     app.options("*", (c) =>
     {
-        const methods = matching(answering, c.req.path);
+        const methods = methodsFor(answering, c.req.path);
 
         if (methods === undefined)
         {
@@ -288,7 +288,7 @@ export function serve(serving: ServerOptions): Hono
                 // decoded string instead counts UTF-16 units, so a body of
                 // Japanese passes a limit three times smaller than what
                 // actually arrived.
-                const raw = await taken(c.req.raw.body, bodyBytes);
+                const raw = await bodyOf(c.req.raw.body, bodyBytes);
 
                 if (raw === undefined)
                 {
@@ -313,7 +313,7 @@ export function serve(serving: ServerOptions): Hono
                 path: route.path,
                 input: input({ params: c.req.param(), query: c.req.queries() as Record<string, string[]>, body }),
                 caller,
-                headers: named(c, route.reads),
+                headers: headersOf(c, route.reads),
                 ...(serving.from !== undefined && { from: serving.from(c) }),
             });
 

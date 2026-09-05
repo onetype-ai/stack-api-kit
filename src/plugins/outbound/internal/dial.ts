@@ -39,7 +39,7 @@ function binary(body: unknown): body is Uint8Array | ArrayBuffer | Blob | FormDa
 }
 
 /** What goes on the wire: bytes as they are, everything else as JSON. */
-function sendable(body: unknown): Uint8Array | ArrayBuffer | Blob | FormData | URLSearchParams | string
+function asBody(body: unknown): Uint8Array | ArrayBuffer | Blob | FormData | URLSearchParams | string
 {
     return binary(body) ? body : JSON.stringify(body);
 }
@@ -79,7 +79,7 @@ export function dial(dialing: DialerOptions = {})
                     ...dialing.headers?.(),
                     ...call.headers,
                 },
-                ...(call.body !== undefined && { body: sendable(call.body) }),
+                ...(call.body !== undefined && { body: asBody(call.body) }),
             });
 
             const text = await read(response, maxBytes);
@@ -105,7 +105,7 @@ export function dial(dialing: DialerOptions = {})
         }
         catch (cause)
         {
-            throw shape(cause, call, stopper, timeoutMs);
+            throw toFault(cause, call, stopper, timeoutMs);
         }
         finally
         {
@@ -172,7 +172,7 @@ function join(chunks: readonly Uint8Array[], size: number): Uint8Array
 
 // The caller's own abort and our timeout both surface as one AbortError, and
 // they are not the same event.
-function shape(cause: unknown, call: Outbound, stopper: AbortController, timeoutMs: number): unknown
+function toFault(cause: unknown, call: Outbound, stopper: AbortController, timeoutMs: number): unknown
 {
     if (cause instanceof OutboundFault)
     {

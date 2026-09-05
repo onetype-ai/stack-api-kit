@@ -4,7 +4,7 @@ import { z } from "zod";
 import { createKernel, definePlugin } from "../api";
 import type { Definition, Plugin } from "../api";
 
-function reading(reads?: readonly string[]): Plugin
+function routeReading(reads?: readonly string[]): Plugin
 {
     return definePlugin("probe", {
         version: "1.0.0",
@@ -35,7 +35,7 @@ describe("what a route may read", () =>
 {
     test("hands over a header it declared", async () =>
     {
-        const kernel = createKernel({ plugins: [reading(["accept-language"])] });
+        const kernel = createKernel({ plugins: [routeReading(["accept-language"])] });
 
         await kernel.start();
 
@@ -46,7 +46,7 @@ describe("what a route may read", () =>
 
     test("withholds every header it did not declare", async () =>
     {
-        const kernel = createKernel({ plugins: [reading(["accept-language"])] });
+        const kernel = createKernel({ plugins: [routeReading(["accept-language"])] });
 
         await kernel.start();
 
@@ -58,7 +58,7 @@ describe("what a route may read", () =>
 
     test("hands over nothing when a route declares nothing", async () =>
     {
-        const kernel = createKernel({ plugins: [reading()] });
+        const kernel = createKernel({ plugins: [routeReading()] });
 
         await kernel.start();
 
@@ -69,7 +69,7 @@ describe("what a route may read", () =>
 
     test("leaves a declared header absent rather than empty when it was not sent", async () =>
     {
-        const kernel = createKernel({ plugins: [reading(["accept-language", "x-missing"])] });
+        const kernel = createKernel({ plugins: [routeReading(["accept-language", "x-missing"])] });
 
         await kernel.start();
 
@@ -87,7 +87,7 @@ describe("what a route may never read", () =>
     {
         test(`refuses a route reading "${header}"`, async () =>
         {
-            const kernel = createKernel({ plugins: [reading([header])] });
+            const kernel = createKernel({ plugins: [routeReading([header])] });
 
             const failed = await kernel.start().then(() => undefined).catch((cause: unknown) => cause as Error);
 
@@ -97,7 +97,7 @@ describe("what a route may never read", () =>
 
     test("refuses a header name that is not lowercase", async () =>
     {
-        const kernel = createKernel({ plugins: [reading(["Accept-Language"])] });
+        const kernel = createKernel({ plugins: [routeReading(["Accept-Language"])] });
 
         const failed = await kernel.start().then(() => undefined).catch((cause: unknown) => cause as Error);
 
