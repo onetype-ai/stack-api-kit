@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
-export type Unread = {
+export type UnusedField = {
     file: string;
     shape: string;
     field: string;
@@ -15,13 +15,13 @@ export type Unread = {
  * fixture is a field the document promises and no code honours, which is the
  * defect this exists to catch.
  */
-export function wiring(root: string, apart = true): Unread[]
+export function wiring(root: string, apart = true): UnusedField[]
 {
     const sources = walk(root)
         .filter((file) => !tested(file))
         .map((file): [string, string] => [file, withoutComments(readFileSync(file, "utf8"))]);
 
-    const unread: Unread[] = [];
+    const unread: UnusedField[] = [];
 
     for (const [file, source] of sources)
     {

@@ -6,7 +6,7 @@ import { Refusal } from "./answer";
 import { KernelFault } from "./faults";
 import type { hooks } from "./hooks";
 import { permissions } from "./permissions";
-import type { Dialer, Narrowing, Outbox, Schedule, Storage } from "./store";
+import type { Dialer, ScopeFilter, Outbox, Schedule, Storage } from "./store";
 
 /** Everything a context is built from. One object, so the shape is one line. */
 export type Wiring = {
@@ -42,7 +42,7 @@ export type Wiring = {
     schedule: Schedule | undefined;
 
     /** How a declared scope becomes a condition. */
-    narrow: Narrowing | undefined;
+    narrow: ScopeFilter | undefined;
     log: (level: "debug" | "info" | "warn" | "error", plugin: string, line: string, about?: Readonly<Record<string, unknown>>) => void;
     run: (command: string, input: unknown, caller?: Caller) => Promise<void>;
 };
@@ -64,7 +64,7 @@ function absent(what: string, used: string, pass: string): never
 {
     throw new KernelFault(
         "NOT_STARTED",
-        `A plugin used ctx.${used}, but no ${what} was given. Pass \`${pass}\` to createKernel, \`${pass}: true\` to start, or \`${pass}: true\` to booting in a test.`,
+        `A plugin used ctx.${used}, but no ${what} was given. Pass \`${pass}\` to createKernel, \`${pass}: true\` to start, or \`${pass}: true\` to startTestKernel in a test.`,
     );
 }
 
@@ -108,7 +108,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
         return context(wiring, plugin, caller, inside, headers, acting);
     };
 
-    /** What a listener is handed: this plugin, and nobody calling. */
+    /** What a listener is handed: this plugin, and nobody createCaller. */
     const heard = (plugin: string): Context =>
     {
         return context(wiring, plugin, undefined, undefined, {});
@@ -337,7 +337,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
                 );
             }
 
-            // Declared, but not something this can carry. Said plainly,
+            // Declared, but not something this can carry. LogLine plainly,
             // because "add it to outbound" for a host already in outbound
             // sends the reader looking for a problem that is not there.
             if (!dialable(call.url))
@@ -446,14 +446,14 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
 
         forScope: (claim: string): Context =>
         {
-            // Only where nobody is calling. Inside a request the scope is
+            // Only where nobody is createCaller. Inside a request the scope is
             // decided by who is asking, and letting a handler name another
             // is how a caller reaches rows that are not theirs.
             if (caller !== undefined)
             {
                 throw new KernelFault(
                     "OUT_OF_SCOPE",
-                    `"${plugin}" called ctx.forScope inside a request. The scope of a request is the caller's; forScope is for a listener or a scheduled command, where nobody is calling.`,
+                    `"${plugin}" called ctx.forScope inside a request. The scope of a request is the caller's; forScope is for a listener or a scheduled command, where nobody is createCaller.`,
                     { plugin },
                 );
             }

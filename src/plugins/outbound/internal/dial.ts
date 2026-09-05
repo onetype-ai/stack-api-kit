@@ -1,6 +1,6 @@
 import type { Outbound } from "../../kernel/api";
 
-export type Dialing = {
+export type DialerOptions = {
     timeoutMs?: number;
     maxBytes?: number;
     headers?: (() => Readonly<Record<string, string>>) | undefined;
@@ -46,7 +46,7 @@ function sendable(body: unknown): Uint8Array | ArrayBuffer | Blob | FormData | U
 
 // The kernel checks the host against what the plugin declared; this only
 // carries the call out, and bounds what comes back.
-export function dial(dialing: Dialing = {})
+export function dial(dialing: DialerOptions = {})
 {
     const timeoutMs = dialing.timeoutMs ?? 10_000;
     const maxBytes = dialing.maxBytes ?? 5_000_000;

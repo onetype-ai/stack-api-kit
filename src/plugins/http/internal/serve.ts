@@ -7,11 +7,11 @@ import { cors, type Allowing } from "./origin";
 import { input } from "./input";
 
 /** What serving needs to know. */
-export type Serving = {
+export type ServerOptions = {
     kernel: Kernel;
 
     /**
-     * Who is calling. The project owns this entirely: a cookie, a bearer
+     * Who is createCaller. The project owns this entirely: a cookie, a bearer
      * token, a header, whatever it decided a session is.
      *
      * Throwing answers 401. Returning undefined is an anonymous caller, which
@@ -162,7 +162,7 @@ async function taken(stream: ReadableStream<Uint8Array> | null, bytes: number): 
     return all;
 }
 
-export function serve(serving: Serving): Hono
+export function serve(serving: ServerOptions): Hono
 {
     const app = new Hono();
     const bodyBytes = serving.bodyBytes ?? 1_000_000;

@@ -23,7 +23,7 @@ function counting(limit?: { requests: number; seconds: number }): Plugin
     } as Definition);
 }
 
-function calling(id: string): Caller
+function createCaller(id: string): Caller
 {
     return { id, permissions: [], claims: {} };
 }
@@ -59,10 +59,10 @@ describe("a declared budget", () =>
     {
         const kernel = await started({ plugins: [counting({ requests: 1, seconds: 60 })] });
 
-        await kernel.handle({ method: "GET", path: "/thing", input: {}, caller: calling("u1") });
+        await kernel.handle({ method: "GET", path: "/thing", input: {}, caller: createCaller("u1") });
 
-        const flooded = await kernel.handle({ method: "GET", path: "/thing", input: {}, caller: calling("u1") });
-        const other = await kernel.handle({ method: "GET", path: "/thing", input: {}, caller: calling("u2") });
+        const flooded = await kernel.handle({ method: "GET", path: "/thing", input: {}, caller: createCaller("u1") });
+        const other = await kernel.handle({ method: "GET", path: "/thing", input: {}, caller: createCaller("u2") });
 
         expect(flooded.status).toBe(429);
         expect(other.status).toBe(200);

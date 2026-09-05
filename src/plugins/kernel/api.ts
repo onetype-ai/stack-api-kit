@@ -13,12 +13,12 @@ export type {
     Command,
     Context,
     Definition,
-    Described,
+    Description,
     Endpoint,
     Event,
-    Heard,
+    EmittedEvent,
     Hook,
-    Joined,
+    Participation,
     Listener,
     Logger,
     Method,
@@ -33,8 +33,8 @@ export type {
 
 export type { Failure } from "./internal/events";
 export type { Budget, Incoming, Outgoing } from "./internal/request";
-export type { Announcement, Dialer, Narrowing, Outbox, Schedule, Scheduled, Storage } from "./internal/store";
-export type { Kernel, Log, Options, Registered } from "./internal/kernel";
-export type { Wrong } from "./internal/validate";
+export type { Announcement, Dialer, ScopeFilter, Outbox, Schedule, Scheduled, Storage } from "./internal/store";
+export type { Kernel, Log, Options, Registration } from "./internal/kernel";
+export type { ContractProblem } from "./internal/validate";
 
 /** The runtime, for a plugin that declared "kernel" in needs. */

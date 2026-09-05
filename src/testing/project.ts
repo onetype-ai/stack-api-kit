@@ -6,12 +6,12 @@ import { boundaries } from "./boundaries";
 import { missing, oversized, undocumented, unexplained } from "./docs";
 import { wiring } from "./wiring";
 
-export type Wrong = {
+export type ProjectProblem = {
     check: "boundaries" | "wiring" | "oversized" | "missing" | "unexplained" | "undocumented";
     message: string;
 };
 
-export type Checking = {
+export type ProjectCheckOptions = {
     root?: string;
     plugins?: string;
 
@@ -37,7 +37,7 @@ const CONTRACT = [
 export const Project = {
     required: ["#docs/usage.md", "#docs/stack.md", "#docs/architecture.md", "README.md"] as const,
 
-    checks: (checking: Checking = {}): Wrong[] =>
+    checks: (checking: ProjectCheckOptions = {}): ProjectProblem[] =>
     {
         const root = checking.root ?? process.cwd();
         const docs = checking.docs ?? join(root, "#docs");
@@ -57,12 +57,12 @@ export const Project = {
         ];
     },
 
-    boundaries: (at: string): Wrong[] =>
+    boundaries: (at: string): ProjectProblem[] =>
     {
         return boundaries(at).map((wrong) => ({ check: "boundaries" as const, message: wrong.message }));
     },
 
-    wiring: (at: string, apart = true): Wrong[] =>
+    wiring: (at: string, apart = true): ProjectProblem[] =>
     {
         return wiring(at, apart).map((unread) => ({
             check: "wiring" as const,
@@ -70,7 +70,7 @@ export const Project = {
         }));
     },
 
-    unexplained: (at: string): Wrong[] =>
+    unexplained: (at: string): ProjectProblem[] =>
     {
         return unexplained(at).map((name) => ({
             check: "unexplained" as const,
@@ -78,7 +78,7 @@ export const Project = {
         }));
     },
 
-    docs: (root: string, at: string, required: readonly string[], limit: number): Wrong[] =>
+    docs: (root: string, at: string, required: readonly string[], limit: number): ProjectProblem[] =>
     {
         return [
             ...oversized(at, limit).map((doc) => ({
@@ -92,7 +92,7 @@ export const Project = {
         ];
     },
 
-    contract: (procedure: string): Wrong[] =>
+    contract: (procedure: string): ProjectProblem[] =>
     {
         return undocumented(readFileSync(CONTRACT, "utf8"), readFileSync(procedure, "utf8")).map((key) => ({
             check: "undocumented" as const,

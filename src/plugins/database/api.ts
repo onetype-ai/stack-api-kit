@@ -1,14 +1,14 @@
-import { connect, type Opening } from "./internal/connect";
+import { connect, type DatabaseOptions } from "./internal/connect";
 import { migrate, MigrationFault, type Source, type Step, steps } from "./internal/migrate";
 import { narrowing } from "./internal/narrow";
 import { outbox } from "./internal/outbox";
 import { schedule } from "./internal/schedule";
 
-import type { Narrowing, Outbox, Schedule } from "../kernel/api";
+import type { ScopeFilter, Outbox, Schedule } from "../kernel/api";
 import { store, type Handle, type Tables } from "./internal/store";
 
 /** What building a store needs: where the file is, and who owns what. */
-export type Settings = Opening & {
+export type Settings = DatabaseOptions & {
     tables: Readonly<Record<string, Tables>>;
 };
 
@@ -36,7 +36,7 @@ export type Store<Handed = unknown> = {
     schedule?: () => Schedule;
 
     /** How a declared scope becomes a condition over the tables it was given. */
-    narrowing?: () => Narrowing;
+    narrowing?: () => ScopeFilter;
     tx: <Made>(plugin: string, run: (db: unknown) => Promise<Made>) => Promise<Made>;
     write: <Made>(run: () => Promise<Made>) => Promise<Made>;
     inTransaction: () => boolean;
@@ -45,7 +45,7 @@ export type Store<Handed = unknown> = {
 };
 
 export { MigrationFault, narrowing, outbox, schedule, steps };
-export type { Handle, Opening, Source, Step, Tables };
+export type { Handle, DatabaseOptions, Source, Step, Tables };
 
 /**
  * Opens a database and holds one handle per plugin over it.
@@ -91,7 +91,7 @@ export function database(settings: Settings): Store<Handle>
         },
 
         /** How a scope narrows a query, over the tables one plugin declared. */
-        narrowing: (): Narrowing =>
+        narrowing: (): ScopeFilter =>
         {
             return narrowing(settings.tables);
         },

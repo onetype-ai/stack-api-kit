@@ -104,7 +104,7 @@ export type Schedule = {
  * The kernel imports no driver, so it cannot build one: it knows which table
  * and which value, and the project turns that into whatever its store speaks.
  */
-export type Narrowing = (table: string, column: string, value: string) => unknown;
+export type ScopeFilter = (table: string, column: string, value: string) => unknown;
 
 /** What the kernel needs to call another server. */
 export type Dialer = (call: Outbound) => Promise<unknown>;

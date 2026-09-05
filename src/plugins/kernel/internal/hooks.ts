@@ -1,4 +1,4 @@
-import type { Hook, Joined } from "./contract";
+import type { Hook, Participation } from "./contract";
 import { KernelFault } from "./faults";
 
 /** What the timer answers with. An object, so no participant can return it. */
@@ -11,7 +11,7 @@ type Opened = {
 
 type Participating<Context> = {
     plugin: string;
-    participant: Joined<Context>;
+    participant: Participation<Context>;
 };
 
 /**
@@ -34,7 +34,7 @@ export function hooks<Context>(patience: number = PATIENCE)
             opened.set(name, { owner, hook });
         },
 
-        participate: (plugin: string, name: string, participant: Joined<Context>): void =>
+        participate: (plugin: string, name: string, participant: Participation<Context>): void =>
         {
             joined.set(name, [...(joined.get(name) ?? []), { plugin, participant }]);
         },

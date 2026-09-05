@@ -5,21 +5,21 @@ import { createKernel } from "../plugins/kernel/api";
 import type { Handle, Store } from "../plugins/database/api";
 import type { Caller, Dialer, Kernel, Outbound, Plugin } from "../plugins/kernel/api";
 
-export type Said = {
+export type LogLine = {
     level: string;
     plugin: string;
     line: string;
 } & Readonly<Record<string, unknown>>;
 
 /** One outbound call, as a test sees it. */
-export type Called = {
+export type OutboundCall = {
     method: string;
     url: string;
     body: unknown;
     headers: Readonly<Record<string, string>> | undefined;
 };
 
-export type Booting = {
+export type TestKernelOptions = {
     plugins: readonly Plugin[];
     config?: Readonly<Record<string, unknown>>;
     answers?: (call: Outbound) => unknown;
@@ -47,17 +47,17 @@ export type Booting = {
 };
 
 /** One event, as a test sees it. */
-export type Heard = {
+export type EmittedEvent = {
     plugin: string;
     event: string;
     payload: unknown;
 };
 
-export type Booted = {
+export type TestKernel = {
     kernel: Kernel;
     store: Store<Handle>;
-    said: Said[];
-    called: () => Called[];
+    said: LogLine[];
+    called: () => OutboundCall[];
 
     /**
      * Every event emitted since boot, in order.
@@ -66,7 +66,7 @@ export type Booted = {
      * otherwise mean writing a plugin whose only purpose is to hear. This
      * listens to everything declared, so a test asserts on the emit itself.
      */
-    heard: () => Heard[];
+    heard: () => EmittedEvent[];
 
     /**
      * Waits until every listener an emit started has finished.
@@ -90,7 +90,7 @@ export type Booted = {
     stop: () => Promise<void>;
 };
 
-export const Booting = {
+export const TestTables = {
     tables: (plugins: readonly Plugin[]): Readonly<Record<string, Readonly<Record<string, unknown>>>> =>
     {
         return Object.fromEntries(plugins.map((plugin) => [plugin.name, plugin.definition.tables ?? {}]));
@@ -104,10 +104,10 @@ export const Booting = {
     },
 };
 
-/** Everything `booting` knows how to be given. */
+/** Everything `startTestKernel` knows how to be given. */
 const TAKES: ReadonlySet<string> = new Set(["plugins", "config", "answers", "outbox", "schedule", "now"]);
 
-export async function booting(given: Booting): Promise<Booted>
+export async function startTestKernel(given: TestKernelOptions): Promise<TestKernel>
 {
     // Refused rather than ignored: a key that looks like it worked is how an
     // author spends an afternoon on a test that was never wired to anything.
@@ -116,17 +116,17 @@ export async function booting(given: Booting): Promise<Booted>
     if (unknown.length > 0)
     {
         throw new TypeError(
-            `booting was given ${unknown.map((key) => `"${key}"`).join(", ")}, which it does not take. It takes ${[...TAKES].join(", ")}.`,
+            `startTestKernel was given ${unknown.map((key) => `"${key}"`).join(", ")}, which it does not take. It takes ${[...TAKES].join(", ")}.`,
         );
     }
 
-    const store = database({ file: ":memory:", tables: Booting.tables(given.plugins) });
+    const store = database({ file: ":memory:", tables: TestTables.tables(given.plugins) });
 
-    store.migrate(Booting.migrations(given.plugins));
+    store.migrate(TestTables.migrations(given.plugins));
 
-    const said: Said[] = [];
-    const called: Called[] = [];
-    const heard: Heard[] = [];
+    const said: LogLine[] = [];
+    const called: OutboundCall[] = [];
+    const heard: EmittedEvent[] = [];
 
     // A plugin that hears everything, added to the ones under test. Named so
     // it cannot collide with a real one, and declared as listening to every
@@ -224,7 +224,7 @@ export async function booting(given: Booting): Promise<Booted>
  * plan. The kernel never reads it, so a test proving that one tenant cannot
  * reach another's rows has to be able to say who this caller belongs to.
  */
-export function calling(
+export function createCaller(
     permissions: readonly string[] = [],
     id = "11111111-1111-4111-8111-111111111111",
     claims: Readonly<Record<string, unknown>> = {},

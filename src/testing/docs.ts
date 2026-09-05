@@ -1,12 +1,12 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-export type Oversized = {
+export type OversizedDoc = {
     path: string;
     size: number;
 };
 
-export type Undocumented = {
+export type UndocumentedKey = {
     key: string;
 };
 
@@ -14,7 +14,7 @@ const LIMIT = 1800;
 
 // A contract nobody can read in one sitting is a contract nobody reads. What
 // grows past this is two documents, or a rule that belongs in code.
-export function oversized(root: string, limit: number = LIMIT): Oversized[]
+export function oversized(root: string, limit: number = LIMIT): OversizedDoc[]
 {
     if (!existsSync(root))
     {

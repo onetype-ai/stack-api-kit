@@ -7,22 +7,22 @@ export type {
     Command,
     Context,
     Definition,
-    Described,
+    Description,
     Dialer,
     Endpoint,
     Event,
     Failure,
     FaultCode,
-    Heard,
+    EmittedEvent,
     Hook,
     Incoming,
-    Joined,
+    Participation,
     Kernel,
     Listener,
     Log,
     Logger,
     Method,
-    Narrowing,
+    ScopeFilter,
     Options,
     Outbound,
     Outbox,
@@ -32,25 +32,25 @@ export type {
     Participant,
     Permission,
     Plugin,
-    Registered,
+    Registration,
     Route,
     Run,
     Schematic,
     Storage,
-    Wrong,
+    ContractProblem,
 } from "./plugins/kernel/api";
 
 export { database, MigrationFault, narrowing, outbox, schedule } from "./plugins/database/api";
-export type { Handle, Opening, Source, Step, Store, Tables } from "./plugins/database/api";
+export type { Handle, DatabaseOptions, Source, Step, Store, Tables } from "./plugins/database/api";
 
 export { always, identifier, serve } from "./plugins/http/api";
-export type { Server, Serving } from "./plugins/http/api";
+export type { Server, ServerOptions } from "./plugins/http/api";
 
 export { dial, OutboundFault } from "./plugins/outbound/api";
-export type { Dialing } from "./plugins/outbound/api";
+export type { DialerOptions } from "./plugins/outbound/api";
 
 export { limiter, same } from "./plugins/guard/api";
 export type { Limiter, Verdict, Window } from "./plugins/guard/api";
 
 export { discover, start } from "./plugins/mount/api";
-export type { Started, Starting } from "./plugins/mount/api";
+export type { RunningApp, StartOptions } from "./plugins/mount/api";

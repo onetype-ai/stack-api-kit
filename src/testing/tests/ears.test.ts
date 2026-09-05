@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
 import { definePlugin } from "../../plugins/kernel/api";
-import { booting } from "../booting";
+import { startTestKernel } from "../startTestKernel";
 
 test("a boot failure never blames the testing plugin", async () =>
 {
@@ -11,7 +11,7 @@ test("a boot failure never blames the testing plugin", async () =>
         listens: { "orders.placed": { describe: "Records.", handle: () => undefined } },
     });
 
-    const failed = await booting({ plugins: [listener] }).catch((cause: unknown) => cause) as Error;
+    const failed = await startTestKernel({ plugins: [listener] }).catch((cause: unknown) => cause) as Error;
 
     expect(failed.message).not.toContain("testing-ears");
     expect(failed.message).toContain('"orders" would declare it');

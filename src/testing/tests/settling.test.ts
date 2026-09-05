@@ -2,13 +2,13 @@ import { expect, test } from "vitest";
 import { z } from "zod";
 
 import { definePlugin } from "../../plugins/kernel/api";
-import { booting } from "../booting";
+import { startTestKernel } from "../startTestKernel";
 
 test("what a listener wrote is there once the test waits for it", async () =>
 {
     const written: string[] = [];
 
-    const api = await booting({
+    const api = await startTestKernel({
         plugins: [
             definePlugin("source", {
                 version: "1.0.0",
@@ -54,7 +54,7 @@ test("a chain of two listeners settles too", async () =>
 {
     const reached: string[] = [];
 
-    const api = await booting({
+    const api = await startTestKernel({
         plugins: [
             definePlugin("first", {
                 version: "1.0.0",

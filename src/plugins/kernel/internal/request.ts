@@ -46,7 +46,7 @@ type Log = (
     about?: Readonly<Record<string, unknown>>,
 ) => void;
 
-/** Nothing found. Said the same way whoever asked, so probing learns nothing. */
+/** Nothing found. LogLine the same way whoever asked, so probing learns nothing. */
 export const unknownRoute: Outgoing = {
     status: 404,
     body: { code: "NOT_FOUND", message: "No such route." },

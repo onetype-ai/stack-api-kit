@@ -3,18 +3,18 @@ import { limiter } from "../../guard/api";
 import { createKernel } from "../../kernel/api";
 import { dial } from "../../outbound/api";
 import { serve } from "../../http/api";
-import type { Opening, Store } from "../../database/api";
-import type { Started, Starting } from "../api";
+import type { DatabaseOptions, Store } from "../../database/api";
+import type { RunningApp, StartOptions } from "../api";
 
 // The order is the point: the database opens and migrates before any plugin
 // runs, the kernel validates before any plugin acts, and the server is built
 // last, from routes that are already known to be sound.
-export async function start(starting: Starting): Promise<Started>
+export async function start(starting: StartOptions): Promise<RunningApp>
 {
     const log = starting.log;
 
     // A store the project built, or one opened here from a path. Told apart
-    // by what it answers to, not by a flag: a Store has methods, an Opening
+    // by what it answers to, not by a flag: a Store has methods, an DatabaseOptions
     // has a file.
     const given = starting.database;
     const ready = typeof (given as { tx?: unknown }).tx === "function";
@@ -22,7 +22,7 @@ export async function start(starting: Starting): Promise<Started>
     const store = ready
         ? given as Store
         : database({
-            ...given as Opening,
+            ...given as DatabaseOptions,
             tables: Object.fromEntries(
                 starting.plugins
                     .filter((plugin) => plugin.definition.tables !== undefined)

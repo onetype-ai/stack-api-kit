@@ -4,7 +4,7 @@ import * as names from "./names";
 import { filters } from "./output";
 
 /** One thing wrong, and everything needed to fix it. */
-export type Wrong = {
+export type ContractProblem = {
     code: KernelFault["code"];
     plugin: string;
     message: string;
@@ -27,9 +27,9 @@ type Owned = {
  * A project with four mistakes should learn all four in one run rather than
  * in four runs, each ending at a different one.
  */
-export function validate(plugins: readonly Plugin[], config: Readonly<Record<string, unknown>>): Wrong[]
+export function validate(plugins: readonly Plugin[], config: Readonly<Record<string, unknown>>): ContractProblem[]
 {
-    const wrong: Wrong[] = [];
+    const wrong: ContractProblem[] = [];
     const say: Say = (code, plugin, message) =>
     {
         wrong.push({ code, plugin, message });
@@ -432,7 +432,7 @@ function refers(name: string, plugin: Plugin, by: ReadonlyMap<string, Plugin>, o
     }
 
     // A hook is the same: the owner runs it and reads what comes back, so the
-    // participant is the one being called, not the one calling.
+    // participant is the one being called, not the one createCaller.
     for (const key of Object.keys(plugin.definition.participates ?? {}))
     {
         exists("hooks", key, "UNDECLARED_HOOK", "Hook");

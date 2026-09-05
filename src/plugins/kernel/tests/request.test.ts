@@ -5,7 +5,7 @@ import { createKernel, definePlugin, Refusal } from "../api";
 import type { Caller, Definition, Kernel } from "../api";
 
 /** A caller the test controls, as a project would build one. */
-function calling(permissions: readonly string[] = [], id: string | undefined = "u1"): Caller
+function createCaller(permissions: readonly string[] = [], id: string | undefined = "u1"): Caller
 {
     return { id, permissions, claims: {} };
 }
@@ -42,7 +42,7 @@ describe("finding a route", () =>
         const kernel = await serving({});
 
         const anonymous = await kernel.handle({ method: "GET", path: "/nope", input: {} });
-        const signedIn = await kernel.handle({ method: "GET", path: "/nope", input: {}, caller: calling() });
+        const signedIn = await kernel.handle({ method: "GET", path: "/nope", input: {}, caller: createCaller() });
 
         expect(anonymous).toEqual(signedIn);
     });
@@ -131,7 +131,7 @@ describe("permissions", () =>
     {
         const kernel = await serving(guarded);
 
-        const answered = await kernel.handle({ method: "GET", path: "/items", input: {}, caller: calling() });
+        const answered = await kernel.handle({ method: "GET", path: "/items", input: {}, caller: createCaller() });
 
         expect(answered.status).toBe(403);
     });
@@ -140,7 +140,7 @@ describe("permissions", () =>
     {
         const kernel = await serving(guarded);
 
-        const answered = await kernel.handle({ method: "GET", path: "/items", input: {}, caller: calling(["items.read"]) });
+        const answered = await kernel.handle({ method: "GET", path: "/items", input: {}, caller: createCaller(["items.read"]) });
 
         expect(answered).toEqual({ status: 200, body: { ok: true } });
     });
@@ -149,7 +149,7 @@ describe("permissions", () =>
     {
         const kernel = await serving(guarded);
 
-        const answered = await kernel.handle({ method: "GET", path: "/items", input: {}, caller: calling() });
+        const answered = await kernel.handle({ method: "GET", path: "/items", input: {}, caller: createCaller() });
 
         expect(JSON.stringify(answered.body)).not.toMatch(/items\.read/);
     });
@@ -158,8 +158,8 @@ describe("permissions", () =>
     {
         const kernel = await serving(guarded);
 
-        const allowed = await kernel.handle({ method: "GET", path: "/items", input: {}, caller: calling(["items.read"]) });
-        const refused = await kernel.handle({ method: "GET", path: "/items", input: {}, caller: calling() });
+        const allowed = await kernel.handle({ method: "GET", path: "/items", input: {}, caller: createCaller(["items.read"]) });
+        const refused = await kernel.handle({ method: "GET", path: "/items", input: {}, caller: createCaller() });
 
         expect(allowed.status).toBe(200);
         expect(refused.status).toBe(403);

@@ -1,4 +1,4 @@
-import type { Event, Heard } from "./contract";
+import type { Event, EmittedEvent } from "./contract";
 import { KernelFault } from "./faults";
 
 export type Failure = {
@@ -32,7 +32,7 @@ const KEPT = 100;
 
 type Subscriber<Context> = {
     plugin: string;
-    listener: Heard<Context>;
+    listener: EmittedEvent<Context>;
 };
 
 type Told = (plugin: string, line: string, about: Readonly<Record<string, unknown>>) => void;
@@ -103,7 +103,7 @@ export function events<Context>(now: () => number = Date.now, told: Told = () =>
             published.set(name, { owner, event });
         },
 
-        listen: (plugin: string, name: string, listener: Heard<Context>): void =>
+        listen: (plugin: string, name: string, listener: EmittedEvent<Context>): void =>
         {
             subscribers.set(name, [...(subscribers.get(name) ?? []), { plugin, listener }]);
         },

@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import { z } from "zod";
 
 import { definePlugin } from "../../plugins/kernel/api";
-import { booting } from "../booting";
+import { startTestKernel } from "../startTestKernel";
 
 test("a test drives its own clock and asks for what is due", async () =>
 {
@@ -21,7 +21,7 @@ test("a test drives its own clock and asks for what is due", async () =>
         },
     });
 
-    const api = await booting({ plugins: [plugin], schedule: true, now: () => clock });
+    const api = await startTestKernel({ plugins: [plugin], schedule: true, now: () => clock });
 
     api.kernel.context("holds").commands.later("holds.release", { id: "one" }, 600);
 

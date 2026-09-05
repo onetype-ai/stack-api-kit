@@ -8,7 +8,7 @@ import { hooks } from "./hooks";
 import { order } from "./order";
 import { permissions } from "./permissions";
 import { type Budget, type Incoming, type Mounted, notServing, type Outgoing, respond, unknownRoute } from "./request";
-import type { Dialer, Narrowing, Outbox, Schedule, Storage } from "./store";
+import type { Dialer, ScopeFilter, Outbox, Schedule, Storage } from "./store";
 import { validate } from "./validate";
 
 /** Where a line goes. The project decides; a plugin never writes directly. */
@@ -80,7 +80,7 @@ export type Options = {
      * The kernel imports no driver, so a project that declares a scope also
      * says how to narrow by it.
      */
-    narrow?: Narrowing;
+    narrow?: ScopeFilter;
 
     /**
      * How long a hook participant has to answer, in milliseconds.
@@ -92,7 +92,7 @@ export type Options = {
 };
 
 /** A route, and the plugin it came from. */
-export type Registered = {
+export type Registration = {
     plugin: string;
     method: Method;
     path: string;
@@ -111,7 +111,7 @@ export type Kernel = {
     stop: () => Promise<void>;
     started: () => boolean;
 
-    routes: () => readonly Registered[];
+    routes: () => readonly Registration[];
     handle: (incoming: Incoming) => Promise<Outgoing>;
 
     context: (plugin: string, caller?: Caller) => Context;
@@ -136,7 +136,7 @@ const quiet: Log = () => {};
  *
  * A malformed escape makes decodeURIComponent throw, and this runs before
  * respond()'s try/catch: over HTTP the server normalises first, but a project
- * calling handle() directly would get an unhandled rejection where it asked
+ * createCaller handle() directly would get an unhandled rejection where it asked
  * for an answer. A segment that cannot be read matches nothing.
  */
 function readable(given: string): string | undefined
@@ -581,7 +581,7 @@ export function createKernel(options: Options): Kernel
             }
         },
 
-        routes: (): readonly Registered[] =>
+        routes: (): readonly Registration[] =>
             [...routes.values()].map(({ plugin, route }) => ({
                 plugin,
                 method: route.method,

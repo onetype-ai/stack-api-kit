@@ -1,11 +1,11 @@
-import type { Opening, Store } from "../database/api";
-import type { Serving } from "../http/api";
+import type { DatabaseOptions, Store } from "../database/api";
+import type { ServerOptions } from "../http/api";
 import type { Budget, Dialer, Kernel, Logger, Plugin } from "../kernel/api";
-import type { Dialing } from "../outbound/api";
+import type { DialerOptions } from "../outbound/api";
 import { discover } from "./internal/discover";
 import { start } from "./internal/start";
 
-export type Starting = {
+export type StartOptions = {
     plugins: readonly Plugin[];
 
     /**
@@ -16,19 +16,19 @@ export type Starting = {
      * anything else answering `Store`, replaces the database without the kit
      * knowing which one it got.
      */
-    database: Opening | Store;
+    database: DatabaseOptions | Store;
 
     config?: Readonly<Record<string, unknown>> | undefined;
 
     /**
-     * Who is calling.
+     * Who is createCaller.
      *
      * Given the kernel, because anything reading a session reads it from a
      * plugin, and the kernel is what reaches one. Passing the function
      * directly would mean holding a kernel that does not exist yet.
      */
-    identify?: ((kernel: Kernel) => Serving["identify"]) | undefined;
-    http?: Omit<Serving, "kernel" | "identify" | "log"> | undefined;
+    identify?: ((kernel: Kernel) => ServerOptions["identify"]) | undefined;
+    http?: Omit<ServerOptions, "kernel" | "identify" | "log"> | undefined;
 
     /**
      * How outbound calls are carried, or how the built-in one is configured.
@@ -37,7 +37,7 @@ export type Starting = {
      * proxy, a signed request, a protocol that is not https. The kernel still
      * refuses a host the plugin did not declare, whichever dialler carries it.
      */
-    outbound?: Dialing | Dialer | undefined;
+    outbound?: DialerOptions | Dialer | undefined;
 
     /**
      * What counts requests against a route's declared limit.
@@ -71,7 +71,7 @@ export type Starting = {
     log?: Logger | undefined;
 };
 
-export type Started = {
+export type RunningApp = {
     kernel: Kernel;
     store: Store;
     app: ReturnType<typeof import("../http/api").serve>;

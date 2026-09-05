@@ -1,17 +1,17 @@
 import type { z } from "zod";
 
 /** Anything declared carries a sentence saying what it is for. */
-export type Described = {
+export type Description = {
     describe: string;
 };
 
 /** A declaration whose payload is checked before it reaches anyone. */
-export type Schematic = Described & {
+export type Schematic = Description & {
     schema: z.ZodType;
 };
 
 /** What a plugin may do, named so a project can grant it. */
-export type Permission = Described;
+export type Permission = Description;
 
 /** An event a plugin publishes. Delivered after the work it announces. */
 export type Event = Schematic;
@@ -23,7 +23,7 @@ export type Event = Schematic;
  * accepts any annotation its author writes, because of contravariance, so the
  * compiler endorses a claim about a completely different schema.
  */
-export type Listener<Context, Payload = unknown> = Described & {
+export type Listener<Context, Payload = unknown> = Description & {
     handle: (payload: Payload, ctx: Context) => void | Promise<void>;
 };
 
@@ -31,7 +31,7 @@ export type Listener<Context, Payload = unknown> = Described & {
 export type Hook = Schematic;
 
 /** What a participant answers: nothing to allow, a reason to refuse. */
-export type Participant<Context, Payload = unknown> = Described & {
+export type Participant<Context, Payload = unknown> = Description & {
     handle: (payload: Payload, ctx: Context) => string | undefined | Promise<string | undefined>;
 };
 
@@ -53,7 +53,7 @@ export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
  * not reach it. `output` is a whitelist of what may leave, so a column added
  * to a table tomorrow does not appear in a response by itself.
  */
-export type Route<Context, Input extends z.ZodType = z.ZodType> = Described & {
+export type Route<Context, Input extends z.ZodType = z.ZodType> = Description & {
     method: Method;
     path: string;
     input: Input;
@@ -98,11 +98,11 @@ export type Route<Context, Input extends z.ZodType = z.ZodType> = Described & {
  * written against different ones, so a list holds "some listener" rather than
  * one shape. Sound because the kernel parses before it calls.
  */
-export type Heard<Context> = Described & {
+export type EmittedEvent<Context> = Description & {
     handle: (payload: never, ctx: Context) => void | Promise<void>;
 };
 
-export type Joined<Context> = Described & {
+export type Participation<Context> = Description & {
     handle: (payload: never, ctx: Context) => string | undefined | Promise<string | undefined>;
 };
 
@@ -131,7 +131,7 @@ export type Logger = {
     error: (line: string, about?: Readonly<Record<string, unknown>>) => void;
 };
 
-/** Who is calling, as whatever the project decided that means. */
+/** Who is createCaller, as whatever the project decided that means. */
 export type Caller = {
     /** Stable identity, or undefined when nobody is signed in. */
     id: string | undefined;
@@ -169,7 +169,7 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
      */
     now: () => number;
 
-    /** Who is calling. Absent outside a request, as in setup. */
+    /** Who is createCaller. Absent outside a request, as in setup. */
     caller: Caller | undefined;
 
     /**
@@ -326,7 +326,7 @@ export type Definition<
     Schema extends z.ZodType = z.ZodType,
     Services = unknown,
     Db = unknown,
-> = Described & {
+> = Description & {
     version: string;
     dependsOn?: readonly string[];
     config?: Schema;
@@ -375,10 +375,10 @@ export type Definition<
     routes?: readonly Endpoint<Context<z.infer<Schema>, Given<Services>, Db>>[];
 
     emits?: Readonly<Record<string, Event>>;
-    listens?: Readonly<Record<string, Heard<Context<z.infer<Schema>, Given<Services>, Db>>>>;
+    listens?: Readonly<Record<string, EmittedEvent<Context<z.infer<Schema>, Given<Services>, Db>>>>;
 
     hooks?: Readonly<Record<string, Hook>>;
-    participates?: Readonly<Record<string, Joined<Context<z.infer<Schema>, Given<Services>, Db>>>>;
+    participates?: Readonly<Record<string, Participation<Context<z.infer<Schema>, Given<Services>, Db>>>>;
 
     commands?: Readonly<Record<string, Run<Context<z.infer<Schema>, Given<Services>, Db>>>>;
 

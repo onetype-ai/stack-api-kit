@@ -3,9 +3,9 @@ import { z } from "zod";
 
 import { Answered, createKernel, definePlugin } from "../../kernel/api";
 import type { Caller, Definition, Kernel } from "../../kernel/api";
-import { identifier, serve, type Serving } from "../api";
+import { identifier, serve, type ServerOptions } from "../api";
 
-async function serving(found: Partial<Definition> = {}, options: Partial<Serving> = {}): Promise<ReturnType<typeof serve>>
+async function serving(found: Partial<Definition> = {}, options: Partial<ServerOptions> = {}): Promise<ReturnType<typeof serve>>
 {
     const kernel: Kernel = createKernel({
         plugins: [definePlugin("items", { version: "1.0.0", describe: "Owns items.", ...found } as Definition)],

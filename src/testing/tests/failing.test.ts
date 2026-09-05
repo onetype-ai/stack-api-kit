@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
 import { definePlugin, OutboundFault } from "../../index";
-import { booting } from "../booting";
+import { startTestKernel } from "../startTestKernel";
 
 test("answers may throw an OutboundFault, so a bad status is testable", async () =>
 {
@@ -14,7 +14,7 @@ test("answers may throw an OutboundFault, so a bad status is testable", async ()
         }),
     });
 
-    const api = await booting({
+    const api = await startTestKernel({
         plugins: [plugin],
         answers: () =>
         {

@@ -1,13 +1,13 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-export type Crossing = {
+export type ImportEdge = {
     from: string;
     to: string;
     specifier: string;
 };
 
-export type Wrong = {
+export type ImportViolation = {
     rule: "undeclared" | "deep" | "cycle" | "contract";
     message: string;
 };
@@ -26,10 +26,10 @@ type Read = {
      */
     answers: Set<string>;
 
-    crossings: Crossing[];
+    crossings: ImportEdge[];
 };
 
-export function boundaries(root: string): Wrong[]
+export function boundaries(root: string): ImportViolation[]
 {
     const names = readdirSync(root, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
@@ -40,7 +40,7 @@ export function boundaries(root: string): Wrong[]
     // path inside the kit tells its author nothing about their own folder.
     const contracts = names.filter((name) => existsSync(join(root, name, "plugin.ts")));
 
-    const missing: Wrong[] = names
+    const missing: ImportViolation[] = names
         .filter((name) => !contracts.includes(name))
         .map((name) => ({
             rule: "contract" as const,
@@ -150,7 +150,7 @@ function files(root: string, name: string): { path: string; source: string }[]
 // A specifier is resolved against the file that wrote it rather than matched as
 // text: "../../other/thing" reaches the same private file an alias would, and a
 // rule reading the alias alone calls that clean.
-function crossings(name: string, path: string, source: string, others: ReadonlySet<string>): Crossing[]
+function crossings(name: string, path: string, source: string, others: ReadonlySet<string>): ImportEdge[]
 {
     return [...source.matchAll(/from\s+"([^"]+)"/g)].flatMap((match) =>
     {
@@ -188,7 +188,7 @@ function crossings(name: string, path: string, source: string, others: ReadonlyS
     });
 }
 
-function undeclared(plugins: readonly Read[]): Wrong[]
+function undeclared(plugins: readonly Read[]): ImportViolation[]
 {
     return plugins.flatMap((one) =>
         one.crossings
@@ -227,7 +227,7 @@ function tested(path: string): boolean
     return /(^|\/)tests?\//.test(path) || /\.test\.tsx?$/.test(path);
 }
 
-function deep(plugins: readonly Read[]): Wrong[]
+function deep(plugins: readonly Read[]): ImportViolation[]
 {
     return plugins.flatMap((one) =>
         one.crossings
@@ -251,10 +251,10 @@ function deep(plugins: readonly Read[]): Wrong[]
     );
 }
 
-function cycles(plugins: readonly Read[]): Wrong[]
+function cycles(plugins: readonly Read[]): ImportViolation[]
 {
     const edges = new Map(plugins.map((one) => [one.name, new Set(one.crossings.map((crossing) => crossing.to))]));
-    const found: Wrong[] = [];
+    const found: ImportViolation[] = [];
     const walking = new Set<string>();
     const done = new Set<string>();
 

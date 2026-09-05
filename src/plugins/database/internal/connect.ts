@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import Database from "better-sqlite3";
 
 /** What opening a database needs to know. */
-export type Opening = {
+export type DatabaseOptions = {
     /** A path, or ":memory:" for one that lives as long as the process. */
     file: string;
 
@@ -31,7 +31,7 @@ export type Opening = {
  * - NORMAL synchronous is the pairing WAL is designed for: durable across a
  *   process crash, and only at risk in an OS-level power loss.
  */
-export function connect(opening: Opening): Database.Database
+export function connect(opening: DatabaseOptions): Database.Database
 {
     const memory = opening.file === ":memory:";
 
