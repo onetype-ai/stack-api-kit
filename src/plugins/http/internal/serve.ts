@@ -104,6 +104,64 @@ function matching(answering: ReadonlyMap<string, Set<string>>, path: string): Se
     return undefined;
 }
 
+
+/**
+ * The body, or nothing when it outgrows what is allowed.
+ *
+ * Counted chunk by chunk and abandoned the moment it is too big, so a caller
+ * cannot make the server hold what it is about to refuse.
+ */
+async function taken(stream: ReadableStream<Uint8Array> | null, bytes: number): Promise<Uint8Array | undefined>
+{
+    if (stream === null)
+    {
+        return new Uint8Array(0);
+    }
+
+    const reader = stream.getReader();
+    const parts: Uint8Array[] = [];
+
+    let held = 0;
+
+    try
+    {
+        for (;;)
+        {
+            const { done, value } = await reader.read();
+
+            if (done)
+            {
+                break;
+            }
+
+            held += value.byteLength;
+
+            if (held > bytes)
+            {
+                return undefined;
+            }
+
+            parts.push(value);
+        }
+    }
+    finally
+    {
+        await reader.cancel().catch(() => undefined);
+    }
+
+    const all = new Uint8Array(held);
+
+    let at = 0;
+
+    for (const part of parts)
+    {
+        all.set(part, at);
+        at += part.byteLength;
+    }
+
+    return all;
+}
+
 export function serve(serving: Serving): Hono
 {
     const app = new Hono();
@@ -222,14 +280,17 @@ export function serve(serving: Serving): Hono
                     return c.json({ code: "TOO_LARGE", message: "The request body is too large." }, 413);
                 }
 
-                // Read as bytes, and counted as bytes. `content-length` is
-                // what the caller claimed and a chunked request sends none;
-                // measuring the decoded string instead counts UTF-16 units,
-                // so a body of Japanese passes a limit three times smaller
-                // than what actually arrived.
-                const raw = new Uint8Array(await c.req.arrayBuffer());
+                // Read as bytes, and counted as bytes while they arrive.
+                // `content-length` is what the caller claimed and a chunked
+                // request sends none, so the limit above lets one through;
+                // buffering it whole first would let a caller spend the
+                // server's memory before anything refuses it. Measuring the
+                // decoded string instead counts UTF-16 units, so a body of
+                // Japanese passes a limit three times smaller than what
+                // actually arrived.
+                const raw = await taken(c.req.raw.body, bodyBytes);
 
-                if (raw.byteLength > bodyBytes)
+                if (raw === undefined)
                 {
                     return c.json({ code: "TOO_LARGE", message: "The request body is too large." }, 413);
                 }

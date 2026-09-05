@@ -261,6 +261,42 @@ describe("bodies", () =>
         expect(answer.status).toBe(413);
     });
 
+    // A chunked request sends no content-length, so the claim cannot be
+    // checked: the bytes are counted as they arrive, and the rest is never
+    // asked for. Buffering it whole first would spend the memory a caller
+    // was about to be refused for asking to spend.
+    test("and stops reading one that arrives without saying how big it is", async () =>
+    {
+        const app = await serving(taking, { bodyBytes: 100 });
+
+        let sent = 0;
+
+        const body = new ReadableStream<Uint8Array>({
+            pull(held)
+            {
+                sent += 1;
+
+                if (sent > 50)
+                {
+                    held.close();
+                    return;
+                }
+
+                held.enqueue(new TextEncoder().encode("x".repeat(100)));
+            },
+        });
+
+        const answer = await app.request("/items", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body,
+            duplex: "half",
+        } as RequestInit);
+
+        expect(answer.status).toBe(413);
+        expect(sent).toBeLessThan(10);
+    });
+
     test("refuses a body that is not JSON", async () =>
     {
         const app = await serving(taking);
