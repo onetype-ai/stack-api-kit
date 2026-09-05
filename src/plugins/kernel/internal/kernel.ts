@@ -316,7 +316,7 @@ export function createKernel(options: Options): Kernel
                         attempts: job.attempts + 1,
                     });
 
-                    await options.schedule.gaveUp(job.id);
+                    await options.schedule.abandon(job.id);
                 }
                 else
                 {

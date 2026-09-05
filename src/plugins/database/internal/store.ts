@@ -7,7 +7,7 @@ import { queue } from "./queue";
 
 export type Tables = Readonly<Record<string, unknown>>;
 
-export type Holding = {
+export type StoreParts = {
     connection: Database.Database;
     tables: Readonly<Record<string, Tables>>;
 };
@@ -24,7 +24,7 @@ export type Handle = ReturnType<typeof drizzle>;
  * one connection, and a connection per plugin would make a transaction across
  * two plugins impossible, which costs more than it buys.
  */
-export function store(holding: Holding)
+export function store(holding: StoreParts)
 {
     const handles = new Map<string, Handle>();
     const waiting = queue();

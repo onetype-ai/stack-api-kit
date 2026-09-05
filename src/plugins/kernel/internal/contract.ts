@@ -85,7 +85,7 @@ export type Route<Context, Input extends z.ZodType = z.ZodType> = Description & 
      *
      * `input` is what the route's own schema parsed, so a handler reads its
      * fields without a cast: nothing that failed the schema reaches here.
-     * Return a value for a 200, or an `Reply` to say the status and
+     * Return a value for a 200, or a `Reply` to say the status and
      * headers as well.
      */
     handle: (input: z.infer<Input>, ctx: Context) => unknown | Promise<unknown>;

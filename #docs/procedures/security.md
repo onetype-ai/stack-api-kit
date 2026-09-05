@@ -15,9 +15,9 @@ Mechanical, so no plugin forgets:
 - **Routes are closed** until `public: true`. Not deciding fails shut.
 - **Credentials never reach a handler.** A route reading `cookie` or
   `authorization` is refused at startup, so no log of its input holds one.
-- **Outbound** reaches declared https origins only, and never follows a
-  redirect: the kernel checked the first url and never sees the second.
-- **Bodies** are bounded before parsing; secrets compared with `same`.
+- **Outbound** reaches declared origins only, and never follows a redirect:
+  the kernel checked the first url and never sees the second.
+- **Bodies** are bounded before parsing; secrets compared in constant time.
 - **Writes** are serialised, so one request's query cannot land inside
   another's transaction.
 
@@ -26,7 +26,7 @@ Mechanical, so no plugin forgets:
 The kit cannot know your domain:
 
 - **Ownership is a query, not a permission.** `items.read` says the caller may
-  read items, never that *this* item is theirs. The kernel carries your tenant
+  read items, never that *this* one is theirs. The kernel carries your tenant
   in `claims` and will not guess what it means. Scope the read.
 - **A route without a `limit` has none.** Nothing enforces what nothing
   declared, and an unlimited read is how one guessed id becomes the table.

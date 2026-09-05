@@ -5,7 +5,7 @@
  * which is what `*` with credentials amounts to, is every site the caller has
  * open being allowed to spend their session.
  */
-export type Allowing = {
+export type CorsPolicy = {
     origins: readonly string[];
     methods: readonly string[];
     headers: readonly string[];
@@ -19,7 +19,7 @@ export type Allowing = {
  * Origin either way, and a cache keyed without it would hand one site's
  * allowance to another.
  */
-export function cors(allowing: Allowing, origin: string | undefined): Readonly<Record<string, string>>
+export function cors(allowing: CorsPolicy, origin: string | undefined): Readonly<Record<string, string>>
 {
     if (origin === undefined || !allowing.origins.includes(origin))
     {

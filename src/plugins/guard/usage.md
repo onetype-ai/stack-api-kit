@@ -25,7 +25,7 @@ if (!verdict.allowed)
 ```
 
 ```ts
-if (!same(sent, expected))
+if (!equalsInConstantTime(sent, expected))
 {
     return undefined;
 }
@@ -36,7 +36,7 @@ if (!same(sent, expected))
 - A window holds one counter per key rather than one entry per request, so a
   flood costs no memory in proportion to itself.
 - `sweep` drops windows that have passed; the plugin runs it on a timer.
-- `same` compares in constant time and answers false on a length difference
+- `equalsInConstantTime` compares in constant time and answers false on a length difference
   rather than throwing.
 
 ## Refuses

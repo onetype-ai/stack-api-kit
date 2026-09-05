@@ -17,7 +17,7 @@ projects, and the order is easy to get subtly wrong.
 import { discover, start } from "@onetype/stack-api-kit";
 
 const api = await start({
-    plugins: await discover(import.meta.glob("./plugins/*/plugin.ts")),
+    plugins: discover(import.meta.glob("./plugins/*/plugin.ts")),
     database: { file: "./data/app.db" },
     identify: (kernel) => (c) => Auth.session(kernel.context("auth"), c.req.header("cookie")),
     http: { origins: ["https://app.example.com"] },

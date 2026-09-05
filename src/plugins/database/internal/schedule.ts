@@ -90,7 +90,7 @@ export function schedule(connection: Database.Database): Schedule
             return Promise.resolve();
         },
 
-        gaveUp: (id: string) =>
+        abandon: (id: string) =>
         {
             remove.run(id);
 

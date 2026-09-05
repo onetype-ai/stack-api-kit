@@ -3,7 +3,7 @@ import type { Context as HonoContext } from "hono";
 
 import type { Caller, Kernel, Method } from "../../kernel/api";
 import { securityHeaders } from "./headers";
-import { cors, type Allowing } from "./origin";
+import { cors, type CorsPolicy } from "./origin";
 import { input } from "./input";
 
 /** What serving needs to know. */
@@ -166,7 +166,7 @@ export function serve(serving: ServerOptions): Hono
 {
     const app = new Hono();
     const bodyBytes = serving.bodyBytes ?? 1_000_000;
-    const allowing: Allowing = {
+    const allowing: CorsPolicy = {
         origins: serving.origins ?? [],
         methods: serving.methods ?? ["GET", "POST", "PUT", "PATCH", "DELETE"],
         headers: serving.headers ?? ["content-type", "authorization"],

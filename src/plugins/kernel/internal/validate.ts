@@ -10,7 +10,7 @@ export type ContractProblem = {
     message: string;
 };
 
-type Say = (code: KernelFault["code"], plugin: string, message: string) => void;
+type Report = (code: KernelFault["code"], plugin: string, message: string) => void;
 
 type Owned = {
     routes: Map<string, string>;
@@ -30,7 +30,7 @@ type Owned = {
 export function validate(plugins: readonly Plugin[], config: Readonly<Record<string, unknown>>): ContractProblem[]
 {
     const wrong: ContractProblem[] = [];
-    const say: Say = (code, plugin, message) =>
+    const say: Report = (code, plugin, message) =>
     {
         wrong.push({ code, plugin, message });
     };
@@ -75,7 +75,7 @@ export function validate(plugins: readonly Plugin[], config: Readonly<Record<str
 }
 
 /** What a plugin declares, and whether anyone claimed it first. */
-function declares(name: string, plugin: Plugin, owned: Owned, say: Say): void
+function declares(name: string, plugin: Plugin, owned: Owned, say: Report): void
 {
     const claim = (kind: keyof Owned, key: string, code: KernelFault["code"], label: string): void =>
     {
@@ -193,7 +193,7 @@ function declares(name: string, plugin: Plugin, owned: Owned, say: Say): void
 const SECRET: ReadonlySet<string> = new Set(["cookie", "authorization", "proxy-authorization", "set-cookie"]);
 
 /** The headers a route asks to read. */
-function reads(name: string, route: NonNullable<Plugin["definition"]["routes"]>[number], say: Say): void
+function reads(name: string, route: NonNullable<Plugin["definition"]["routes"]>[number], say: Report): void
 {
     for (const header of route.reads ?? [])
     {
@@ -277,7 +277,7 @@ function unreachable(host: string): string | undefined
     return undefined;
 }
 
-function limits(name: string, route: NonNullable<Plugin["definition"]["routes"]>[number], say: Say): void
+function limits(name: string, route: NonNullable<Plugin["definition"]["routes"]>[number], say: Report): void
 {
     const limit = route.limit;
 
@@ -298,7 +298,7 @@ function limits(name: string, route: NonNullable<Plugin["definition"]["routes"]>
 }
 
 /** One route path: how it must be written, and who already took it. */
-function path(name: string, method: string, given: string, owned: Owned, say: Say): void
+function path(name: string, method: string, given: string, owned: Owned, say: Report): void
 {
     if (!given.startsWith("/"))
     {
@@ -358,7 +358,7 @@ function path(name: string, method: string, given: string, owned: Owned, say: Sa
 }
 
 /** Checks one namespaced name, reporting rather than throwing. */
-function named(owner: string, key: string, kind: string, say: Say): boolean
+function named(owner: string, key: string, kind: string, say: Report): boolean
 {
     try
     {
@@ -375,7 +375,7 @@ function named(owner: string, key: string, kind: string, say: Say): boolean
 }
 
 /** What a plugin refers to: it must exist, and be reachable. */
-function refers(name: string, plugin: Plugin, by: ReadonlyMap<string, Plugin>, owned: Owned, say: Say): void
+function refers(name: string, plugin: Plugin, by: ReadonlyMap<string, Plugin>, owned: Owned, say: Report): void
 {
     const declared = new Set(plugin.definition.dependsOn ?? []);
 
@@ -463,7 +463,7 @@ function refers(name: string, plugin: Plugin, by: ReadonlyMap<string, Plugin>, o
 }
 
 /** Config is parsed by the plugin's own schema, where it enters. */
-function settings(name: string, plugin: Plugin, config: Readonly<Record<string, unknown>>, say: Say): void
+function settings(name: string, plugin: Plugin, config: Readonly<Record<string, unknown>>, say: Report): void
 {
     const schema = plugin.definition.config;
 
@@ -484,7 +484,7 @@ function settings(name: string, plugin: Plugin, config: Readonly<Record<string, 
 }
 
 /** A cycle in dependsOn, named from where it was entered back to itself. */
-function cycles(by: ReadonlyMap<string, Plugin>, say: Say): void
+function cycles(by: ReadonlyMap<string, Plugin>, say: Report): void
 {
     const state = new Map<string, "open" | "done">();
     const walking: string[] = [];

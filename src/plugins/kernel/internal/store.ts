@@ -95,7 +95,7 @@ export type Schedule = {
     failed: (id: string, at: number) => Promise<void>;
 
     /** It threw too many times. Stop trying. */
-    gaveUp: (id: string) => Promise<void>;
+    abandon: (id: string) => Promise<void>;
 };
 
 /**

@@ -97,7 +97,7 @@ function dialable(url: string): boolean
 /**
  * Builds what one plugin sees, for one caller.
  *
- * Result per request rather than kept: one kernel answers every request, and a
+ * Built per request rather than kept: one kernel answers every request, and a
  * context holding a caller would hand the next request the previous one.
  */
 export function context(wiring: Wiring, plugin: string, caller?: Caller, within?: Within, headers: Readonly<Record<string, string>> = {}, acting?: string): Context

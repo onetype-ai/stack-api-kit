@@ -73,7 +73,7 @@ describe("a handler saying what its answer carries", () =>
         expect(answer.status).toBe(500);
     });
 
-    test("leaves a plain return answering as it securityHeaders did", async () =>
+    test("leaves a plain return answering as it always did", async () =>
     {
         const kernel = await serving(() => ({ to: "/elsewhere" }));
 
