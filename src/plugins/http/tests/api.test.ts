@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 
-import { Answered, createKernel, definePlugin } from "../../kernel/api";
+import { Reply, createKernel, definePlugin } from "../../kernel/api";
 import type { Caller, Definition, Kernel } from "../../kernel/api";
 import { requestId, serve, type ServerOptions } from "../api";
 
@@ -425,7 +425,7 @@ describe("an answer carrying its own status", () =>
                 public: true,
                 input: z.object({}),
                 output: z.object({ to: z.string() }),
-                handle: () => Answered.redirect("https://example.test/target"),
+                handle: () => Reply.redirect("https://example.test/target"),
             }],
         });
 
@@ -445,7 +445,7 @@ describe("an answer carrying its own status", () =>
                 public: true,
                 input: z.object({}),
                 output: z.object({ ok: z.literal(true) }),
-                handle: () => new Answered(200, { ok: true as const }, { etag: '"abc"' }),
+                handle: () => new Reply(200, { ok: true as const }, { etag: '"abc"' }),
             }],
         });
 
@@ -465,7 +465,7 @@ describe("an answer carrying its own status", () =>
                 public: true,
                 input: z.object({}),
                 output: z.object({ ok: z.literal(true) }),
-                handle: () => new Answered(200, { ok: true as const }, {
+                handle: () => new Reply(200, { ok: true as const }, {
                     "x-frame-options": "ALLOWALL",
                     "set-cookie": "session=stolen",
                 }),

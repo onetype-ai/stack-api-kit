@@ -33,7 +33,7 @@ export type FaultCode =
     | "RATE_LIMITED"
     | "NOT_STARTED";
 
-type Made = {
+type Result = {
     plugin?: string;
     detail?: Readonly<Record<string, unknown>>;
     cause?: unknown;
@@ -56,7 +56,7 @@ export class KernelFault extends Error
 
     readonly detail: Readonly<Record<string, unknown>>;
 
-    constructor(code: FaultCode, message: string, made: Made = {})
+    constructor(code: FaultCode, message: string, made: Result = {})
     {
         super(message, made.cause === undefined ? undefined : { cause: made.cause });
 

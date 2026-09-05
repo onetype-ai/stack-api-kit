@@ -35,7 +35,7 @@ export function connect(opening: DatabaseOptions): Database.Database
 {
     const memory = opening.file === ":memory:";
 
-    // Made rather than demanded: better-sqlite3 answers an absent directory
+    // Result rather than demanded: better-sqlite3 answers an absent directory
     // with "Cannot open database because the directory does not exist",
     // naming neither the path nor the setting, so the first run of a fresh
     // checkout fails on something nobody chose.

@@ -95,19 +95,19 @@ test("a field named only in a comment is not a read", () =>
 
     mkdirSync(join(at, "found"), { recursive: true });
     writeFileSync(join(at, "found", "api.ts"), [
-        "export type Made = {",
+        "export type Result = {",
         "    used: string;",
         "    promised: string;",
         "};",
         "",
         "// TODO: someday we will honour `promised`.",
-        "export function reads(found: Made): string",
+        "export function reads(found: Result): string",
         "{",
         "    return found.used;",
         "}",
     ].join("\n"));
 
-    expect(findUnusedFields(at)).toEqual([{ file: "found/api.ts", shape: "Made", field: "promised" }]);
+    expect(findUnusedFields(at)).toEqual([{ file: "found/api.ts", shape: "Result", field: "promised" }]);
 
     rmSync(at, { recursive: true, force: true });
 });
@@ -118,19 +118,19 @@ test("a field read only by a test is not a read", () =>
 
     mkdirSync(join(at, "found", "tests"), { recursive: true });
     writeFileSync(join(at, "found", "api.ts"), [
-        "export type Made = {",
+        "export type Result = {",
         "    used: string;",
         "    fixtured: string;",
         "};",
         "",
-        "export function reads(found: Made): string",
+        "export function reads(found: Result): string",
         "{",
         "    return found.used;",
         "}",
     ].join("\n"));
     writeFileSync(join(at, "found", "tests", "api.test.ts"), 'const made = { used: "a", fixtured: "b" };\n');
 
-    expect(findUnusedFields(at)).toEqual([{ file: "found/api.ts", shape: "Made", field: "fixtured" }]);
+    expect(findUnusedFields(at)).toEqual([{ file: "found/api.ts", shape: "Result", field: "fixtured" }]);
 
     rmSync(at, { recursive: true, force: true });
 });

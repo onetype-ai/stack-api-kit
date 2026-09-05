@@ -1,4 +1,4 @@
-export { answer, Answered, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, Refusal } from "./plugins/kernel/api";
+export { answer, Reply, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, Refusal } from "./plugins/kernel/api";
 export type {
     Announcement,
     Answer,

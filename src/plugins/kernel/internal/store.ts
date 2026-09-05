@@ -13,14 +13,14 @@ export type Storage = {
     of: (plugin: string) => unknown;
 
     /** Runs work in one transaction, rolled back if it throws. */
-    tx: <Made>(plugin: string, run: (db: unknown) => Promise<Made>) => Promise<Made>;
+    tx: <Result>(plugin: string, run: (db: unknown) => Promise<Result>) => Promise<Result>;
 
     /**
      * Runs work that is not in a transaction, but never during someone
      * else's. Optional, so a project may pass a store that needs no such
      * ordering.
      */
-    write?: <Made>(run: () => Promise<Made>) => Promise<Made>;
+    write?: <Result>(run: () => Promise<Result>) => Promise<Result>;
 
     /** Whether a transaction is open right now. For diagnosis. */
     inTransaction?: () => boolean;

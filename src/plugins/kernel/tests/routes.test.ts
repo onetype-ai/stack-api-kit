@@ -4,11 +4,11 @@ import { z } from "zod";
 import { createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute } from "../api";
 import type { Context } from "../api";
 
-type Made = Context<{ size: number }, { found: () => string }>;
+type Result = Context<{ size: number }, { found: () => string }>;
 
 test("a route written through defineRoute reads its input without a cast", async () =>
 {
-    const taking = defineRoute<Made>()({
+    const taking = defineRoute<Result>()({
         method: "POST",
         path: "/thing",
         describe: "Takes a title.",
@@ -78,7 +78,7 @@ test("a listener, participant and command each read their payload without a cast
             definePlugin("source", {
                 version: "1.0.0",
                 describe: "Announces and asks.",
-                emits: { "source.made": { describe: "Made.", schema: made } },
+                emits: { "source.made": { describe: "Result.", schema: made } },
                 hooks: { "source.asking": { describe: "Asks.", schema: asked } },
             }),
             definePlugin("watcher", {

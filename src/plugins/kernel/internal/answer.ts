@@ -20,7 +20,7 @@ export type Answer = {
  * The body still passes the output schema. Status and headers are the only
  * things this adds, because they are the only things a schema cannot carry.
  */
-export class Answered
+export class Reply
 {
     readonly status: number;
 
@@ -36,9 +36,9 @@ export class Answered
     }
 
     /** Sends the caller somewhere else. */
-    static redirect(to: string, permanent = false): Answered
+    static redirect(to: string, permanent = false): Reply
     {
-        return new Answered(permanent ? 308 : 307, { to }, { location: to });
+        return new Reply(permanent ? 308 : 307, { to }, { location: to });
     }
 }
 

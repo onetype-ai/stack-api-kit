@@ -1,9 +1,9 @@
-import { answer, Answered, Refusal } from "./internal/answer";
+import { answer, Reply, Refusal } from "./internal/answer";
 import { createKernel } from "./internal/kernel";
 import { defineCommand, defineListener, defineParticipant, definePlugin, defineRoute } from "./internal/define";
 import { KernelFault } from "./internal/faults";
 
-export { answer, Answered, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, Refusal };
+export { answer, Reply, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, Refusal };
 
 export type { Answer } from "./internal/answer";
 export type { FaultCode } from "./internal/faults";

@@ -85,7 +85,7 @@ export type Route<Context, Input extends z.ZodType = z.ZodType> = Description & 
      *
      * `input` is what the route's own schema parsed, so a handler reads its
      * fields without a cast: nothing that failed the schema reaches here.
-     * Return a value for a 200, or an `Answered` to say the status and
+     * Return a value for a 200, or an `Reply` to say the status and
      * headers as well.
      */
     handle: (input: z.infer<Input>, ctx: Context) => unknown | Promise<unknown>;
@@ -196,7 +196,7 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
      * await joins that transaction and dies with its rollback, having told
      * its caller it succeeded. Reads are safe without this; a write is not.
      */
-    write: <Made>(run: () => Promise<Made>) => Promise<Made>;
+    write: <Result>(run: () => Promise<Result>) => Promise<Result>;
 
     /**
      * Runs work in one transaction, rolled back if it throws.
@@ -206,7 +206,7 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
      * rather than opening a second. A caller that used the outer `ctx` would
      * be writing outside the transaction it just opened.
      */
-    tx: <Made>(run: (ctx: Context<Config, Services, Db>) => Promise<Made>) => Promise<Made>;
+    tx: <Result>(run: (ctx: Context<Config, Services, Db>) => Promise<Result>) => Promise<Result>;
 
     /** Calls a host this plugin declared in `outbound`. */
     fetch: (call: Outbound) => Promise<unknown>;
@@ -319,7 +319,7 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
  * callback taking a context would otherwise be a second inference site, and
  * two candidates for one parameter resolve to unknown.
  */
-type Given<Made> = NoInfer<Made>;
+type Given<Result> = NoInfer<Result>;
 
 /** Everything a plugin declares about itself. */
 export type Definition<

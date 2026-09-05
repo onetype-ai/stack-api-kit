@@ -15,7 +15,7 @@ export function queue()
     let last: Promise<unknown> = Promise.resolve();
 
     return {
-        run: <Made,>(work: () => Promise<Made>): Promise<Made> =>
+        run: <Result,>(work: () => Promise<Result>): Promise<Result> =>
         {
             const mine = last.then(work, work);
 

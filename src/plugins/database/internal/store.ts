@@ -78,7 +78,7 @@ export function store(holding: Holding)
      * releases it, and SQLite answers "no such savepoint" to the request that
      * did nothing wrong.
      */
-    async function within<Made>(plugin: string, run: (db: unknown) => Promise<Made>): Promise<Made>
+    async function within<Result>(plugin: string, run: (db: unknown) => Promise<Result>): Promise<Result>
     {
         const db = of(plugin);
         const nested = inside.getStore() !== undefined;
@@ -129,7 +129,7 @@ export function store(holding: Holding)
          * A transaction already open on this call stack becomes a savepoint
          * rather than queueing behind itself, which would deadlock.
          */
-        tx: <Made,>(plugin: string, run: (db: unknown) => Promise<Made>): Promise<Made> =>
+        tx: <Result,>(plugin: string, run: (db: unknown) => Promise<Result>): Promise<Result> =>
         {
             // Already inside one on this call stack: a savepoint, and never
             // queued behind the transaction it is inside, which would wait
@@ -151,7 +151,7 @@ export function store(holding: Holding)
          * inside it, and work that is genuinely inside one reaches the
          * database through the transaction's own handle instead.
          */
-        write: <Made,>(run: () => Promise<Made>): Promise<Made> =>
+        write: <Result,>(run: () => Promise<Result>): Promise<Result> =>
         {
             return inside.getStore() === undefined ? waiting.run(run) : run();
         },

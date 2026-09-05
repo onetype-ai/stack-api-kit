@@ -8,7 +8,7 @@ import type { ScopeFilter, Outbox, Schedule } from "../kernel/api";
 import { store, type Handle, type Tables } from "./internal/store";
 
 /** What building a store needs: where the file is, and who owns what. */
-export type Settings = DatabaseOptions & {
+export type StoreOptions = DatabaseOptions & {
     tables: Readonly<Record<string, Tables>>;
 };
 
@@ -26,8 +26,8 @@ export type Settings = DatabaseOptions & {
  * `unknown` because the kit does not know what database it was given; a
  * plugin names the shape it expects through `definePlugin.over`.
  */
-export type Store<Handed = unknown> = {
-    of: (plugin: string) => Handed;
+export type Store<Handle = unknown> = {
+    of: (plugin: string) => Handle;
 
     /** An outbox in this same database, when the store can hold one. */
     outbox?: () => Outbox;
@@ -37,8 +37,8 @@ export type Store<Handed = unknown> = {
 
     /** How a declared scope becomes a condition over the tables it was given. */
     createScopeFilter?: () => ScopeFilter;
-    tx: <Made>(plugin: string, run: (db: unknown) => Promise<Made>) => Promise<Made>;
-    write: <Made>(run: () => Promise<Made>) => Promise<Made>;
+    tx: <Result>(plugin: string, run: (db: unknown) => Promise<Result>) => Promise<Result>;
+    write: <Result>(run: () => Promise<Result>) => Promise<Result>;
     inTransaction: () => boolean;
     migrate: (sources: readonly Source[]) => Step[];
     close: () => void;
@@ -53,7 +53,7 @@ export type { Handle, DatabaseOptions, Source, Step, Tables };
  * Built by the project rather than reached for: two stores can exist in one
  * process without seeing each other, which is what a test needs.
  */
-export function database(settings: Settings): Store<Handle>
+export function database(settings: StoreOptions): Store<Handle>
 {
     const connection = connect(settings);
     const made = store({ connection, tables: settings.tables });

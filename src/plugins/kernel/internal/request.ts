@@ -1,4 +1,4 @@
-import { answer, Answered, Refusal } from "./answer";
+import { answer, Reply, Refusal } from "./answer";
 import type { Caller, Context, Method, Route } from "./contract";
 import { KernelFault } from "./faults";
 import { permissions } from "./permissions";
@@ -136,7 +136,7 @@ export async function respond(
         // A handler may say what status and headers its answer carries. The
         // body still passes the schema either way: what a route sends is
         // never a decision the handler alone makes.
-        const carried = returned instanceof Answered ? returned : undefined;
+        const carried = returned instanceof Reply ? returned : undefined;
 
         // A whitelist, not a check: what the schema does not name does not
         // leave, so a column added to a table tomorrow cannot appear in a

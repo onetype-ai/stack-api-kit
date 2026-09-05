@@ -5,7 +5,7 @@ import { createKernel, definePlugin, defineRoute } from "../api";
 
 import type { Context } from "../api";
 
-type Made = Context<unknown, unknown>;
+type Result = Context<unknown, unknown>;
 
 /**
  * The three faults a survey found in 98% of generated applications: a
@@ -23,7 +23,7 @@ describe("what a generated application cannot get wrong here", () =>
             plugins: [definePlugin("leaky", {
                 version: "1.0.0",
                 describe: "Reads the token itself.",
-                routes: [defineRoute<Made>()({
+                routes: [defineRoute<Result>()({
                     method: "GET",
                     path: "/leak",
                     describe: "Holds what identifies the caller.",
@@ -46,7 +46,7 @@ describe("what a generated application cannot get wrong here", () =>
                 version: "1.0.0",
                 describe: "One route, permission required.",
                 permissions: { "guarded.read": { describe: "See it." } },
-                routes: [defineRoute<Made>()({
+                routes: [defineRoute<Result>()({
                     method: "GET",
                     path: "/private",
                     describe: "Needs somebody.",
@@ -72,7 +72,7 @@ describe("what a generated application cannot get wrong here", () =>
                 version: "1.0.0",
                 describe: "Asks for what nobody defines.",
                 permissions: { "typo.read": { describe: "See it." } },
-                routes: [defineRoute<Made>()({
+                routes: [defineRoute<Result>()({
                     method: "GET",
                     path: "/x",
                     describe: "x",
