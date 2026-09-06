@@ -19,27 +19,27 @@ type Bucket = {
 // in proportion to itself.
 export function limiter(now: () => number = Date.now)
 {
-    const counted = new Map<string, Bucket>();
+    const buckets = new Map<string, Bucket>();
 
     return {
         take: (key: string, window: Window): Verdict =>
         {
             const at = now();
-            const seen = counted.get(key);
+            const bucket = buckets.get(key);
 
-            if (seen === undefined || seen.until <= at)
+            if (bucket === undefined || bucket.until <= at)
             {
-                counted.set(key, { hits: 1, until: at + window.seconds * 1_000 });
+                buckets.set(key, { hits: 1, until: at + window.seconds * 1_000 });
 
                 return { allowed: true, remaining: window.requests - 1, resetsIn: window.seconds };
             }
 
-            seen.hits += 1;
+            bucket.hits += 1;
 
             return {
-                allowed: seen.hits <= window.requests,
-                remaining: Math.max(0, window.requests - seen.hits),
-                resetsIn: Math.ceil((seen.until - at) / 1_000),
+                allowed: bucket.hits <= window.requests,
+                remaining: Math.max(0, window.requests - bucket.hits),
+                resetsIn: Math.ceil((bucket.until - at) / 1_000),
             };
         },
 
@@ -51,11 +51,11 @@ export function limiter(now: () => number = Date.now)
 
             let dropped = 0;
 
-            for (const [key, seen] of counted)
+            for (const [key, bucket] of buckets)
             {
-                if (seen.until <= at)
+                if (bucket.until <= at)
                 {
-                    counted.delete(key);
+                    buckets.delete(key);
                     dropped += 1;
                 }
             }
@@ -65,7 +65,7 @@ export function limiter(now: () => number = Date.now)
 
         size: (): number =>
         {
-            return counted.size;
+            return buckets.size;
         },
     };
 }

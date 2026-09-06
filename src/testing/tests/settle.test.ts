@@ -34,13 +34,13 @@ test("what a listener wrote is there once the test waits for it", async () =>
         ],
     });
 
-    const seen: number[] = [];
+    const lengths: number[] = [];
 
     for (const id of ["a", "b", "c"])
     {
         api.kernel.context("source").events.emit("source.happened", { id });
 
-        seen.push(written.length);
+        lengths.push(written.length);
     }
 
     await api.settle();

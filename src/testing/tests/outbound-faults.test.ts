@@ -22,12 +22,12 @@ test("answers may throw an OutboundFault, so a bad status is testable", async ()
         },
     });
 
-    const failed = await (api.kernel.context("partner").services as { ask: () => Promise<unknown> })
+    const fault = await (api.kernel.context("partner").services as { ask: () => Promise<unknown> })
         .ask()
         .catch((cause: unknown) => cause) as OutboundFault;
 
     await api.stop();
 
-    expect(failed).toBeInstanceOf(OutboundFault);
-    expect(failed.status).toBe(503);
+    expect(fault).toBeInstanceOf(OutboundFault);
+    expect(fault.status).toBe(503);
 });

@@ -20,13 +20,13 @@ const UNSAFE: ReadonlySet<string> = new Set(["__proto__", "constructor", "protot
  * ahead of the schema decides what "0x10" or "" mean before the schema that
  * owns the field gets a say.
  */
-export function input(carried: RequestInput): Record<string, unknown>
+export function input(request: RequestInput): Record<string, unknown>
 {
     const merged: Record<string, unknown> = {};
 
-    if (carried.body !== null && typeof carried.body === "object" && !Array.isArray(carried.body))
+    if (request.body !== null && typeof request.body === "object" && !Array.isArray(request.body))
     {
-        for (const [key, value] of Object.entries(carried.body as Record<string, unknown>))
+        for (const [key, value] of Object.entries(request.body as Record<string, unknown>))
         {
             // Prototype pollution: a body naming __proto__ reaches
             // Object.prototype through a plain assignment, and every object
@@ -44,7 +44,7 @@ export function input(carried: RequestInput): Record<string, unknown>
     // One value is handed over as that value: a schema saying `z.string()`
     // could otherwise never match `?q=hello`, which made every query
     // parameter unusable unless its schema expected an array.
-    for (const [key, values] of Object.entries(carried.query))
+    for (const [key, values] of Object.entries(request.query))
     {
         if (UNSAFE.has(key))
         {
@@ -54,7 +54,7 @@ export function input(carried: RequestInput): Record<string, unknown>
         merged[key] = values.length === 1 ? values[0] : values;
     }
 
-    for (const [key, value] of Object.entries(carried.params))
+    for (const [key, value] of Object.entries(request.params))
     {
         if (UNSAFE.has(key))
         {

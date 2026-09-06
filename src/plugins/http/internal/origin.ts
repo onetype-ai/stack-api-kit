@@ -19,9 +19,9 @@ export type CorsPolicy = {
  * Origin either way, and a cache keyed without it would hand one site's
  * allowance to another.
  */
-export function cors(allowing: CorsPolicy, origin: string | undefined): Readonly<Record<string, string>>
+export function cors(policy: CorsPolicy, origin: string | undefined): Readonly<Record<string, string>>
 {
-    if (origin === undefined || !allowing.origins.includes(origin))
+    if (origin === undefined || !policy.origins.includes(origin))
     {
         return { vary: "Origin" };
     }
@@ -29,9 +29,9 @@ export function cors(allowing: CorsPolicy, origin: string | undefined): Readonly
     return {
         "access-control-allow-origin": origin,
         "access-control-allow-credentials": "true",
-        "access-control-allow-methods": allowing.methods.join(", "),
-        "access-control-allow-headers": allowing.headers.join(", "),
-        "access-control-max-age": String(allowing.maxAge),
+        "access-control-allow-methods": policy.methods.join(", "),
+        "access-control-allow-headers": policy.headers.join(", "),
+        "access-control-max-age": String(policy.maxAge),
         vary: "Origin",
     };
 }

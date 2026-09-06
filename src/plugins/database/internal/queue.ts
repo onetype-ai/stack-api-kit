@@ -17,13 +17,13 @@ export function queue()
     return {
         run: <Result,>(work: () => Promise<Result>): Promise<Result> =>
         {
-            const mine = last.then(work, work);
+            const running = last.then(work, work);
 
             // The chain must not stop at a failure, and must not keep the
             // rejection alive: whoever asked already holds it.
-            last = mine.catch(() => undefined);
+            last = running.catch(() => undefined);
 
-            return mine;
+            return running;
         },
     };
 }
