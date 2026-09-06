@@ -19,7 +19,7 @@ export function createScopeFilter(owned: Readonly<Record<string, Readonly<Record
         // live in its own namespace and the kernel checked that at startup.
         const found = Object.values(owned)
             .map((tables) => tables[table])
-            .find((one) => one !== undefined) as Column | undefined;
+            .find((column) => column !== undefined) as Column | undefined;
 
         if (found === undefined)
         {

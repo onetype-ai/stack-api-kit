@@ -449,7 +449,7 @@ function checkReferences(name: string, plugin: Plugin, by: ReadonlyMap<string, P
         // intentions in one declaration, and only one of them can hold.
         if (route.public === true && (route.requires ?? []).length > 0)
         {
-            say("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" is public and also requires ${(route.requires ?? []).map((one) => `"${one}"`).join(", ")}. It is one or the other.`);
+            say("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" is public and also requires ${(route.requires ?? []).map((permission) => `"${permission}"`).join(", ")}. It is one or the other.`);
         }
     }
 

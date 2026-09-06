@@ -123,7 +123,7 @@ describe("what startTestKernel gives a test", () =>
         await ctx.fetch({ method: "POST", url: "https://partner.test/things", body: { name: "one" } });
         await ctx.fetch({ method: "DELETE", url: "https://partner.test/things/1" });
 
-        expect(api.outboundCalls().map((one) => `${one.method} ${one.url}`)).toEqual([
+        expect(api.outboundCalls().map((call) => `${call.method} ${call.url}`)).toEqual([
             "POST https://partner.test/things",
             "DELETE https://partner.test/things/1",
         ]);

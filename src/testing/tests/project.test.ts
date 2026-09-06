@@ -102,7 +102,7 @@ describe("what a project checks about itself", () =>
 
         const wrong = Project.checks({ root: at });
 
-        expect(wrong.every((one) => one.check === "undocumented")).toBe(true);
+        expect(wrong.every((problem) => problem.check === "undocumented")).toBe(true);
         expect(wrong.length).toBeGreaterThan(1);
     });
 

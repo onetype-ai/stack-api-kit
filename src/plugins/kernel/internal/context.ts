@@ -268,15 +268,15 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
                         // Written with the work, not after it: an event kept
                         // once the transaction has closed is one the process
                         // can still die without.
-                        const waiting = wiring.pending.get(mark) ?? [];
+                        const queued = wiring.pending.get(mark) ?? [];
 
-                        if (wiring.outbox !== undefined && waiting.length > 0 && !(nested && outer !== undefined))
+                        if (wiring.outbox !== undefined && queued.length > 0 && !(nested && outer !== undefined))
                         {
-                            wiring.outbox.keep(db, waiting.map((one) => ({
-                                id: one.id,
-                                plugin: one.plugin,
-                                name: one.name,
-                                payload: one.payload,
+                            wiring.outbox.keep(db, queued.map((event) => ({
+                                id: event.id,
+                                plugin: event.plugin,
+                                name: event.name,
+                                payload: event.payload,
                             })));
                         }
 
@@ -365,11 +365,11 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
                 // inside a `tx` is the easy mistake, and it announced work
                 // that had not committed and might never.
                 const mark = within?.mark ?? wiring.open.getStore();
-                const waiting = mark === undefined ? undefined : wiring.pending.get(mark);
+                const queued = mark === undefined ? undefined : wiring.pending.get(mark);
 
-                if (waiting !== undefined)
+                if (queued !== undefined)
                 {
-                    waiting.push({ id: crypto.randomUUID(), plugin, name: event, payload: payloadChecked });
+                    queued.push({ id: crypto.randomUUID(), plugin, name: event, payload: payloadChecked });
 
                     return;
                 }

@@ -152,7 +152,7 @@ describe("migrations", () =>
         const ran = store.migrate([{ plugin: "items", from }]);
         const again = store.migrate([{ plugin: "items", from }]);
 
-        expect(ran.map((one) => one.name)).toEqual(["0001-init.sql", "0002-seed.sql", "0010-more.sql"]);
+        expect(ran.map((step) => step.name)).toEqual(["0001-init.sql", "0002-seed.sql", "0010-more.sql"]);
         expect(again).toEqual([]);
 
         store.close();

@@ -63,7 +63,7 @@ test("two overlapping transactions both finish rather than one refusing", async 
         }),
     ]);
 
-    expect(both.map((one) => one.status)).toEqual(["fulfilled", "fulfilled"]);
+    expect(both.map((settled) => settled.status)).toEqual(["fulfilled", "fulfilled"]);
     await expect(db.select().from(rows)).resolves.toHaveLength(2);
 });
 
@@ -154,7 +154,7 @@ test("a transaction waiting on something slow does not make the next one nested"
 
     await slow;
 
-    expect(others.map((one) => one.status)).toEqual(["fulfilled", "fulfilled"]);
+    expect(others.map((settled) => settled.status)).toEqual(["fulfilled", "fulfilled"]);
     await expect(db.select().from(rows)).resolves.toHaveLength(3);
 });
 

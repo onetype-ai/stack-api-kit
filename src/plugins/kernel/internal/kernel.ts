@@ -168,7 +168,7 @@ function routeFor(
 
     // A static route the caller wrote encoded: found here rather than left to
     // the parameter routes below, which would answer for it.
-    const plain = routes.get(`${method} ${asked.map((one) => decodeSegment(one) ?? one).join("/")}`);
+    const plain = routes.get(`${method} ${asked.map((segment) => decodeSegment(segment) ?? segment).join("/")}`);
 
     if (plain !== undefined)
     {
@@ -253,7 +253,7 @@ export function createKernel(options: Options): Kernel
     const config = options.config ?? {};
     const log = options.log ?? quiet;
 
-    const known = new Map(options.plugins.map((one) => [one.name, one]));
+    const known = new Map(options.plugins.map((plugin) => [plugin.name, plugin]));
     const bus = events<Context>(Date.now, (plugin, line, about) =>
     {
         log("error", plugin, line, about);
@@ -502,7 +502,7 @@ export function createKernel(options: Options): Kernel
 
                     throw new KernelFault(
                         "INVALID_ROUTE",
-                        `${declared.length} ${declared.length === 1 ? "route declares a limit" : "routes declare limits"} and no budget was given to createKernel, so nothing would enforce them:\n${named.map((one) => `  - ${one}`).join("\n")}\nPass \`budget\`, or remove the limits.`,
+                        `${declared.length} ${declared.length === 1 ? "route declares a limit" : "routes declare limits"} and no budget was given to createKernel, so nothing would enforce them:\n${named.map((route) => `  - ${route}`).join("\n")}\nPass \`budget\`, or remove the limits.`,
                         { plugin: declared[0]?.plugin ?? "" },
                     );
                 }

@@ -34,7 +34,7 @@ function createBilling(): Plugin
                     .from(notes)
                     .where(ctx.scoped("notes"));
 
-                return (found as { body: string }[]).map((one) => one.body);
+                return (found as { body: string }[]).map((row) => row.body);
             },
 
             one: async (id: string): Promise<string | undefined> =>

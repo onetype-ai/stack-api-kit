@@ -39,14 +39,14 @@ describe("work asked for later", () =>
     test("does not run before its time, and runs after it", async () =>
     {
         const connection = new Database(":memory:");
-        const waiting = schedule(connection);
+        const jobs = schedule(connection);
         const ran: string[] = [];
 
         let clock = 1_000_000;
 
         const kernel = createKernel({
             plugins: [createScheduled(ran)],
-            schedule: waiting,
+            schedule: jobs,
             now: () => clock,
             beat: 5,
         });
@@ -72,14 +72,14 @@ describe("work asked for later", () =>
     test("is tried again when it throws", async () =>
     {
         const connection = new Database(":memory:");
-        const waiting = schedule(connection);
+        const jobs = schedule(connection);
         const ran: string[] = [];
 
         let clock = 1_000_000;
 
         const kernel = createKernel({
             plugins: [createScheduled(ran, true)],
-            schedule: waiting,
+            schedule: jobs,
             now: () => clock,
             beat: 5,
         });
@@ -106,7 +106,7 @@ describe("work asked for later", () =>
     test("gives up after enough attempts, rather than trying forever", async () =>
     {
         const connection = new Database(":memory:");
-        const waiting = schedule(connection);
+        const jobs = schedule(connection);
         const tried: number[] = [];
 
         let clock = 1_000_000;
@@ -123,7 +123,7 @@ describe("work asked for later", () =>
                     },
                 },
             })],
-            schedule: waiting,
+            schedule: jobs,
             now: () => clock,
             attempts: 3,
         });
@@ -140,7 +140,7 @@ describe("work asked for later", () =>
         }
 
         expect(tried).toHaveLength(3);
-        expect(await waiting.take(clock, 10)).toEqual([]);
+        expect(await jobs.take(clock, 10)).toEqual([]);
 
         await kernel.stop();
         connection.close();

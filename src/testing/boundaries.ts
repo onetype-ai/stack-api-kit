@@ -64,16 +64,16 @@ export function findImportViolations(root: string): ImportViolation[]
  */
 function withTestDependencies(plugins: readonly PluginImports[]): PluginImports[]
 {
-    const answers = new Map(plugins.map((one) => [one.name, one.answers]));
-    const declared = new Map(plugins.map((one) => [one.name, one.declared]));
+    const answers = new Map(plugins.map((plugin) => [plugin.name, plugin.answers]));
+    const declared = new Map(plugins.map((plugin) => [plugin.name, plugin.declared]));
 
-    return plugins.map((one) =>
+    return plugins.map((plugin) =>
     {
         // Seeded from both: a test boots what this plugin hears *and* what it
         // depends on, and then whatever those need in turn. Seeding only from
         // what it hears leaves a three-deep dependency chain untestable
         // without writing a dependency that is not one.
-        const walked = new Set([...one.answers, ...one.declared]);
+        const walked = new Set([...plugin.answers, ...plugin.declared]);
         const walking = [...walked];
 
         while (walking.length > 0)
@@ -84,7 +84,7 @@ function withTestDependencies(plugins: readonly PluginImports[]): PluginImports[
             {
                 for (const further of set ?? [])
                 {
-                    if (further !== one.name && !walked.has(further))
+                    if (further !== plugin.name && !walked.has(further))
                     {
                         walked.add(further);
                         walking.push(further);
@@ -93,13 +93,13 @@ function withTestDependencies(plugins: readonly PluginImports[]): PluginImports[
             }
         }
 
-        return { ...one, answers: walked };
+        return { ...plugin, answers: walked };
     });
 }
 
 function read(root: string, name: string, names: readonly string[]): PluginImports
 {
-    const others = new Set(names.filter((one) => one !== name));
+    const others = new Set(names.filter((other) => other !== name));
     const contract = readFileSync(join(root, name, "plugin.ts"), "utf8");
     const found = /dependsOn:\s*\[([^\]]*)\]/.exec(contract);
 
@@ -127,7 +127,7 @@ function read(root: string, name: string, names: readonly string[]): PluginImpor
 
     return {
         name,
-        declared: new Set(found === null ? [] : [...found[1]!.matchAll(/"([^"]+)"/g)].map((one) => one[1]!)),
+        declared: new Set(found === null ? [] : [...found[1]!.matchAll(/"([^"]+)"/g)].map((match) => match[1]!)),
         answers: answering,
         crossings: files(root, name).flatMap(({ path, source }) => edgesFrom(name, path, source, others)),
     };
@@ -190,11 +190,11 @@ function edgesFrom(name: string, path: string, source: string, others: ReadonlyS
 
 function findUndeclared(plugins: readonly PluginImports[]): ImportViolation[]
 {
-    return plugins.flatMap((one) =>
-        one.crossings
+    return plugins.flatMap((plugin) =>
+        plugin.crossings
             .filter((crossing) =>
             {
-                if (one.declared.has(crossing.to))
+                if (plugin.declared.has(crossing.to))
                 {
                     return false;
                 }
@@ -203,12 +203,12 @@ function findUndeclared(plugins: readonly PluginImports[]): ImportViolation[]
                 // a dependency, and writing one to satisfy this check would
                 // put a lie in the contract.
                 return !(isTestPath(crossing.from)
-                    && one.answers.has(crossing.to)
+                    && plugin.answers.has(crossing.to)
                     && crossing.specifier === `@plugins/${crossing.to}/plugin`);
             })
             .map((crossing) => ({
                 rule: "undeclared" as const,
-                message: `${one.name}/${crossing.from} imports "${crossing.specifier}" without declaring "${crossing.to}" in dependsOn.`,
+                message: `${plugin.name}/${crossing.from} imports "${crossing.specifier}" without declaring "${crossing.to}" in dependsOn.`,
             })),
     );
 }
@@ -229,8 +229,8 @@ function isTestPath(path: string): boolean
 
 function deep(plugins: readonly PluginImports[]): ImportViolation[]
 {
-    return plugins.flatMap((one) =>
-        one.crossings
+    return plugins.flatMap((plugin) =>
+        plugin.crossings
             .filter((crossing) =>
             {
                 if (crossing.specifier === `@plugins/${crossing.to}`)
@@ -241,19 +241,19 @@ function deep(plugins: readonly PluginImports[]): ImportViolation[]
                 // A test may name a declared dependency's contract, and only
                 // its contract: everything below it is still private.
                 return !(isTestPath(crossing.from)
-                    && (one.declared.has(crossing.to) || one.answers.has(crossing.to))
+                    && (plugin.declared.has(crossing.to) || plugin.answers.has(crossing.to))
                     && crossing.specifier === `@plugins/${crossing.to}/plugin`);
             })
             .map((crossing) => ({
                 rule: "deep" as const,
-                message: `${one.name}/${crossing.from} reaches "${crossing.specifier}" instead of "@plugins/${crossing.to}".`,
+                message: `${plugin.name}/${crossing.from} reaches "${crossing.specifier}" instead of "@plugins/${crossing.to}".`,
             })),
     );
 }
 
 function findCycles(plugins: readonly PluginImports[]): ImportViolation[]
 {
-    const edges = new Map(plugins.map((one) => [one.name, new Set(one.crossings.map((crossing) => crossing.to))]));
+    const edges = new Map(plugins.map((plugin) => [plugin.name, new Set(plugin.crossings.map((crossing) => crossing.to))]));
     const found: ImportViolation[] = [];
     const walking = new Set<string>();
     const done = new Set<string>();

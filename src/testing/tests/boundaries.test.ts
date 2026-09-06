@@ -36,7 +36,7 @@ function tree(plugins: Readonly<Record<string, Readonly<Record<string, string>>>
 }
 
 const contractFor = (name: string, needs: readonly string[] = []): string =>
-    `export default definePlugin("${name}", { dependsOn: [${needs.map((one) => `"${one}"`).join(", ")}] });`;
+    `export default definePlugin("${name}", { dependsOn: [${needs.map((need) => `"${need}"`).join(", ")}] });`;
 
 describe("a plugin reaching another", () =>
 {
@@ -67,7 +67,7 @@ describe("a plugin reaching another", () =>
             }),
         );
 
-        expect(found.map((one) => one.rule)).toContain("undeclared");
+        expect(found.map((violation) => violation.rule)).toContain("undeclared");
         expect(found[0]?.message).toMatch(/without declaring "auth"/);
     });
 
@@ -83,7 +83,7 @@ describe("a plugin reaching another", () =>
             }),
         );
 
-        expect(found.map((one) => one.rule)).toContain("deep");
+        expect(found.map((violation) => violation.rule)).toContain("deep");
     });
 
     test("refuses a relative path that climbs into another plugin", () =>
@@ -98,8 +98,8 @@ describe("a plugin reaching another", () =>
             }),
         );
 
-        expect(found.map((one) => one.rule)).toContain("deep");
-        expect(found.some((one) => one.message.includes("../../auth/types/Session"))).toBe(true);
+        expect(found.map((violation) => violation.rule)).toContain("deep");
+        expect(found.some((violation) => violation.message.includes("../../auth/types/Session"))).toBe(true);
     });
 
     test("ignores a relative import inside one plugin", () =>
@@ -129,7 +129,7 @@ describe("cycles", () =>
             }),
         );
 
-        const cycle = found.find((one) => one.rule === "cycle");
+        const cycle = found.find((violation) => violation.rule === "cycle");
 
         expect(cycle?.message).toMatch(/a -> b -> a|b -> a -> b/);
     });
@@ -143,7 +143,7 @@ describe("cycles", () =>
             }),
         );
 
-        expect(found.filter((one) => one.rule === "cycle")).toEqual([]);
+        expect(found.filter((violation) => violation.rule === "cycle")).toEqual([]);
     });
 });
 

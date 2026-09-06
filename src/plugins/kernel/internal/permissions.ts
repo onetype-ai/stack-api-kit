@@ -26,7 +26,7 @@ export function permissions(caller: () => Caller | undefined)
         {
             const carries = granted();
 
-            return wanted.every((one) => carries.has(one));
+            return wanted.every((permission) => carries.has(permission));
         },
 
         /**
