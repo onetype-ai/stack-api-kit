@@ -443,7 +443,7 @@ describe("transactions", () =>
 
             await outer.tx(async (inner) =>
             {
-                inner.events.emit("items.made", { id: "kept" });
+                inner.events.emit("items.made", { id: "inner" });
             });
 
             await outer.tx(async (inner) =>
@@ -454,7 +454,7 @@ describe("transactions", () =>
             }).catch(() => undefined);
         });
 
-        expect(recorded).toEqual(["outer", "kept"]);
+        expect(recorded).toEqual(["outer", "inner"]);
     });
 
     test("still refuses a bad payload inside a transaction, where it was written", async () =>

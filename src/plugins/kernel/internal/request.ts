@@ -209,7 +209,7 @@ function logRecord(cause: unknown): Readonly<Record<string, unknown>>
  * answer about itself, and a route overriding them turns one endpoint into
  * the hole in a policy that holds everywhere else.
  */
-const KEPT: ReadonlySet<string> = new Set([
+const OURS: ReadonlySet<string> = new Set([
     "set-cookie",
     "content-security-policy",
     "x-content-type-options",
@@ -226,13 +226,13 @@ function filterHeaders(
     log: Log,
 ): Readonly<Record<string, string>>
 {
-    const sending: Record<string, string> = {};
+    const outgoing: Record<string, string> = {};
 
     for (const [name, value] of Object.entries(asked))
     {
         const lower = name.toLowerCase();
 
-        if (KEPT.has(lower))
+        if (OURS.has(lower))
         {
             log("warn", plugin, `${route.method} ${route.path} tried to set "${lower}", which the kit answers for`);
 
@@ -248,10 +248,10 @@ function filterHeaders(
             continue;
         }
 
-        sending[lower] = value;
+        outgoing[lower] = value;
     }
 
-    return sending;
+    return outgoing;
 }
 
 /**

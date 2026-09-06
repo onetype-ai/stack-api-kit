@@ -122,10 +122,10 @@ describe("headers a handler may not set", () =>
 
     test("lowercases what it does send", async () =>
     {
-        const kernel = await startServer(() => new Reply(200, { to: "/x" }, { "X-Note": "kept" }));
+        const kernel = await startServer(() => new Reply(200, { to: "/x" }, { "X-Note": "sent" }));
 
         const answer = await kernel.handle({ method: "GET", path: "/thing", input: {} });
 
-        expect(answer.headers).toEqual({ "x-note": "kept" });
+        expect(answer.headers).toEqual({ "x-note": "sent" });
     });
 });

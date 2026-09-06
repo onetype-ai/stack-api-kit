@@ -166,7 +166,7 @@ export function serve(serving: ServerOptions): Hono
 {
     const app = new Hono();
     const bodyBytes = serving.bodyBytes ?? 1_000_000;
-    const allowing: CorsPolicy = {
+    const policy: CorsPolicy = {
         origins: serving.origins ?? [],
         methods: serving.methods ?? ["GET", "POST", "PUT", "PATCH", "DELETE"],
         headers: serving.headers ?? ["content-type", "authorization"],
@@ -188,7 +188,7 @@ export function serve(serving: ServerOptions): Hono
             c.header(name, value);
         }
 
-        for (const [name, value] of Object.entries(cors(allowing, c.req.header("origin"))))
+        for (const [name, value] of Object.entries(cors(policy, c.req.header("origin"))))
         {
             // A preflight already said which methods its own path answers.
             if (name === "access-control-allow-methods" && c.req.method === "OPTIONS" && c.res.headers.has(name))
@@ -206,7 +206,7 @@ export function serve(serving: ServerOptions): Hono
     // for the methods that path actually answers: approving one for a route
     // that does not exist tells a browser it may send what nothing will take,
     // and maps out the surface for anyone asking.
-    const answering = new Map<string, Set<string>>();
+    const byPath = new Map<string, Set<string>>();
 
     // Two questions a deployment asks, and they are not the same one. Live
     // says the process is up, which is what decides a restart. Ready says the
@@ -225,15 +225,15 @@ export function serve(serving: ServerOptions): Hono
 
     for (const route of serving.kernel.routes())
     {
-        const methods = answering.get(route.path) ?? new Set<string>();
+        const methods = byPath.get(route.path) ?? new Set<string>();
 
         methods.add(route.method);
-        answering.set(route.path, methods);
+        byPath.set(route.path, methods);
     }
 
     app.options("*", (c) =>
     {
-        const methods = methodsFor(answering, c.req.path);
+        const methods = methodsFor(byPath, c.req.path);
 
         if (methods === undefined)
         {

@@ -105,7 +105,7 @@ function read(root: string, name: string, names: readonly string[]): PluginImpor
 
     // An event or hook key is "<plugin>.<something>", so what a plugin
     // answers is the first segment of every key it listens to or joins.
-    const answering = new Set<string>();
+    const owners = new Set<string>();
 
     for (const block of [/listens:\s*\{/, /participates:\s*\{/])
     {
@@ -120,7 +120,7 @@ function read(root: string, name: string, names: readonly string[]): PluginImpor
         {
             if (others.has(key[1]!))
             {
-                answering.add(key[1]!);
+                owners.add(key[1]!);
             }
         }
     }
@@ -128,7 +128,7 @@ function read(root: string, name: string, names: readonly string[]): PluginImpor
     return {
         name,
         declared: new Set(found === null ? [] : [...found[1]!.matchAll(/"([^"]+)"/g)].map((match) => match[1]!)),
-        answers: answering,
+        answers: owners,
         crossings: files(root, name).flatMap(({ path, source }) => edgesFrom(name, path, source, others)),
     };
 }

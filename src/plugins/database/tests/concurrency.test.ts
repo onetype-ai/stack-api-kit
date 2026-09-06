@@ -74,7 +74,7 @@ test("one transaction's rollback leaves the other's committed work alone", async
     await Promise.allSettled([
         store.tx("a", async (found) =>
         {
-            await (found as typeof db).insert(rows).values({ id: "kept" });
+            await (found as typeof db).insert(rows).values({ id: "committed" });
             await wait(20);
         }),
         store.tx("a", async (found) =>
@@ -86,7 +86,7 @@ test("one transaction's rollback leaves the other's committed work alone", async
         }),
     ]);
 
-    await expect(db.select().from(rows)).resolves.toEqual([{ id: "kept" }]);
+    await expect(db.select().from(rows)).resolves.toEqual([{ id: "committed" }]);
 });
 
 test("an inner transaction that fails leaves the outer one able to commit", async () =>

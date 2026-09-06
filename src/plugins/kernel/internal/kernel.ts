@@ -613,7 +613,7 @@ export function createKernel(options: Options): Kernel
             // `input`, as the server does, or the real one with the values in
             // it. Taking both means a test reads like the request it stands
             // for rather than like the routing table.
-            const answering = respond(
+            const answer = respond(
                 found.mounted,
                 { ...incoming, input: withPathParams(incoming.input, found.params) },
                 seenBy,
@@ -621,11 +621,11 @@ export function createKernel(options: Options): Kernel
                 options.budget,
             );
 
-            inFlight.add(answering);
+            inFlight.add(answer);
 
-            return answering.finally(() =>
+            return answer.finally(() =>
             {
-                inFlight.delete(answering);
+                inFlight.delete(answer);
             });
         },
 

@@ -53,16 +53,16 @@ export async function start(starting: StartOptions): Promise<RunningApp>
     // A budget the project passed counts wherever it likes, which is what a
     // deployment of more than one process needs. The kit's own counts here,
     // and only what it counted can it sweep.
-    const counting = starting.budget === undefined ? limiter() : undefined;
-    const budget = starting.budget ?? counting ?? limiter();
+    const ourLimiter = starting.budget === undefined ? limiter() : undefined;
+    const budget = starting.budget ?? ourLimiter ?? limiter();
 
-    const sweeping = counting === undefined ? undefined : setInterval(() => void counting.sweep(), 60_000);
+    const sweep = ourLimiter === undefined ? undefined : setInterval(() => void ourLimiter.sweep(), 60_000);
 
-    sweeping?.unref?.();
+    sweep?.unref?.();
 
     // Reached through the store's own connection, so a kept event and the
     // work it announces are written by one transaction.
-    const keeping = starting.outbox === true ? store.outbox?.() : undefined;
+    const outbox = starting.outbox === true ? store.outbox?.() : undefined;
     const later = starting.schedule === true ? store.schedule?.() : undefined;
 
     // Given whenever any plugin declares a scope: the kernel refuses to
@@ -73,7 +73,7 @@ export async function start(starting: StartOptions): Promise<RunningApp>
     const kernel = createKernel({
         plugins: starting.plugins,
         db: store,
-        ...(keeping !== undefined && { outbox: keeping }),
+        ...(outbox !== undefined && { outbox }),
         ...(later !== undefined && { schedule: later }),
         ...(scoping && store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
         budget,
@@ -115,9 +115,9 @@ export async function start(starting: StartOptions): Promise<RunningApp>
 
         stop: async (): Promise<void> =>
         {
-            if (sweeping !== undefined)
+            if (sweep !== undefined)
             {
-                clearInterval(sweeping);
+                clearInterval(sweep);
             }
 
             await kernel.stop();

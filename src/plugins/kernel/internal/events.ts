@@ -23,12 +23,12 @@ type EventOwner = {
 };
 
 /**
- * How many listener failures are kept.
+ * How many listener failures are remembered.
  *
  * Enough to see a pattern in what just broke, few enough that a listener
  * throwing on every event cannot exhaust the process.
  */
-const KEPT = 100;
+const REMEMBERED = 100;
 
 type Subscriber<Context> = {
     plugin: string;
@@ -59,9 +59,9 @@ export function events<Context>(now: () => number = Date.now, told: Report = () 
     {
         failures.push({ event, plugin, error, at: now() });
 
-        if (failures.length > KEPT)
+        if (failures.length > REMEMBERED)
         {
-            failures.splice(0, failures.length - KEPT);
+            failures.splice(0, failures.length - REMEMBERED);
         }
 
         told(plugin, `listening to "${event}" failed`, {

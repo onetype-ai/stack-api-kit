@@ -10,7 +10,7 @@ import { startTestKernel, TestTables, createCaller } from "../startTestKernel";
 
 import type { Plugin } from "../../plugins/kernel/api";
 
-const items = sqliteTable("held_items", { id: text("id").primaryKey() });
+const items = sqliteTable("note_items", { id: text("id").primaryKey() });
 
 let at = "";
 
@@ -27,7 +27,7 @@ function createScheduled(): Plugin
 {
     at = mkdtempSync(join(tmpdir(), "startTestKernel-"));
 
-    writeFileSync(join(at, "0001-init.sql"), "CREATE TABLE held_items (id TEXT PRIMARY KEY)");
+    writeFileSync(join(at, "0001-init.sql"), "CREATE TABLE note_items (id TEXT PRIMARY KEY)");
 
     return definePlugin("found", {
         version: "1.0.0",
