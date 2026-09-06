@@ -85,14 +85,14 @@ describe("a handler saying what its answer carries", () =>
 
 describe("headers a handler may not set", () =>
 {
-    const kept = [
+    const expected = [
         "set-cookie",
         "content-security-policy",
         "x-frame-options",
         "access-control-allow-origin",
     ];
 
-    for (const name of kept)
+    for (const name of expected)
     {
         test(`drops "${name}" and says so`, async () =>
         {

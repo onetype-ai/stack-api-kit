@@ -4,11 +4,11 @@ import { z } from "zod";
 import { createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute } from "../api";
 import type { Context } from "../api";
 
-type Result = Context<{ size: number }, { found: () => string }>;
+type TestContext = Context<{ size: number }, { found: () => string }>;
 
 test("a route written through defineRoute reads its input without a cast", async () =>
 {
-    const taking = defineRoute<Result>()({
+    const taking = defineRoute<TestContext>()({
         method: "POST",
         path: "/thing",
         describe: "Takes a title.",
@@ -67,7 +67,7 @@ test("a route written inline still works, with input unknown", async () =>
 
 test("a listener, participant and command each read their payload without a cast", async () =>
 {
-    const made = z.object({ id: z.string(), at: z.number() });
+    const payload = z.object({ id: z.string(), at: z.number() });
     const asked = z.object({ title: z.string() });
     const given = z.object({ ownerId: z.string() });
 
@@ -78,7 +78,7 @@ test("a listener, participant and command each read their payload without a cast
             definePlugin("source", {
                 version: "1.0.0",
                 describe: "Announces and asks.",
-                emits: { "source.made": { describe: "Result.", schema: made } },
+                emits: { "source.made": { describe: "Result.", schema: payload } },
                 hooks: { "source.asking": { describe: "Asks.", schema: asked } },
             }),
             definePlugin("watcher", {
@@ -87,8 +87,8 @@ test("a listener, participant and command each read their payload without a cast
                 permissions: { "watcher.run": { describe: "Run it." } },
 
                 listens: {
-                    "source.made": defineListener()(made, {
-                        describe: "Records what was made.",
+                    "source.made": defineListener()(payload, {
+                        describe: "Records what was written.",
                         handle: (payload) =>
                         {
                             // No cast: id is a string, at is a number.

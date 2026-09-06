@@ -117,22 +117,22 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
     // Built lazily and once per context: a service reads ctx.caller, so one
     // made at startup would answer every request as nobody. A plugin whose
     // services are never touched builds none.
-    const made = new Map<string, unknown>();
+    const built = new Map<string, unknown>();
 
     const of = (name: string): unknown =>
     {
-        if (made.has(name))
+        if (built.has(name))
         {
-            return made.get(name);
+            return built.get(name);
         }
 
-        made.set(name, undefined);
+        built.set(name, undefined);
 
         const services = wiring.known.get(name)?.definition.services?.(
             (name === plugin ? ctx : seenBy(name)) as never,
         );
 
-        made.set(name, services);
+        built.set(name, services);
 
         return services;
     };
@@ -143,7 +143,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
      * Shared by `scoped` and `stamped`, because a read and a write must agree
      * about whose rows these are: two lookups is two chances to disagree.
      */
-    const scoping = (table: string): { column: string; held: string } =>
+    const scopeFor = (table: string): { column: string; tenant: string } =>
     {
         const scope = wiring.known.get(plugin)?.definition.scope;
 
@@ -170,9 +170,9 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
         }
 
         // Refused, never defaulted: a default tenant is everybody's.
-        const held = caller === undefined ? acting : caller.claims[scope.claim];
+        const tenant = caller === undefined ? acting : caller.claims[scope.claim];
 
-        if (typeof held !== "string" || held.trim() === "")
+        if (typeof tenant !== "string" || tenant.trim() === "")
         {
             throw new Refusal(
                 403,
@@ -181,7 +181,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
             );
         }
 
-        return { column, held };
+        return { column, tenant };
     };
 
     const ctx: Context = {
@@ -263,7 +263,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
                 const returned = await wiring.open.run(mark, () =>
                     store.tx(plugin, async (db) =>
                     {
-                        const made = await run(seenBy(plugin, { mark, db }));
+                        const answer = await run(seenBy(plugin, { mark, db }));
 
                         // Written with the work, not after it: an event kept
                         // once the transaction has closed is one the process
@@ -280,7 +280,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
                             })));
                         }
 
-                        return made;
+                        return answer;
                     }));
 
                 const announced = wiring.pending.get(mark) ?? [];
@@ -358,7 +358,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
                 // Checked here even when it is deferred: a payload rejected after
                 // a commit, from a stack with no caller in it, is one nobody
                 // can trace back to what emitted it.
-                const checked = wiring.bus.checked(plugin, event, payload);
+                const payloadChecked = wiring.bus.checkDeclared(plugin, event, payload);
 
                 // Kept against whatever transaction is open, not against the
                 // context this was called on. Emitting from the outer `ctx`
@@ -369,7 +369,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
 
                 if (waiting !== undefined)
                 {
-                    waiting.push({ id: crypto.randomUUID(), plugin, name: event, payload: checked });
+                    waiting.push({ id: crypto.randomUUID(), plugin, name: event, payload: payloadChecked });
 
                     return;
                 }
@@ -379,7 +379,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
                 // nobody after a restart, because an outbox keeps a payload
                 // and not a request. Whose work this was travels in the
                 // payload or not at all.
-                wiring.bus.deliver(plugin, event, checked, (to) => heard(to));
+                wiring.bus.deliver(plugin, event, payloadChecked, (to) => heard(to));
             },
         },
 
@@ -472,18 +472,18 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
 
         stamped: (table: string): Readonly<Record<string, string>> =>
         {
-            const { column, held } = scoping(table);
+            const { column, tenant } = scopeFor(table);
 
-            return { [column]: held };
+            return { [column]: tenant };
         },
 
         scoped: <Condition,>(table: string): Condition =>
         {
-            const { column, held } = scoping(table);
+            const { column, tenant } = scopeFor(table);
 
             return (wiring.narrow === undefined
                 ? absent("createScopeFilter", "scoped", "narrow")
-                : wiring.narrow(table, column, held)) as Condition;
+                : wiring.narrow(table, column, tenant)) as Condition;
         },
 
         use: <Reached,>(name: string): Reached =>

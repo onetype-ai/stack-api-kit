@@ -9,11 +9,11 @@ import type { Definition, Plugin, Storage } from "../api";
  * becomes a savepoint rather than a second transaction, so only the outermost
  * one commits.
  */
-function withStore(): Storage & { rolled: () => number; committed: () => number; saved: () => number }
+function withStore(): Storage & { rollbacks: () => number; commits: () => number; savepoints: () => number }
 {
-    let rolled = 0;
-    let committed = 0;
-    let saved = 0;
+    let rollbacks = 0;
+    let commits = 0;
+    let savepoints = 0;
     let depth = 0;
 
     return {
@@ -27,25 +27,25 @@ function withStore(): Storage & { rolled: () => number; committed: () => number;
 
             try
             {
-                const made = await run({ plugin, inTransaction: true });
+                const answer = await run({ plugin, inTransaction: true });
 
                 depth -= 1;
-                nested ? (saved += 1) : (committed += 1);
+                nested ? (savepoints += 1) : (commits += 1);
 
-                return made;
+                return answer;
             }
             catch (cause)
             {
                 depth -= 1;
-                rolled += 1;
+                rollbacks += 1;
 
                 throw cause;
             }
         },
 
-        rolled: () => rolled,
-        committed: () => committed,
-        saved: () => saved,
+        rollbacks: () => rollbacks,
+        commits: () => commits,
+        savepoints: () => savepoints,
     };
 }
 
@@ -295,11 +295,11 @@ describe("events", () =>
             emitter.events.emit("auth.gone", {});
         }
 
-        const kept = kernel.events.failures();
-        const newest = kept.at(-1)?.error;
+        const failures = kernel.events.failures();
+        const newest = failures.at(-1)?.error;
 
         expect(thrown).toBe(250);
-        expect(kept).toHaveLength(100);
+        expect(failures).toHaveLength(100);
         expect(newest).toBeInstanceOf(Error);
         expect((newest as Error).message).toBe("failure 250");
     });
@@ -315,8 +315,8 @@ describe("transactions", () =>
         await kernel.start();
 
         await expect(kernel.context("items").tx(() => Promise.reject(new Error("nope")))).rejects.toThrow("nope");
-        expect(db.rolled()).toBe(1);
-        expect(db.committed()).toBe(0);
+        expect(db.rollbacks()).toBe(1);
+        expect(db.commits()).toBe(0);
     });
 
     test("holds an event until the transaction commits", async () =>
@@ -493,8 +493,8 @@ describe("transactions", () =>
             return "outer";
         });
 
-        expect(db.committed()).toBe(1);
-        expect(db.saved()).toBe(1);
+        expect(db.commits()).toBe(1);
+        expect(db.savepoints()).toBe(1);
     });
 
     test("refuses a transaction when no store was given, naming what to pass", async () =>

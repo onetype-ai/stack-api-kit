@@ -29,7 +29,7 @@ function route(found: Partial<Definition["routes"] extends undefined ? never : N
 }
 
 /** Starts a kernel and answers what it refused, or undefined. */
-async function refused(plugins: readonly Plugin[], config: Record<string, unknown> = {}): Promise<KernelFault | undefined>
+async function refusalFor(plugins: readonly Plugin[], config: Record<string, unknown> = {}): Promise<KernelFault | undefined>
 {
     const kernel = createKernel({ plugins, config });
 
@@ -60,7 +60,7 @@ describe("names", () =>
 
     test("refuses an event outside the plugin's namespace, and says what to rename it to", async () =>
     {
-        const failed = await refused([
+        const failed = await refusalFor([
             participant("auth", { emits: { "session.ended": { describe: "gone", schema: z.object({}) } } }),
         ]);
 
@@ -74,7 +74,7 @@ describe("dependencies", () =>
 {
     test("refuses a dependency no plugin provides", async () =>
     {
-        const failed = await refused([participant("billing", { dependsOn: ["missing"] })]);
+        const failed = await refusalFor([participant("billing", { dependsOn: ["missing"] })]);
 
         expect(failed?.code).toBe("UNKNOWN_DEPENDENCY");
         expect(failed?.message).toMatch(/"missing", which no plugin provides/);
@@ -82,7 +82,7 @@ describe("dependencies", () =>
 
     test("refuses a cycle, naming the loop", async () =>
     {
-        const failed = await refused([
+        const failed = await refusalFor([
             participant("a", { dependsOn: ["b"] }),
             participant("b", { dependsOn: ["a"] }),
         ]);
@@ -93,7 +93,7 @@ describe("dependencies", () =>
 
     test("refuses two plugins with one name", async () =>
     {
-        const failed = await refused([participant("auth"), participant("auth")]);
+        const failed = await refusalFor([participant("auth"), participant("auth")]);
 
         expect(failed?.code).toBe("DUPLICATE_PLUGIN");
     });
@@ -129,7 +129,7 @@ describe("routes", () =>
 {
     test("refuses two plugins declaring one route", async () =>
     {
-        const failed = await refused([
+        const failed = await refusalFor([
             participant("auth", { routes: [route({ path: "/x" })] }),
             participant("billing", { routes: [route({ path: "/x" })] }),
         ]);
@@ -140,7 +140,7 @@ describe("routes", () =>
 
     test("refuses two routes differing only in what they named a parameter", async () =>
     {
-        const failed = await refused([
+        const failed = await refusalFor([
             participant("auth", { routes: [route({ path: "/items/:id" }), route({ path: "/items/:key" })] }),
         ]);
 
@@ -149,7 +149,7 @@ describe("routes", () =>
 
     test("allows one path under two methods", async () =>
     {
-        const failed = await refused([
+        const failed = await refusalFor([
             participant("auth", { routes: [route({ method: "GET", path: "/x" }), route({ method: "POST", path: "/x" })] }),
         ]);
 
@@ -158,7 +158,7 @@ describe("routes", () =>
 
     test("refuses a path in the wrong syntax", async () =>
     {
-        const failed = await refused([participant("auth", { routes: [route({ path: "items" })] })]);
+        const failed = await refusalFor([participant("auth", { routes: [route({ path: "items" })] })]);
 
         expect(failed?.code).toBe("INVALID_ROUTE");
         expect(failed?.message).toMatch(/must start with "\/"/);
@@ -166,7 +166,7 @@ describe("routes", () =>
 
     test("refuses a path with an empty segment", async () =>
     {
-        const failed = await refused([participant("auth", { routes: [route({ path: "/items//x" })] })]);
+        const failed = await refusalFor([participant("auth", { routes: [route({ path: "/items//x" })] })]);
 
         expect(failed?.code).toBe("INVALID_ROUTE");
         expect(failed?.message).toMatch(/empty segment/);
@@ -174,21 +174,21 @@ describe("routes", () =>
 
     test("refuses a path with a segment outside what a path may hold", async () =>
     {
-        const failed = await refused([participant("auth", { routes: [route({ path: "/Items" })] })]);
+        const failed = await refusalFor([participant("auth", { routes: [route({ path: "/Items" })] })]);
 
         expect(failed?.code).toBe("INVALID_ROUTE");
     });
 
     test("takes a parameter named the way the code around it is", async () =>
     {
-        const failed = await refused([participant("auth", { routes: [route({ path: "/items/:documentId" })] })]);
+        const failed = await refusalFor([participant("auth", { routes: [route({ path: "/items/:documentId" })] })]);
 
         expect(failed).toBeUndefined();
     });
 
     test("still refuses a parameter that is not a name", async () =>
     {
-        const failed = await refused([participant("auth", { routes: [route({ path: "/items/:9lives" })] })]);
+        const failed = await refusalFor([participant("auth", { routes: [route({ path: "/items/:9lives" })] })]);
 
         expect(failed?.code).toBe("INVALID_ROUTE");
         expect(failed?.message).toMatch(/not letters and digits/);
@@ -196,7 +196,7 @@ describe("routes", () =>
 
     test("still sees two paths differing only in a parameter's name as one", async () =>
     {
-        const failed = await refused([
+        const failed = await refusalFor([
             participant("auth", { routes: [route({ path: "/items/:documentId" }), route({ path: "/items/:noteId" })] }),
         ]);
 
@@ -205,7 +205,7 @@ describe("routes", () =>
 
     test("refuses a route that is public and also requires a permission", async () =>
     {
-        const failed = await refused([
+        const failed = await refusalFor([
             participant("auth", {
                 permissions: { "auth.read": { describe: "Read." } },
                 routes: [route({ public: true, requires: ["auth.read"] })],
@@ -218,14 +218,14 @@ describe("routes", () =>
 
     test("refuses a route with no description", async () =>
     {
-        const failed = await refused([participant("auth", { routes: [route({ describe: "  " })] })]);
+        const failed = await refusalFor([participant("auth", { routes: [route({ describe: "  " })] })]);
 
         expect(failed?.code).toBe("INVALID_ROUTE");
     });
 
     test("refuses a route needing a permission nothing declares", async () =>
     {
-        const failed = await refused([participant("billing", { routes: [route({ requires: ["billing.read"] })] })]);
+        const failed = await refusalFor([participant("billing", { routes: [route({ requires: ["billing.read"] })] })]);
 
         expect(failed?.code).toBe("UNDECLARED_PERMISSION");
     });
@@ -235,7 +235,7 @@ describe("declarations", () =>
 {
     test("refuses two plugins claiming one table name", async () =>
     {
-        const failed = await refused([
+        const failed = await refusalFor([
             participant("auth", { tables: { users: {} } }),
             participant("billing", { tables: { users: {} } }),
         ]);
@@ -245,7 +245,7 @@ describe("declarations", () =>
 
     test("refuses an outbound host that travels in the clear", async () =>
     {
-        const failed = await refused([participant("billing", { outbound: ["http://api.example.test"] })]);
+        const failed = await refusalFor([participant("billing", { outbound: ["http://api.example.test"] })]);
 
         expect(failed?.code).toBe("UNDECLARED_HOST");
         expect(failed?.message).toMatch(/not encrypted/);
@@ -253,28 +253,28 @@ describe("declarations", () =>
 
     test("refuses an outbound host with no scheme at all", async () =>
     {
-        const failed = await refused([participant("billing", { outbound: ["api.example.test"] })]);
+        const failed = await refusalFor([participant("billing", { outbound: ["api.example.test"] })]);
 
         expect(failed?.message).toMatch(/names no scheme/);
     });
 
     test("refuses an outbound host carrying a path", async () =>
     {
-        const failed = await refused([participant("billing", { outbound: ["https://api.example.test/v1/charges"] })]);
+        const failed = await refusalFor([participant("billing", { outbound: ["https://api.example.test/v1/charges"] })]);
 
         expect(failed?.message).toMatch(/is not an origin/);
     });
 
     test("refuses a scheme the kit does not know", async () =>
     {
-        const failed = await refused([participant("billing", { outbound: ["gopher://api.example.test"] })]);
+        const failed = await refusalFor([participant("billing", { outbound: ["gopher://api.example.test"] })]);
 
         expect(failed?.message).toMatch(/does not know/);
     });
 
     test("accepts the connections a plugin really opens, not only https", async () =>
     {
-        const failed = await refused([participant("billing", {
+        const failed = await refusalFor([participant("billing", {
             outbound: ["redis://cache.internal:6379", "postgres://db.internal:5432", "wss://events.internal"],
         })]);
 
@@ -283,21 +283,21 @@ describe("declarations", () =>
 
     test("refuses a version that is not a version", async () =>
     {
-        const failed = await refused([definePlugin("auth", { version: "banana", describe: "The auth plugin." })]);
+        const failed = await refusalFor([definePlugin("auth", { version: "banana", describe: "The auth plugin." })]);
 
         expect(failed?.code).toBe("INVALID_NAME");
     });
 
     test("refuses an empty description", async () =>
     {
-        const failed = await refused([definePlugin("auth", { version: "1.0.0", describe: "  " })]);
+        const failed = await refusalFor([definePlugin("auth", { version: "1.0.0", describe: "  " })]);
 
         expect(failed?.message).toMatch(/describes itself in one sentence/);
     });
 
     test("reports every problem in one run rather than the first", async () =>
     {
-        const failed = await refused([
+        const failed = await refusalFor([
             participant("auth", { dependsOn: ["missing"] }),
             participant("billing", { routes: [route({ path: "nope" })] }),
         ]);
@@ -310,7 +310,7 @@ describe("references", () =>
 {
     test("refuses listening to an event nothing declares", async () =>
     {
-        const failed = await refused([
+        const failed = await refusalFor([
             participant("billing", { listens: { "auth.gone": { describe: "hears it", handle: () => {} } } }),
         ]);
 
@@ -319,7 +319,7 @@ describe("references", () =>
 
     test("lets a plugin hear an event without depending on its owner", async () =>
     {
-        const failed = await refused([
+        const failed = await refusalFor([
             participant("auth", { emits: { "auth.gone": { describe: "gone", schema: z.object({}) } } }),
             participant("billing", { listens: { "auth.gone": { describe: "hears it", handle: () => {} } } }),
         ]);
@@ -329,7 +329,7 @@ describe("references", () =>
 
     test("lets two plugins hear each other, which no dependency order allows", async () =>
     {
-        const failed = await refused([
+        const failed = await refusalFor([
             participant("orders", {
                 emits: { "orders.placed": { describe: "placed", schema: z.object({}) } },
                 listens: { "payments.charged": { describe: "hears it", handle: () => {} } },
@@ -345,7 +345,7 @@ describe("references", () =>
 
     test("still refuses hearing an event nobody declares", async () =>
     {
-        const failed = await refused([
+        const failed = await refusalFor([
             participant("billing", { listens: { "auth.gone": { describe: "hears it", handle: () => {} } } }),
         ]);
 
@@ -365,7 +365,7 @@ describe("references", () =>
 
     test("still refuses a route requiring a permission it does not depend on", async () =>
     {
-        const failed = await refused([
+        const failed = await refusalFor([
             participant("auth", { permissions: { "auth.read": { describe: "Read." } } }),
             participant("billing", { routes: [route({ requires: ["auth.read"] })] }),
         ]);
@@ -378,7 +378,7 @@ describe("config", () =>
 {
     test("refuses config that fails its schema, naming the key", async () =>
     {
-        const failed = await refused(
+        const failed = await refusalFor(
             [participant("billing", { config: z.object({ pageSize: z.number() }) })],
             { billing: { pageSize: "many" } },
         );

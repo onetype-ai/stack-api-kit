@@ -57,7 +57,7 @@ export type Outbox = {
     sent: (id: string) => Promise<void>;
 
     /** What was kept but never marked sent. Read once, at startup. */
-    waiting: () => Promise<readonly Announcement[]>;
+    unsent: () => Promise<readonly Announcement[]>;
 };
 
 /** One command waiting for its moment. */

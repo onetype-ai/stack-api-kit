@@ -49,7 +49,7 @@ export function findImportViolations(root: string): ImportViolation[]
 
     const plugins = contracts.map((name) => read(root, name, contracts));
 
-    return [...missingContracts, ...undeclared(needed(plugins)), ...deep(needed(plugins)), ...findCycles(plugins)];
+    return [...missingContracts, ...findUndeclared(withTestDependencies(plugins)), ...deep(withTestDependencies(plugins)), ...findCycles(plugins)];
 }
 
 /**
@@ -62,7 +62,7 @@ export function findImportViolations(root: string): ImportViolation[]
  *
  * Dependencies are not widened this way: only what a test has to assemble.
  */
-function needed(plugins: readonly PluginImports[]): PluginImports[]
+function withTestDependencies(plugins: readonly PluginImports[]): PluginImports[]
 {
     const answers = new Map(plugins.map((one) => [one.name, one.answers]));
     const declared = new Map(plugins.map((one) => [one.name, one.declared]));
@@ -73,8 +73,8 @@ function needed(plugins: readonly PluginImports[]): PluginImports[]
         // depends on, and then whatever those need in turn. Seeding only from
         // what it hears leaves a three-deep dependency chain untestable
         // without writing a dependency that is not one.
-        const reached = new Set([...one.answers, ...one.declared]);
-        const walking = [...reached];
+        const walked = new Set([...one.answers, ...one.declared]);
+        const walking = [...walked];
 
         while (walking.length > 0)
         {
@@ -84,16 +84,16 @@ function needed(plugins: readonly PluginImports[]): PluginImports[]
             {
                 for (const further of set ?? [])
                 {
-                    if (further !== one.name && !reached.has(further))
+                    if (further !== one.name && !walked.has(further))
                     {
-                        reached.add(further);
+                        walked.add(further);
                         walking.push(further);
                     }
                 }
             }
         }
 
-        return { ...one, answers: reached };
+        return { ...one, answers: walked };
     });
 }
 
@@ -129,7 +129,7 @@ function read(root: string, name: string, names: readonly string[]): PluginImpor
         name,
         declared: new Set(found === null ? [] : [...found[1]!.matchAll(/"([^"]+)"/g)].map((one) => one[1]!)),
         answers: answering,
-        crossings: files(root, name).flatMap(({ path, source }) => crossings(name, path, source, others)),
+        crossings: files(root, name).flatMap(({ path, source }) => edgesFrom(name, path, source, others)),
     };
 }
 
@@ -150,7 +150,7 @@ function files(root: string, name: string): { path: string; source: string }[]
 // A specifier is resolved against the file that wrote it rather than matched as
 // text: "../../other/thing" reaches the same private file an alias would, and a
 // rule reading the alias alone calls that clean.
-function crossings(name: string, path: string, source: string, others: ReadonlySet<string>): ImportEdge[]
+function edgesFrom(name: string, path: string, source: string, others: ReadonlySet<string>): ImportEdge[]
 {
     return [...source.matchAll(/from\s+"([^"]+)"/g)].flatMap((match) =>
     {
@@ -188,7 +188,7 @@ function crossings(name: string, path: string, source: string, others: ReadonlyS
     });
 }
 
-function undeclared(plugins: readonly PluginImports[]): ImportViolation[]
+function findUndeclared(plugins: readonly PluginImports[]): ImportViolation[]
 {
     return plugins.flatMap((one) =>
         one.crossings
@@ -202,7 +202,7 @@ function undeclared(plugins: readonly PluginImports[]): ImportViolation[]
                 // A test of a listener boots what it listens to. That is not
                 // a dependency, and writing one to satisfy this check would
                 // put a lie in the contract.
-                return !(tested(crossing.from)
+                return !(isTestPath(crossing.from)
                     && one.answers.has(crossing.to)
                     && crossing.specifier === `@plugins/${crossing.to}/plugin`);
             })
@@ -222,7 +222,7 @@ function undeclared(plugins: readonly PluginImports[]): ImportViolation[]
  * plugin tests itself in its own tests/" impossible for anything with a
  * dependency.
  */
-function tested(path: string): boolean
+function isTestPath(path: string): boolean
 {
     return /(^|\/)tests?\//.test(path) || /\.test\.tsx?$/.test(path);
 }
@@ -240,7 +240,7 @@ function deep(plugins: readonly PluginImports[]): ImportViolation[]
 
                 // A test may name a declared dependency's contract, and only
                 // its contract: everything below it is still private.
-                return !(tested(crossing.from)
+                return !(isTestPath(crossing.from)
                     && (one.declared.has(crossing.to) || one.answers.has(crossing.to))
                     && crossing.specifier === `@plugins/${crossing.to}/plugin`);
             })

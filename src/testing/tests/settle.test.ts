@@ -52,7 +52,7 @@ test("what a listener wrote is there once the test waits for it", async () =>
 
 test("a chain of two listeners settles too", async () =>
 {
-    const reached: string[] = [];
+    const arrivals: string[] = [];
 
     const api = await startTestKernel({
         plugins: [
@@ -70,7 +70,7 @@ test("a chain of two listeners settles too", async () =>
                         describe: "Passes it on.",
                         handle: (payload, ctx) =>
                         {
-                            reached.push("second");
+                            arrivals.push("second");
 
                             ctx.events.emit("second.done", payload as { id: string });
                         },
@@ -83,7 +83,7 @@ test("a chain of two listeners settles too", async () =>
                 listens: {
                     "second.done": {
                         describe: "Records the end of the chain.",
-                        handle: () => { reached.push("third"); },
+                        handle: () => { arrivals.push("third"); },
                     },
                 },
             }),
@@ -96,5 +96,5 @@ test("a chain of two listeners settles too", async () =>
 
     await api.stop();
 
-    expect(reached).toEqual(["second", "third"]);
+    expect(arrivals).toEqual(["second", "third"]);
 });

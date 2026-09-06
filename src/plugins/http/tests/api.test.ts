@@ -68,19 +68,19 @@ describe("headers", () =>
     {
         const app = await startServer(listing);
 
-        const made = await app.request("/items");
-        const kept = await app.request("/items", { headers: { "x-request-id": "abc-123" } });
+        const generated = await app.request("/items");
+        const given = await app.request("/items", { headers: { "x-request-id": "abc-123" } });
 
-        expect(made.headers.get("x-request-id")).toMatch(/.+/);
-        expect(kept.headers.get("x-request-id")).toBe("abc-123");
+        expect(generated.headers.get("x-request-id")).toMatch(/.+/);
+        expect(given.headers.get("x-request-id")).toBe("abc-123");
     });
 
     test("refuses a request id shaped to be written into a log as a second line", () =>
     {
-        const kept = requestId("abc-123");
+        const given = requestId("abc-123");
         const replaced = requestId("a\nlevel=error fake");
 
-        expect(kept).toBe("abc-123");
+        expect(given).toBe("abc-123");
         expect(replaced).not.toMatch(/\n/);
         expect(replaced).toMatch(/^[0-9a-f-]{36}$/);
     });
@@ -272,17 +272,17 @@ describe("bodies", () =>
         let sent = 0;
 
         const body = new ReadableStream<Uint8Array>({
-            pull(held)
+            pull(controller)
             {
                 sent += 1;
 
                 if (sent > 50)
                 {
-                    held.close();
+                    controller.close();
                     return;
                 }
 
-                held.enqueue(new TextEncoder().encode("x".repeat(100)));
+                controller.enqueue(new TextEncoder().encode("x".repeat(100)));
             },
         });
 

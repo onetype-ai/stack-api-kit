@@ -13,9 +13,9 @@ import type { z } from "zod";
  * A route whose output cannot filter is a route that will leak the first time
  * someone adds a column.
  */
-export function filters(schema: z.ZodType): boolean
+export function canFilter(schema: z.ZodType): boolean
 {
-    return whitelists(schema, 0, new Set());
+    return isWhitelist(schema, 0, new Set());
 }
 
 const OPEN: ReadonlySet<string> = new Set(["any", "unknown", "record", "map", "custom", "never", "void", "transform", "pipe", "promise", "function", "file", "symbol"]);
@@ -31,7 +31,7 @@ function kindOf(schema: unknown): string
     return String((schema as { _zod?: { def?: { type?: unknown } } })._zod?.def?.type ?? "");
 }
 
-function whitelists(schema: unknown, depth: number, seen: Set<unknown>): boolean
+function isWhitelist(schema: unknown, depth: number, seen: Set<unknown>): boolean
 {
     // A schema deep enough to exhaust this is one nobody reviews anyway.
     if (depth > 24 || schema === null || typeof schema !== "object")
@@ -89,32 +89,32 @@ function whitelists(schema: unknown, depth: number, seen: Set<unknown>): boolean
                 return false;
             }
 
-            return Object.values(shape as Record<string, unknown>).every((field) => whitelists(field, depth + 1, seen));
+            return Object.values(shape as Record<string, unknown>).every((field) => isWhitelist(field, depth + 1, seen));
         }
 
         case "array":
         case "set":
         {
-            return whitelists(def["element"], depth + 1, seen);
+            return isWhitelist(def["element"], depth + 1, seen);
         }
 
         case "tuple":
         {
             const items = Array.isArray(def["items"]) ? (def["items"] as unknown[]) : [];
 
-            return items.every((item) => whitelists(item, depth + 1, seen)) && def["rest"] === undefined;
+            return items.every((member) => isWhitelist(member, depth + 1, seen)) && def["rest"] === undefined;
         }
 
         case "union":
         {
             const options = Array.isArray(def["options"]) ? (def["options"] as unknown[]) : [];
 
-            return options.length > 0 && options.every((option) => whitelists(option, depth + 1, seen));
+            return options.length > 0 && options.every((option) => isWhitelist(option, depth + 1, seen));
         }
 
         case "intersection":
         {
-            return whitelists(def["left"], depth + 1, seen) && whitelists(def["right"], depth + 1, seen);
+            return isWhitelist(def["left"], depth + 1, seen) && isWhitelist(def["right"], depth + 1, seen);
         }
 
         case "optional":
@@ -125,7 +125,7 @@ function whitelists(schema: unknown, depth: number, seen: Set<unknown>): boolean
         case "nonoptional":
         case "catch":
         {
-            return whitelists(def["innerType"], depth + 1, seen);
+            return isWhitelist(def["innerType"], depth + 1, seen);
         }
 
         // A recursive shape: the schema is behind a getter, so it has to be
@@ -142,7 +142,7 @@ function whitelists(schema: unknown, depth: number, seen: Set<unknown>): boolean
 
             try
             {
-                return whitelists((getter as () => unknown)(), depth + 1, seen);
+                return isWhitelist((getter as () => unknown)(), depth + 1, seen);
             }
             catch
             {

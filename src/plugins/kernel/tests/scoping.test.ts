@@ -13,7 +13,7 @@ const notes = sqliteTable("billing_notes", {
     body: text("body").notNull(),
 });
 
-function billing(): Plugin
+function createBilling(): Plugin
 {
     return definePlugin("billing", {
         version: "1.0.0",
@@ -77,16 +77,16 @@ describe("a table a plugin scoped", () =>
         );
 
         const kernel = createKernel({
-            plugins: [billing()],
+            plugins: [createBilling()],
             db: store,
             ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
         });
 
         await kernel.start();
 
-        type Reached = { list: () => Promise<string[]>; one: (id: string) => Promise<string | undefined> };
+        type NoteReader = { list: () => Promise<string[]>; one: (id: string) => Promise<string | undefined> };
 
-        const mine = kernel.context("billing", shopCaller("acme")).services as Reached;
+        const mine = kernel.context("billing", shopCaller("acme")).services as NoteReader;
 
         expect(await mine.list()).toEqual(["ours"]);
         expect(await mine.one("a")).toBe("ours");
@@ -103,7 +103,7 @@ describe("a table a plugin scoped", () =>
         const store = startServer();
 
         const kernel = createKernel({
-            plugins: [billing()],
+            plugins: [createBilling()],
             db: store,
             ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
         });

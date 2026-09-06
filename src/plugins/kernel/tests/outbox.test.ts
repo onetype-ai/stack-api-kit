@@ -35,21 +35,21 @@ describe("an event kept in an outbox", () =>
     test("outlives the process that emitted it, and reaches the next one", async () =>
     {
         const connection = new Database(":memory:");
-        const waiting = outbox(connection);
+        const unsent = outbox(connection);
         const recorded: string[] = [];
 
         // A process that committed the work and stopped before delivering:
         // the row is what it left behind.
-        waiting.keep({}, [{ id: "a1", plugin: "orders", name: "orders.placed", payload: { id: "order-1" } }]);
+        unsent.keep({}, [{ id: "a1", plugin: "orders", name: "orders.placed", payload: { id: "order-1" } }]);
 
-        expect(await waiting.waiting()).toHaveLength(1);
+        expect(await unsent.unsent()).toHaveLength(1);
 
-        const restarted = createKernel({ plugins: [emitter(), recorder(recorded)], outbox: waiting });
+        const restarted = createKernel({ plugins: [emitter(), recorder(recorded)], outbox: unsent });
 
         await restarted.start();
 
         expect(recorded).toEqual(["order-1"]);
-        expect(await waiting.waiting()).toHaveLength(0);
+        expect(await unsent.unsent()).toHaveLength(0);
 
         await restarted.stop();
         connection.close();
@@ -58,7 +58,7 @@ describe("an event kept in an outbox", () =>
     test("is forgotten only once a listener has recorded it", async () =>
     {
         const connection = new Database(":memory:");
-        const waiting = outbox(connection);
+        const unsent = outbox(connection);
         const store = database({ file: ":memory:", tables: { orders: {} } });
 
         let released: (() => void) | undefined;
@@ -76,7 +76,7 @@ describe("an event kept in an outbox", () =>
                 }),
             ],
             db: store,
-            outbox: waiting,
+            outbox: unsent,
         });
 
         await kernel.start();
@@ -87,12 +87,12 @@ describe("an event kept in an outbox", () =>
         });
 
         // The listener has not finished, so the event is still owed.
-        expect(await waiting.waiting()).toHaveLength(1);
+        expect(await unsent.unsent()).toHaveLength(1);
 
         released?.();
         await new Promise((keep) => setImmediate(keep));
 
-        expect(await waiting.waiting()).toHaveLength(0);
+        expect(await unsent.unsent()).toHaveLength(0);
 
         await kernel.stop();
         store.close();
@@ -102,10 +102,10 @@ describe("an event kept in an outbox", () =>
     test("is never kept at all when the work rolled back", async () =>
     {
         const connection = new Database(":memory:");
-        const waiting = outbox(connection);
+        const unsent = outbox(connection);
         const store = database({ file: ":memory:", tables: { orders: {} } });
 
-        const kernel = createKernel({ plugins: [emitter(), recorder([])], db: store, outbox: waiting });
+        const kernel = createKernel({ plugins: [emitter(), recorder([])], db: store, outbox: unsent });
 
         await kernel.start();
 
@@ -116,7 +116,7 @@ describe("an event kept in an outbox", () =>
             throw new Error("the order was refused");
         }).catch(() => undefined);
 
-        expect(await waiting.waiting()).toHaveLength(0);
+        expect(await unsent.unsent()).toHaveLength(0);
 
         await kernel.stop();
         store.close();
@@ -126,7 +126,7 @@ describe("an event kept in an outbox", () =>
     test("and never once a listener threw, so the next start tries again", async () =>
     {
         const connection = new Database(":memory:");
-        const waiting = outbox(connection);
+        const unsent = outbox(connection);
         const store = database({ file: ":memory:", tables: { orders: {} } });
 
         const broken = definePlugin("ledger", {
@@ -140,7 +140,7 @@ describe("an event kept in an outbox", () =>
             },
         });
 
-        const kernel = createKernel({ plugins: [emitter(), broken], db: store, outbox: waiting });
+        const kernel = createKernel({ plugins: [emitter(), broken], db: store, outbox: unsent });
 
         await kernel.start();
 
@@ -151,12 +151,12 @@ describe("an event kept in an outbox", () =>
 
         await new Promise((settle) => setTimeout(settle, 10));
 
-        expect(await waiting.waiting()).toHaveLength(1);
+        expect(await unsent.unsent()).toHaveLength(1);
 
         await kernel.stop();
 
         const recorded: string[] = [];
-        const restarted = createKernel({ plugins: [emitter(), recorder(recorded)], outbox: waiting });
+        const restarted = createKernel({ plugins: [emitter(), recorder(recorded)], outbox: unsent });
 
         await restarted.start();
 

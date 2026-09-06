@@ -2,13 +2,13 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { dial, OutboundFault } from "../api";
 
-type Stubbed = {
+type FetchStub = {
     status?: number;
     body?: string;
     redirected?: boolean;
 };
 
-function stubbing(answer: Stubbed = {}): void
+function stubFetch(answer: FetchStub = {}): void
 {
     vi.stubGlobal("fetch", (_url: string, init?: RequestInit) =>
     {
@@ -33,28 +33,28 @@ describe("answers", () =>
 {
     test("returns the parsed body", async () =>
     {
-        stubbing({ body: '{"ok":true}' });
+        stubFetch({ body: '{"ok":true}' });
 
         await expect(dial()({ method: "GET", url: "https://api.example.test/x" })).resolves.toEqual({ ok: true });
     });
 
     test("returns undefined for an empty body", async () =>
     {
-        stubbing({ status: 204, body: "" });
+        stubFetch({ status: 204, body: "" });
 
         await expect(dial()({ method: "GET", url: "https://api.example.test/x" })).resolves.toBeUndefined();
     });
 
     test("refuses a body that is not JSON", async () =>
     {
-        stubbing({ body: "not json" });
+        stubFetch({ body: "not json" });
 
         await expect(dial()({ method: "GET", url: "https://api.example.test/x" })).rejects.toMatchObject({ code: "MALFORMED" });
     });
 
     test("refuses a non-2xx status, carrying it", async () =>
     {
-        stubbing({ status: 402, body: '{"error":"card declined"}' });
+        stubFetch({ status: 402, body: '{"error":"card declined"}' });
 
         const failed = await dial()({ method: "GET", url: "https://api.example.test/x" }).catch((cause: unknown) => cause);
 
@@ -64,7 +64,7 @@ describe("answers", () =>
 
     test("refuses an answer past the size it was given", async () =>
     {
-        stubbing({ body: "x".repeat(2_000) });
+        stubFetch({ body: "x".repeat(2_000) });
 
         await expect(dial({ maxBytes: 100 })({ method: "GET", url: "https://api.example.test/x" }))
             .rejects.toMatchObject({ code: "TOO_LARGE" });

@@ -37,9 +37,9 @@ function walk(path)
 
     const found = [];
 
-    for (const held of readdirSync(path))
+    for (const name of readdirSync(path))
     {
-        const full = join(path, held);
+        const full = join(path, name);
 
         if (statSync(full).isDirectory())
         {
@@ -47,7 +47,7 @@ function walk(path)
             continue;
         }
 
-        if (/\.tsx?$/.test(held))
+        if (/\.tsx?$/.test(name))
         {
             found.push(full);
         }
@@ -74,13 +74,13 @@ function imports(source)
 
     for (const pattern of patterns)
     {
-        for (const held of source.matchAll(pattern))
+        for (const match of source.matchAll(pattern))
         {
-            const whole = held[0];
-            const path = held[3];
+            const whole = match[0];
+            const path = match[3];
 
             // `import type {...}` and `import { type X }` are both erased.
-            const erased = held[2] !== undefined && held[2].trim() === "type"
+            const erased = match[2] !== undefined && match[2].trim() === "type"
                 ? true
                 : /\{[^}]*\}/.test(whole) && /\{\s*type\s/.test(whole) && !/\{[^}]*,\s*[A-Za-z_$]/.test(whole.replace(/type\s+\w+/g, ""));
 
@@ -94,7 +94,7 @@ function imports(source)
 /** Just the specifiers, for a rule that does not care how they are imported. */
 function paths(source)
 {
-    return imports(source).map((held) => held.path);
+    return imports(source).map((one) => one.path);
 }
 
 const plugins = existsSync(root)
@@ -114,7 +114,7 @@ for (const name of plugins)
             continue;
         }
 
-        if (paths(readFileSync(file, "utf8")).some((held) => held.includes(`plugins/${name}`)))
+        if (paths(readFileSync(file, "utf8")).some((specifier) => specifier.includes(`plugins/${name}`)))
         {
             fault(`${relative(".", file)} names ${name}: only an entry may`);
         }
@@ -140,16 +140,16 @@ for (const name of plugins)
     }
 
     // Only the named files may sit at a plugin's top level.
-    for (const held of readdirSync(path))
+    for (const file of readdirSync(path))
     {
-        if (statSync(join(path, held)).isDirectory() || !/\.tsx?$/.test(held))
+        if (statSync(join(path, file)).isDirectory() || !/\.tsx?$/.test(file))
         {
             continue;
         }
 
-        if (!["api.ts", "events.ts", "hooks.ts"].includes(held))
+        if (!["api.ts", "events.ts", "hooks.ts"].includes(file))
         {
-            fault(`${name}: ${held} is not one of the named top-level files`);
+            fault(`${name}: ${file} is not one of the named top-level files`);
         }
     }
 
@@ -160,7 +160,7 @@ for (const name of plugins)
         const inside = file.startsWith(join(path, "internal"));
         const tested = file.startsWith(join(path, "tests"));
 
-        for (const { path: held, erased } of imports(source))
+        for (const { path: specifier, erased } of imports(source))
         {
             // 1. Another plugin, and only through api.ts.
             //
@@ -172,7 +172,7 @@ for (const name of plugins)
             //
             // Matching the text alone let a relative path climb out of a
             // folder and reach a private file while the rule read as enforced.
-            const landed = held.startsWith(".") ? relative(".", join(dirname(file), held)) : held;
+            const landed = specifier.startsWith(".") ? relative(".", join(dirname(file), specifier)) : specifier;
 
             for (const other of plugins)
             {
@@ -184,7 +184,7 @@ for (const name of plugins)
                     continue;
                 }
 
-                if (held.includes("/internal"))
+                if (specifier.includes("/internal"))
                 {
                     fault(`${where} imports ${other}'s internal`);
                 }
@@ -200,7 +200,7 @@ for (const name of plugins)
 
             for (const [driver, owner] of Object.entries(drivers))
             {
-                if (!erased && (held === driver || held.startsWith(`${driver}/`)) && name !== owner && !tested)
+                if (!erased && (specifier === driver || specifier.startsWith(`${driver}/`)) && name !== owner && !tested)
                 {
                     fault(`${where} imports ${driver}, which only ${owner} may`);
                 }
@@ -214,7 +214,7 @@ for (const name of plugins)
             // judge, and reporting it here would name the wrong rule.
             const own = landed.startsWith(`${path}/`) || landed === path;
 
-            if (inside && own && !erased && /(^|\/)api$/.test(held.replace(/\.tsx?$/, "")))
+            if (inside && own && !erased && /(^|\/)api$/.test(specifier.replace(/\.tsx?$/, "")))
             {
                 fault(`${where} imports an entry from internal/`);
             }
@@ -232,8 +232,8 @@ for (const name of plugins)
 // 5. exports lists entries only.
 if (existsSync("package.json"))
 {
-    const held = JSON.parse(readFileSync("package.json", "utf8"));
-    const exported = held.exports ?? {};
+    const manifest = JSON.parse(readFileSync("package.json", "utf8"));
+    const exported = manifest.exports ?? {};
 
     if (Object.keys(exported).some((key) => key.includes("*")))
     {
@@ -252,7 +252,7 @@ if (existsSync("package.json"))
 
     for (const driver of ["better-sqlite3", "drizzle-orm", "hono"])
     {
-        if (held.dependencies?.[driver])
+        if (manifest.dependencies?.[driver])
         {
             fault(`${driver} is a dependency, not a peer`);
         }
@@ -267,7 +267,7 @@ if (existsSync(entry))
 
     for (const name of plugins)
     {
-        if (!paths(source).some((held) => held.includes(`plugins/${name}`)))
+        if (!paths(source).some((specifier) => specifier.includes(`plugins/${name}`)))
         {
             fault(`${name} is not exported from ${entry}: nothing can reach it`);
         }

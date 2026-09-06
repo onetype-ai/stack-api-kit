@@ -17,7 +17,7 @@ export type Pending = {
     payload: unknown;
 };
 
-type Published = {
+type EventOwner = {
     owner: string;
     event: Event;
 };
@@ -39,7 +39,7 @@ type Report = (plugin: string, line: string, about: Readonly<Record<string, unkn
 
 export function events<Context>(now: () => number = Date.now, told: Report = () => {})
 {
-    const published = new Map<string, Published>();
+    const published = new Map<string, EventOwner>();
     const subscribers = new Map<string, Subscriber<Context>[]>();
     const failures: Failure[] = [];
 
@@ -71,7 +71,7 @@ export function events<Context>(now: () => number = Date.now, told: Report = () 
         });
     }
 
-    function checked(plugin: string, name: string, payload: unknown): unknown
+    function checkDeclared(plugin: string, name: string, payload: unknown): unknown
     {
         const publisher = published.get(name);
 
@@ -96,7 +96,7 @@ export function events<Context>(now: () => number = Date.now, told: Report = () 
     }
 
     return {
-        checked,
+        checkDeclared,
 
         declare: (owner: string, name: string, event: Event): void =>
         {

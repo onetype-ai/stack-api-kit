@@ -1,7 +1,7 @@
 import type { Plugin } from "./contract";
 import type { KernelFault } from "./faults";
 import * as names from "./names";
-import { filters } from "./output";
+import { canFilter } from "./output";
 
 /** One thing wrong, and everything needed to fix it. */
 export type ContractProblem = {
@@ -12,7 +12,7 @@ export type ContractProblem = {
 
 type Report = (code: KernelFault["code"], plugin: string, message: string) => void;
 
-type Claimed = {
+type Ownership = {
     routes: Map<string, string>;
     events: Map<string, string>;
     hooks: Map<string, string>;
@@ -49,7 +49,7 @@ export function validate(plugins: readonly Plugin[], config: Readonly<Record<str
         by.set(plugin.name, plugin);
     }
 
-    const owned: Claimed = {
+    const owned: Ownership = {
         routes: new Map(),
         events: new Map(),
         hooks: new Map(),
@@ -75,9 +75,9 @@ export function validate(plugins: readonly Plugin[], config: Readonly<Record<str
 }
 
 /** What a plugin declares, and whether anyone claimed it first. */
-function checkOwn(name: string, plugin: Plugin, owned: Claimed, say: Report): void
+function checkOwn(name: string, plugin: Plugin, owned: Ownership, say: Report): void
 {
-    const claim = (kind: keyof Claimed, key: string, code: KernelFault["code"], label: string): void =>
+    const claim = (kind: keyof Ownership, key: string, code: KernelFault["code"], label: string): void =>
     {
         const first = owned[kind].get(key);
 
@@ -129,7 +129,7 @@ function checkOwn(name: string, plugin: Plugin, owned: Claimed, say: Report): vo
 
         // An output schema that cannot strip is not a whitelist, and the
         // route's whole promise rests on it.
-        if (!filters(route.output))
+        if (!canFilter(route.output))
         {
             say("INVALID_OUTPUT", name, `Route ${route.method} "${route.path}" has an output schema that cannot filter what leaves. Use z.object naming every field that may be sent: it strips the rest. z.any, z.unknown, z.record, z.looseObject, a catchall and a transform all forward whatever the handler returned.`);
         }
@@ -298,7 +298,7 @@ function checkLimit(name: string, route: NonNullable<Plugin["definition"]["route
 }
 
 /** One route path: how it must be written, and who already took it. */
-function path(name: string, method: string, given: string, owned: Claimed, say: Report): void
+function path(name: string, method: string, given: string, owned: Ownership, say: Report): void
 {
     if (!given.startsWith("/"))
     {
@@ -375,12 +375,12 @@ function checkNamespaced(owner: string, key: string, kind: string, say: Report):
 }
 
 /** What a plugin refers to: it must exist, and be reachable. */
-function checkReferences(name: string, plugin: Plugin, by: ReadonlyMap<string, Plugin>, owned: Claimed, say: Report): void
+function checkReferences(name: string, plugin: Plugin, by: ReadonlyMap<string, Plugin>, owned: Ownership, say: Report): void
 {
     const declared = new Set(plugin.definition.dependsOn ?? []);
 
     /** Declared somewhere. What a listener needs, and all it needs. */
-    const mustExist = (kind: keyof Claimed, key: string, code: KernelFault["code"], label: string): void =>
+    const mustExist = (kind: keyof Ownership, key: string, code: KernelFault["code"], label: string): void =>
     {
         if (owned[kind].get(key) === undefined)
         {
@@ -404,7 +404,7 @@ function checkReferences(name: string, plugin: Plugin, by: ReadonlyMap<string, P
         }
     }
 
-    const reach = (kind: keyof Claimed, key: string, code: KernelFault["code"], label: string): void =>
+    const reach = (kind: keyof Ownership, key: string, code: KernelFault["code"], label: string): void =>
     {
         const from = owned[kind].get(key);
 

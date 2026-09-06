@@ -122,7 +122,7 @@ function fieldsIn(source: string): { shape: string; field: string }[]
     {
         const name = shape[1] ?? shape[2] ?? "";
         const from = (shape.index ?? 0) + shape[0].length;
-        const body = withoutParameters(source.slice(from, closes(source, from)));
+        const body = withoutParameters(source.slice(from, closingBrace(source, from)));
 
         for (const field of body.matchAll(/(?:^|[;,{\n])\s*(?:readonly\s+)?(\w+)\s*\??\s*:/g))
         {
@@ -135,7 +135,7 @@ function fieldsIn(source: string): { shape: string; field: string }[]
 
 // Where the brace opened at `from` closes. Walking counts nested shapes as
 // part of the same contract; stopping at the first "}" would miss their fields.
-function closes(source: string, from: number): number
+function closingBrace(source: string, from: number): number
 {
     let depth = 1;
     let at = from;
@@ -163,7 +163,7 @@ function closes(source: string, from: number): number
 // defect where there is none.
 function withoutParameters(body: string): string
 {
-    let out = "";
+    let outside = "";
     let depth = 0;
 
     for (const character of body)
@@ -175,7 +175,7 @@ function withoutParameters(body: string): string
 
         if (depth === 0)
         {
-            out += character;
+            outside += character;
         }
 
         if (character === ")")
@@ -184,7 +184,7 @@ function withoutParameters(body: string): string
         }
     }
 
-    return out;
+    return outside;
 }
 
 // Property access, destructuring, an object literal built from it, a string
@@ -212,16 +212,16 @@ function isRead(field: string, sources: readonly [string, string][], where: stri
 // the type and swallows the code below it.
 function withoutShapes(source: string): string
 {
-    let out = "";
+    let body = "";
     let at = 0;
 
     for (const shape of source.matchAll(/export\s+(?:type\s+\w+\s*=\s*|interface\s+\w+[^{]*)\{/g))
     {
         const from = (shape.index ?? 0) + shape[0].length;
 
-        out += source.slice(at, shape.index);
-        at = closes(source, from) + 1;
+        body += source.slice(at, shape.index);
+        at = closingBrace(source, from) + 1;
     }
 
-    return out + source.slice(at);
+    return body + source.slice(at);
 }

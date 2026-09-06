@@ -27,7 +27,7 @@ export type Handle = ReturnType<typeof drizzle>;
 export function store(holding: StoreParts)
 {
     const handles = new Map<string, Handle>();
-    const waiting = queue();
+    const writes = queue();
 
     /**
      * Which transaction the running code is inside, if any.
@@ -63,11 +63,11 @@ export function store(holding: StoreParts)
             throw new Error(`"${plugin}" asked for a database handle but declares no tables. Add them to its contract, or stop reaching for ctx.db.`);
         }
 
-        const made = drizzle(holding.connection, { schema: owns });
+        const handle = drizzle(holding.connection, { schema: owns });
 
-        handles.set(plugin, made);
+        handles.set(plugin, handle);
 
-        return made;
+        return handle;
     }
 
     /**
@@ -92,11 +92,11 @@ export function store(holding: StoreParts)
 
         try
         {
-            const made = await inside.run(at, () => run(db));
+            const handle = await inside.run(at, () => run(db));
 
             holding.connection.exec(nested ? `RELEASE ${name}` : "COMMIT");
 
-            return made;
+            return handle;
         }
         catch (cause)
         {
@@ -134,7 +134,7 @@ export function store(holding: StoreParts)
             // Already inside one on this call stack: a savepoint, and never
             // queued behind the transaction it is inside, which would wait
             // for itself.
-            return inside.getStore() === undefined ? waiting.run(() => inTx(plugin, run)) : inTx(plugin, run);
+            return inside.getStore() === undefined ? writes.run(() => inTx(plugin, run)) : inTx(plugin, run);
         },
 
         /**
@@ -153,7 +153,7 @@ export function store(holding: StoreParts)
          */
         write: <Result,>(run: () => Promise<Result>): Promise<Result> =>
         {
-            return inside.getStore() === undefined ? waiting.run(run) : run();
+            return inside.getStore() === undefined ? writes.run(run) : run();
         },
 
         /** Whether the running code is inside a transaction. For diagnosis. */

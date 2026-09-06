@@ -7,7 +7,7 @@ import { KernelFault } from "./faults";
 import { hooks } from "./hooks";
 import { order } from "./order";
 import { permissions } from "./permissions";
-import { type Budget, type Incoming, type Mounted, notServing, type Outgoing, respond, unknownRoute } from "./request";
+import { type Budget, type Incoming, type RouteOwner, notServing, type Outgoing, respond, unknownRoute } from "./request";
 import type { Dialer, ScopeFilter, Outbox, Schedule, Storage } from "./store";
 import { validate } from "./validate";
 
@@ -152,10 +152,10 @@ function decodeSegment(given: string): string | undefined
 }
 
 function routeFor(
-    routes: ReadonlyMap<string, Mounted>,
+    routes: ReadonlyMap<string, RouteOwner>,
     method: Method,
     path: string,
-): { mounted: Mounted; params: Readonly<Record<string, string>> } | undefined
+): { mounted: RouteOwner; params: Readonly<Record<string, string>> } | undefined
 {
     const exact = routes.get(`${method} ${path}`);
 
@@ -262,7 +262,7 @@ export function createKernel(options: Options): Kernel
     const parsed = new Map<string, unknown>();
     const pending = new Map<object, Pending[]>();
 
-    const routes = new Map<string, Mounted>();
+    const routes = new Map<string, RouteOwner>();
     const commands = new Map<string, {
         plugin: string;
         requires: readonly string[];
@@ -526,7 +526,7 @@ export function createKernel(options: Options): Kernel
             // Anything still waiting was interrupted between its commit and
             // its delivery: the work happened, the listener never heard. It
             // is delivered now, before this kernel answers anything new.
-            const interrupted = await options.outbox?.waiting() ?? [];
+            const interrupted = await options.outbox?.unsent() ?? [];
 
             for (const announcement of interrupted)
             {

@@ -34,7 +34,7 @@ export type Outgoing = {
 };
 
 /** A route the kernel holds, and who declared it. */
-export type Mounted = {
+export type RouteOwner = {
     plugin: string;
     route: Route<Context>;
 };
@@ -74,7 +74,7 @@ export const notServing: Outgoing = {
  * much.
  */
 export async function respond(
-    mounted: Mounted,
+    mounted: RouteOwner,
     incoming: Incoming,
     context: (plugin: string, caller?: Caller, headers?: Readonly<Record<string, string>>) => Context,
     log: Log,

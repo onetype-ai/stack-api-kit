@@ -28,7 +28,7 @@ function createCaller(id: string): Caller
     return { id, permissions: [], claims: {} };
 }
 
-async function started(options: Partial<Options> & { plugins: readonly Plugin[] })
+async function startKernel(options: Partial<Options> & { plugins: readonly Plugin[] })
 {
     const kernel = createKernel({ budget: limiter(), ...options });
 
@@ -41,7 +41,7 @@ describe("a declared budget", () =>
 {
     test("refuses once it is spent, and says how long to wait", async () =>
     {
-        const kernel = await started({ plugins: [budgetOf({ requests: 3, seconds: 60 })] });
+        const kernel = await startKernel({ plugins: [budgetOf({ requests: 3, seconds: 60 })] });
 
         const answers = [];
 
@@ -57,7 +57,7 @@ describe("a declared budget", () =>
 
     test("counts each caller apart, so one flood does not spend another's", async () =>
     {
-        const kernel = await started({ plugins: [budgetOf({ requests: 1, seconds: 60 })] });
+        const kernel = await startKernel({ plugins: [budgetOf({ requests: 1, seconds: 60 })] });
 
         await kernel.handle({ method: "GET", path: "/thing", input: {}, caller: createCaller("u1") });
 
@@ -72,7 +72,7 @@ describe("a declared budget", () =>
     {
         let ran = 0;
 
-        const kernel = await started({
+        const kernel = await startKernel({
             plugins: [definePlugin("probe", {
                 version: "1.0.0",
                 describe: "Counts how often it ran.",
@@ -102,7 +102,7 @@ describe("a declared budget", () =>
 
     test("leaves a route with no limit alone", async () =>
     {
-        const kernel = await started({ plugins: [budgetOf()] });
+        const kernel = await startKernel({ plugins: [budgetOf()] });
 
         const answers = [];
 
@@ -136,14 +136,14 @@ describe("a budget that would enforce nothing", () =>
 
     test("refuses a budget under one request", async () =>
     {
-        const kernel = await started({ plugins: [budgetOf({ requests: 0, seconds: 60 })] }).catch((cause: unknown) => cause as Error);
+        const kernel = await startKernel({ plugins: [budgetOf({ requests: 0, seconds: 60 })] }).catch((cause: unknown) => cause as Error);
 
         expect((kernel as Error).message).toMatch(/refuses everything/);
     });
 
     test("refuses a window with no length", async () =>
     {
-        const kernel = await started({ plugins: [budgetOf({ requests: 5, seconds: 0 })] }).catch((cause: unknown) => cause as Error);
+        const kernel = await startKernel({ plugins: [budgetOf({ requests: 5, seconds: 0 })] }).catch((cause: unknown) => cause as Error);
 
         expect((kernel as Error).message).toMatch(/never resets/);
     });

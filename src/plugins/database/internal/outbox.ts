@@ -21,16 +21,24 @@ export function outbox(connection: Database.Database): Outbox
             plugin TEXT NOT NULL,
             name TEXT NOT NULL,
             payload TEXT NOT NULL,
-            keptAt TEXT NOT NULL
+            writtenAt TEXT NOT NULL
         )
     `);
 
+    /* A table written before the column was renamed still carries the old one. */
+    const columns = connection.prepare("PRAGMA table_info(kit_outbox)").all() as { name: string }[];
+
+    if (columns.some((column) => column.name === "keptAt"))
+    {
+        connection.exec("ALTER TABLE kit_outbox RENAME COLUMN keptAt TO writtenAt");
+    }
+
     const insert = connection.prepare(
-        "INSERT INTO kit_outbox (id, plugin, name, payload, keptAt) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO kit_outbox (id, plugin, name, payload, writtenAt) VALUES (?, ?, ?, ?, ?)",
     );
 
     const remove = connection.prepare("DELETE FROM kit_outbox WHERE id = ?");
-    const unsent = connection.prepare("SELECT id, plugin, name, payload FROM kit_outbox ORDER BY keptAt");
+    const selectUnsent = connection.prepare("SELECT id, plugin, name, payload FROM kit_outbox ORDER BY writtenAt");
 
     return {
         // Synchronous, and it must stay that way: this runs inside an open
@@ -67,9 +75,9 @@ export function outbox(connection: Database.Database): Outbox
             return Promise.resolve();
         },
 
-        waiting: () =>
+        unsent: () =>
         {
-            const rows = unsent.all() as { id: string; plugin: string; name: string; payload: string }[];
+            const rows = selectUnsent.all() as { id: string; plugin: string; name: string; payload: string }[];
 
             return Promise.resolve(rows.map((row): Announcement => ({
                 id: row.id,

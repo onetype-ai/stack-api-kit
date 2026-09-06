@@ -56,14 +56,14 @@ export type { Handle, DatabaseOptions, Source, Step, Tables };
 export function database(settings: StoreOptions): Store<Handle>
 {
     const connection = connect(settings);
-    const made = store({ connection, tables: settings.tables });
+    const backing = store({ connection, tables: settings.tables });
 
     return {
-        of: made.of,
-        tx: made.tx,
-        write: made.write,
-        inTransaction: made.inTransaction,
-        close: made.close,
+        of: backing.of,
+        tx: backing.tx,
+        write: backing.write,
+        inTransaction: backing.inTransaction,
+        close: backing.close,
 
         /** Runs every migration that has not run, in the order given. */
         migrate: (sources: readonly Source[]): Step[] =>

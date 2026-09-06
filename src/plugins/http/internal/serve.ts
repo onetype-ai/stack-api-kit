@@ -121,7 +121,7 @@ async function bodyOf(stream: ReadableStream<Uint8Array> | null, bytes: number):
     const reader = stream.getReader();
     const parts: Uint8Array[] = [];
 
-    let held = 0;
+    let read = 0;
 
     try
     {
@@ -134,9 +134,9 @@ async function bodyOf(stream: ReadableStream<Uint8Array> | null, bytes: number):
                 break;
             }
 
-            held += value.byteLength;
+            read += value.byteLength;
 
-            if (held > bytes)
+            if (read > bytes)
             {
                 return undefined;
             }
@@ -149,7 +149,7 @@ async function bodyOf(stream: ReadableStream<Uint8Array> | null, bytes: number):
         await reader.cancel().catch(() => undefined);
     }
 
-    const all = new Uint8Array(held);
+    const all = new Uint8Array(read);
 
     let at = 0;
 

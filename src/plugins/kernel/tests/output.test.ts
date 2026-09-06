@@ -23,7 +23,7 @@ function startServer(output: z.ZodType): Plugin
     } as Definition);
 }
 
-async function refused(output: z.ZodType): Promise<string | undefined>
+async function refusalFor(output: z.ZodType): Promise<string | undefined>
 {
     const kernel = createKernel({ plugins: [startServer(output)] });
 
@@ -57,7 +57,7 @@ describe("an output schema that cannot filter is refused at startup", () =>
     {
         test(`refuses ${what}`, async () =>
         {
-            const message = await refused(schema);
+            const message = await refusalFor(schema);
 
             expect(message).toMatch(/cannot filter what leaves/);
         });
@@ -81,7 +81,7 @@ describe("an output schema that filters is accepted", () =>
     {
         test(`accepts ${what}`, async () =>
         {
-            expect(await refused(schema)).toBeUndefined();
+            expect(await refusalFor(schema)).toBeUndefined();
         });
     }
 });
@@ -95,7 +95,7 @@ describe("a recursive schema", () =>
 
     test("is accepted, because it filters at every level", async () =>
     {
-        expect(await refused(Block)).toBeUndefined();
+        expect(await refusalFor(Block)).toBeUndefined();
     });
 
     test("strips an unnamed field however deep it sits", async () =>
@@ -138,7 +138,7 @@ describe("a recursive schema", () =>
         const Loose: z.ZodType<Loose> = z.lazy(() =>
             z.object({ id: z.string(), meta: z.any(), children: z.array(Loose) }));
 
-        expect(await refused(Loose)).toMatch(/cannot filter what leaves/);
+        expect(await refusalFor(Loose)).toMatch(/cannot filter what leaves/);
     });
 });
 
@@ -146,12 +146,12 @@ describe("the message it gives when a schema cannot filter", () =>
 {
     test("names a construct that actually works", async () =>
     {
-        const message = await refused(z.any());
+        const message = await refusalFor(z.any());
 
         expect(message).toMatch(/Use z\.object naming every field/);
 
         // The advice has to be advice: whatever it names must pass.
-        expect(await refused(z.object({ id: z.string() }))).toBeUndefined();
+        expect(await refusalFor(z.object({ id: z.string() }))).toBeUndefined();
     });
 });
 

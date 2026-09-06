@@ -4,12 +4,12 @@ import { KernelFault } from "./faults";
 /** What the timer answers with. An object, so no participant can return it. */
 const LATE = Symbol("late");
 
-type Opened = {
+type HookOwner = {
     owner: string;
     hook: Hook;
 };
 
-type Enrolled<Context> = {
+type ParticipantOwner<Context> = {
     plugin: string;
     participant: Participation<Context>;
 };
@@ -25,8 +25,8 @@ const PATIENCE = 5000;
 
 export function hooks<Context>(patience: number = PATIENCE)
 {
-    const opened = new Map<string, Opened>();
-    const joined = new Map<string, Enrolled<Context>[]>();
+    const opened = new Map<string, HookOwner>();
+    const joined = new Map<string, ParticipantOwner<Context>[]>();
 
     return {
         declare: (owner: string, name: string, hook: Hook): void =>
