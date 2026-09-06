@@ -19,20 +19,20 @@ export function createScopeFilter(owned: Readonly<Record<string, Readonly<Record
         // live in its own namespace and the kernel checked that at startup.
         const found = Object.values(owned)
             .map((tables) => tables[table])
-            .find((column) => column !== undefined) as Column | undefined;
+            .find((columns) => columns !== undefined) as Column | undefined;
 
         if (found === undefined)
         {
             throw new Error(`Cannot scope "${table}": no table of that name was given to the store.`);
         }
 
-        const at = found[column];
+        const wanted = found[column];
 
-        if (at === undefined)
+        if (wanted === undefined)
         {
             throw new Error(`Cannot scope "${table}" by "${column}": the table declares no such column.`);
         }
 
-        return eq(at as Parameters<typeof eq>[0], value);
+        return eq(wanted as Parameters<typeof eq>[0], value);
     };
 }

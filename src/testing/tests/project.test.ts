@@ -16,7 +16,7 @@ afterEach(() =>
     }
 });
 
-function built(docs: Readonly<Record<string, string>> = {}): string
+function createProject(docs: Readonly<Record<string, string>> = {}): string
 {
     root = mkdtempSync(join(tmpdir(), "project-"));
 
@@ -53,7 +53,7 @@ describe("what a project checks about itself", () =>
 {
     test("says nothing when everything holds", () =>
     {
-        const at = built();
+        const at = createProject();
 
         writeFileSync(join(at, "#docs", "procedures", "plugin", "contract.md"), procedure());
 
@@ -62,7 +62,7 @@ describe("what a project checks about itself", () =>
 
     test("names a document over the limit", () =>
     {
-        const at = built({ "long.md": "x".repeat(2000) });
+        const at = createProject({ "long.md": "x".repeat(2000) });
 
         writeFileSync(join(at, "#docs", "procedures", "plugin", "contract.md"), procedure());
 
@@ -71,7 +71,7 @@ describe("what a project checks about itself", () =>
 
     test("names a root document that says nothing", () =>
     {
-        const at = built();
+        const at = createProject();
 
         writeFileSync(join(at, "#docs", "procedures", "plugin", "contract.md"), procedure());
         writeFileSync(join(at, "README.md"), "   \n");
@@ -81,7 +81,7 @@ describe("what a project checks about itself", () =>
 
     test("names a plugin that explains itself nowhere", () =>
     {
-        const at = built();
+        const at = createProject();
 
         writeFileSync(join(at, "#docs", "procedures", "plugin", "contract.md"), procedure());
         rmSync(join(at, "src", "plugins", "found", "usage.md"));
@@ -96,7 +96,7 @@ describe("what a project checks about itself", () =>
 
     test("names a contract key the procedure never mentions", () =>
     {
-        const at = built();
+        const at = createProject();
 
         writeFileSync(join(at, "#docs", "procedures", "plugin", "contract.md"), "- `version`\n");
 
@@ -108,7 +108,7 @@ describe("what a project checks about itself", () =>
 
     test("finds its own contract without the project naming a path", () =>
     {
-        const at = built();
+        const at = createProject();
 
         writeFileSync(join(at, "#docs", "procedures", "plugin", "contract.md"), procedure());
 

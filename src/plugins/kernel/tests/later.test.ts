@@ -55,13 +55,13 @@ describe("work asked for later", () =>
 
         kernel.context("holds").commands.later("holds.release", { id: "one" }, 600);
 
-        await new Promise((keep) => setTimeout(keep, 30));
+        await new Promise((done) => setTimeout(done, 30));
 
         expect(ran).toEqual([]);
 
         clock += 601_000;
 
-        await new Promise((keep) => setTimeout(keep, 30));
+        await new Promise((done) => setTimeout(done, 30));
 
         expect(ran).toEqual(["one"]);
 
@@ -88,14 +88,14 @@ describe("work asked for later", () =>
 
         kernel.context("holds").commands.later("holds.release", { id: "two" }, 0);
 
-        await new Promise((keep) => setTimeout(keep, 30));
+        await new Promise((done) => setTimeout(done, 30));
 
         expect(ran).toEqual([]);
 
         // Past the backoff.
         clock += 5_000;
 
-        await new Promise((keep) => setTimeout(keep, 30));
+        await new Promise((done) => setTimeout(done, 30));
 
         expect(ran).toEqual(["two"]);
 

@@ -7,7 +7,7 @@ const rows = sqliteTable("rows", { id: text("id").primaryKey() });
 
 const CREATE = "CREATE TABLE rows (id TEXT PRIMARY KEY)";
 
-const wait = (ms: number): Promise<void> => new Promise((keep) => setTimeout(keep, ms));
+const wait = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
 
 let store: ReturnType<typeof database>;
 
@@ -27,9 +27,9 @@ test("a write made outside a transaction survives another transaction's rollback
 {
     const db = store.of("a");
 
-    const rolling = store.tx("a", async (found) =>
+    const rolling = store.tx("a", async (inside) =>
     {
-        await (found as typeof db).insert(rows).values({ id: "inside" });
+        await (inside as typeof db).insert(rows).values({ id: "inside" });
         await wait(20);
 
         throw new Error("this one rolls back");
@@ -51,15 +51,15 @@ test("two overlapping transactions both finish rather than one refusing", async 
     const db = store.of("a");
 
     const both = await Promise.allSettled([
-        store.tx("a", async (found) =>
+        store.tx("a", async (inside) =>
         {
-            await (found as typeof db).insert(rows).values({ id: "first" });
+            await (inside as typeof db).insert(rows).values({ id: "first" });
             await wait(20);
         }),
-        store.tx("a", async (found) =>
+        store.tx("a", async (inside) =>
         {
             await wait(5);
-            await (found as typeof db).insert(rows).values({ id: "second" });
+            await (inside as typeof db).insert(rows).values({ id: "second" });
         }),
     ]);
 
@@ -72,14 +72,14 @@ test("one transaction's rollback leaves the other's committed work alone", async
     const db = store.of("a");
 
     await Promise.allSettled([
-        store.tx("a", async (found) =>
+        store.tx("a", async (inside) =>
         {
-            await (found as typeof db).insert(rows).values({ id: "committed" });
+            await (inside as typeof db).insert(rows).values({ id: "committed" });
             await wait(20);
         }),
-        store.tx("a", async (found) =>
+        store.tx("a", async (inside) =>
         {
-            await (found as typeof db).insert(rows).values({ id: "dropped" });
+            await (inside as typeof db).insert(rows).values({ id: "dropped" });
             await wait(5);
 
             throw new Error("rolled back");
@@ -133,22 +133,22 @@ test("a transaction waiting on something slow does not make the next one nested"
     // deciding what is nested, the next one off the queue reads a counter,
     // believes itself inside this one, and opens a savepoint in a stranger's
     // transaction: "no such savepoint" for a request that did nothing wrong.
-    const slow = store.tx("a", async (found) =>
+    const slow = store.tx("a", async (inside) =>
     {
-        await (found as typeof db).insert(rows).values({ id: "slow" });
+        await (inside as typeof db).insert(rows).values({ id: "slow" });
         await wait(30);
     });
 
     await wait(5);
 
     const others = await Promise.allSettled([
-        store.tx("a", async (found) =>
+        store.tx("a", async (inside) =>
         {
-            await (found as typeof db).insert(rows).values({ id: "second" });
+            await (inside as typeof db).insert(rows).values({ id: "second" });
         }),
-        store.tx("a", async (found) =>
+        store.tx("a", async (inside) =>
         {
-            await (found as typeof db).insert(rows).values({ id: "third" });
+            await (inside as typeof db).insert(rows).values({ id: "third" });
         }),
     ]);
 

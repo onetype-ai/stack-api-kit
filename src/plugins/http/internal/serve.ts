@@ -6,7 +6,7 @@ import { securityHeaders } from "./headers";
 import { cors, type CorsPolicy } from "./origin";
 import { input } from "./input";
 
-/** What serving needs to know. */
+/** What options needs to know. */
 export type ServerOptions = {
     kernel: Kernel;
 
@@ -162,15 +162,15 @@ async function bodyOf(stream: ReadableStream<Uint8Array> | null, bytes: number):
     return all;
 }
 
-export function serve(serving: ServerOptions): Hono
+export function serve(options: ServerOptions): Hono
 {
     const app = new Hono();
-    const bodyBytes = serving.bodyBytes ?? 1_000_000;
+    const bodyBytes = options.bodyBytes ?? 1_000_000;
     const policy: CorsPolicy = {
-        origins: serving.origins ?? [],
-        methods: serving.methods ?? ["GET", "POST", "PUT", "PATCH", "DELETE"],
-        headers: serving.headers ?? ["content-type", "authorization"],
-        maxAge: serving.maxAge ?? 600,
+        origins: options.origins ?? [],
+        methods: options.methods ?? ["GET", "POST", "PUT", "PATCH", "DELETE"],
+        headers: options.headers ?? ["content-type", "authorization"],
+        maxAge: options.maxAge ?? 600,
     };
 
     const requestIds = new WeakMap<Request, string>();
@@ -218,12 +218,12 @@ export function serve(serving: ServerOptions): Hono
 
     app.get("/ready", (c) =>
     {
-        const ready = serving.kernel.started();
+        const ready = options.kernel.started();
 
         return c.json({ ready }, ready ? 200 : 503);
     });
 
-    for (const route of serving.kernel.routes())
+    for (const route of options.kernel.routes())
     {
         const methods = byPath.get(route.path) ?? new Set<string>();
 
@@ -245,11 +245,9 @@ export function serve(serving: ServerOptions): Hono
         return c.body(null, 204);
     });
 
-    for (const route of serving.kernel.routes())
+    for (const route of options.kernel.routes())
     {
-        const path = route.path.replace(/:([a-z0-9-]+)/g, ":$1");
-
-        app.on(route.method, path, async (c) =>
+        app.on(route.method, route.path, async (c) =>
         {
             const requestId = requestIds.get(c.req.raw) ?? "";
 
@@ -257,14 +255,14 @@ export function serve(serving: ServerOptions): Hono
 
             try
             {
-                caller = await serving.identify?.(c);
+                caller = await options.identify?.(c);
             }
             catch (cause)
             {
                 // Whatever went wrong reading a session, the caller is not
                 // signed in. A 500 here would turn an expired token into an
                 // outage, and tell whoever sent it that it was interesting.
-                serving.log?.("warn", "identify threw", { requestId, error: cause instanceof Error ? cause.message : String(cause) });
+                options.log?.("warn", "identify threw", { requestId, error: cause instanceof Error ? cause.message : String(cause) });
 
                 return c.json({ code: "UNAUTHENTICATED", message: "This request needs to be signed in." }, 401);
             }
@@ -308,18 +306,18 @@ export function serve(serving: ServerOptions): Hono
                 }
             }
 
-            const answer = await serving.kernel.handle({
+            const answer = await options.kernel.handle({
                 method: route.method as Method,
                 path: route.path,
                 input: input({ params: c.req.param(), query: c.req.queries() as Record<string, string[]>, body }),
                 caller,
                 headers: headersOf(c, route.reads),
-                ...(serving.from !== undefined && { from: serving.from(c) }),
+                ...(options.from !== undefined && { from: options.from(c) }),
             });
 
             if (answer.status >= 500)
             {
-                serving.log?.("error", `${route.method} ${route.path} failed`, { requestId, plugin: route.plugin });
+                options.log?.("error", `${route.method} ${route.path} failed`, { requestId, plugin: route.plugin });
             }
 
             for (const [name, value] of Object.entries(answer.headers ?? {}))
@@ -338,7 +336,7 @@ export function serve(serving: ServerOptions): Hono
 
     app.onError((cause, c) =>
     {
-        serving.log?.("error", "the server threw outside a route", {
+        options.log?.("error", "the server threw outside a route", {
             requestId: requestIds.get(c.req.raw) ?? "",
             error: cause instanceof Error ? cause.message : String(cause),
             ...(cause instanceof Error && cause.stack !== undefined && { stack: cause.stack }),

@@ -31,7 +31,7 @@ test("a participant that never answers is a refusal, not a request held open", a
 
     const verdict = await Promise.race([
         kernel.context("owner").hooks.run("owner.check", {}),
-        new Promise((keep) => setTimeout(() => keep("STILL HANGING"), 3000)),
+        new Promise((done) => setTimeout(() => done("STILL HANGING"), 3000)),
     ]);
 
     expect(verdict).toBe('"silent" did not answer in 50ms.');
@@ -49,7 +49,7 @@ test("a participant that answers in time is still heard", async () =>
                         describe: "Answers, but not at once.",
                         handle: async () =>
                         {
-                            await new Promise((keep) => setTimeout(keep, 20));
+                            await new Promise((done) => setTimeout(done, 20));
 
                             return "no, because it said so";
                         },

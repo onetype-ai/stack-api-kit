@@ -25,23 +25,23 @@ const PATIENCE = 5000;
 
 export function hooks<Context>(patience: number = PATIENCE)
 {
-    const opened = new Map<string, HookOwner>();
-    const joined = new Map<string, ParticipantOwner<Context>[]>();
+    const declared = new Map<string, HookOwner>();
+    const participants = new Map<string, ParticipantOwner<Context>[]>();
 
     return {
         declare: (owner: string, name: string, hook: Hook): void =>
         {
-            opened.set(name, { owner, hook });
+            declared.set(name, { owner, hook });
         },
 
         participate: (plugin: string, name: string, participant: Participation<Context>): void =>
         {
-            joined.set(name, [...(joined.get(name) ?? []), { plugin, participant }]);
+            participants.set(name, [...(participants.get(name) ?? []), { plugin, participant }]);
         },
 
         run: async (plugin: string, name: string, payload: unknown, ctx: (plugin: string) => Context): Promise<string | undefined> =>
         {
-            const point = opened.get(name);
+            const point = declared.get(name);
 
             if (point === undefined)
             {
@@ -60,25 +60,25 @@ export function hooks<Context>(patience: number = PATIENCE)
                 throw new KernelFault("WRONG_PAYLOAD", `The payload for "${name}" does not match its schema: ${parsed.error.issues[0]?.message ?? "it was rejected"}.`, { plugin });
             }
 
-            for (const participant of joined.get(name) ?? [])
+            for (const entry of participants.get(name) ?? [])
             {
                 let timer: ReturnType<typeof setTimeout> | undefined;
 
                 try
                 {
-                    const answered = participant.participant.handle(parsed.data as never, ctx(participant.plugin));
+                    const answered = entry.participant.handle(parsed.data as never, ctx(entry.plugin));
 
                     const refusal = await Promise.race([
                         answered,
-                        new Promise<typeof LATE>((keep) =>
+                        new Promise<typeof LATE>((done) =>
                         {
-                            timer = setTimeout(() => keep(LATE), patience);
+                            timer = setTimeout(() => done(LATE), patience);
                         }),
                     ]);
 
                     if (refusal === LATE)
                     {
-                        return `"${participant.plugin}" did not answer in ${String(patience)}ms.`;
+                        return `"${entry.plugin}" did not answer in ${String(patience)}ms.`;
                     }
 
                     if (refusal !== undefined)
@@ -90,7 +90,7 @@ export function hooks<Context>(patience: number = PATIENCE)
                 {
                     // A participant whose check crashed has not agreed to
                     // anything, so a throw is a refusal, never consent.
-                    return `"${participant.plugin}" refused: ${cause instanceof Error ? cause.message : String(cause)}`;
+                    return `"${entry.plugin}" refused: ${cause instanceof Error ? cause.message : String(cause)}`;
                 }
                 finally
                 {

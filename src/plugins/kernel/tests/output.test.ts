@@ -47,7 +47,7 @@ describe("an output schema that cannot filter is refused at startup", () =>
         ["a loose object", z.looseObject({ id: z.string() })],
         ["an object with a catchall", z.object({ id: z.string() }).catchall(z.unknown())],
         ["a record", z.record(z.string(), z.unknown())],
-        ["a transform", z.object({ id: z.string() }).transform((found) => found)],
+        ["a transform", z.object({ id: z.string() }).transform((value) => value)],
         ["a nested any", z.object({ id: z.string(), meta: z.any() })],
         ["an array of any", z.array(z.any())],
         ["a union with one open member", z.union([z.object({ id: z.string() }), z.any()])],

@@ -192,7 +192,7 @@ describe("events", () =>
 
         kernel.context("auth").events.emit("auth.gone", {});
 
-        await new Promise((keep) => setImmediate(keep));
+        await new Promise((done) => setImmediate(done));
 
         expect(kernel.events.failures()).toHaveLength(1);
         expect(lines).toMatchObject([{
@@ -254,7 +254,7 @@ describe("events", () =>
 
         kernel.context("auth", who).events.emit("auth.gone", {});
 
-        await new Promise((keep) => setImmediate(keep));
+        await new Promise((done) => setImmediate(done));
 
         // Not the emitter's: an outbox keeps a payload, not a request, so a
         // listener that inherited one would answer differently after a

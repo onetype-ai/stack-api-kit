@@ -75,7 +75,7 @@ describe("a listener acting for a scope", () =>
 
         kernel.context("source").events.emit("source.happened", { shopId: "acme" });
 
-        await new Promise((keep) => setImmediate(keep));
+        await new Promise((done) => setImmediate(done));
 
         expect(recorded).toEqual(["acme"]);
 

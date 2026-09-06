@@ -206,7 +206,7 @@ export async function startTestKernel(given: TestKernelOptions): Promise<TestKer
             // second to start before the first is done.
             for (let turn = 0; turn < 4; turn += 1)
             {
-                await new Promise((keep) => { setTimeout(keep, 0); });
+                await new Promise((done) => { setTimeout(done, 0); });
             }
         },
         stop: async (): Promise<void> =>

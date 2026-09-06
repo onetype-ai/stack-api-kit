@@ -32,7 +32,7 @@ test("a request in flight is answered before the plugins are torn down", async (
 
                     return ctx.tx(async () =>
                     {
-                        await new Promise((keep) => setTimeout(keep, 80));
+                        await new Promise((done) => setTimeout(done, 80));
 
                         order.push("work-done");
 
@@ -48,7 +48,7 @@ test("a request in flight is answered before the plugins are torn down", async (
 
     const inFlight = kernel.handle({ method: "POST", path: "/slow", input: {} });
 
-    await new Promise((keep) => setTimeout(keep, 20));
+    await new Promise((done) => setTimeout(done, 20));
 
     order.push("stop-called");
     await kernel.stop();

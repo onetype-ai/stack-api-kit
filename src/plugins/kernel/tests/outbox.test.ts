@@ -62,7 +62,7 @@ describe("an event kept in an outbox", () =>
         const store = database({ file: ":memory:", tables: { orders: {} } });
 
         let released: (() => void) | undefined;
-        const slow = new Promise<void>((keep) => { released = keep; });
+        const slow = new Promise<void>((done) => { released = done; });
 
         const kernel = createKernel({
             plugins: [
@@ -90,7 +90,7 @@ describe("an event kept in an outbox", () =>
         expect(await unsent.unsent()).toHaveLength(1);
 
         released?.();
-        await new Promise((keep) => setImmediate(keep));
+        await new Promise((done) => setImmediate(done));
 
         expect(await unsent.unsent()).toHaveLength(0);
 
