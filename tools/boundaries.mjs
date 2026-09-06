@@ -94,7 +94,7 @@ function imports(source)
 /** Just the specifiers, for a rule that does not care how they are imported. */
 function paths(source)
 {
-    return imports(source).map((one) => one.path);
+    return imports(source).map((each) => each.path);
 }
 
 const plugins = existsSync(root)
