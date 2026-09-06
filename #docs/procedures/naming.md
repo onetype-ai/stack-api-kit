@@ -23,9 +23,6 @@ Slot        not SlotComponent, SlotWrapper
 
 Nouns, and specific ones: `Plugin`, `Kernel`, `Route`, `Subscription`.
 
-Never `Manager`, `Handler`, `Helper`, `Util`, `Service`, `Data`, `Info`: a
-type resisting a concrete noun does more than one thing.
-
 ## Functions
 
 Verbs, imperative: `start`, `validate`, `subscribe`, `emit`.
