@@ -20,7 +20,8 @@
         "boundaries": "node tools/boundaries.mjs",
         "docs": "node tools/docs.mjs",
         "build": "tsup",
-        "prepublishOnly": "tools/check.sh && tsup"
+        "prepublishOnly": "tools/check.sh && tsup",
+        "prepack": "tsup"
     },
     "dependencies": {
         "zod": "^4.5.4"
