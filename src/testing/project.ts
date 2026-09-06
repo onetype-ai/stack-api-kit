@@ -43,6 +43,14 @@ export const Project = {
         const docs = checking.docs ?? join(root, "#docs");
         const limit = checking.limit ?? 1800;
 
+        const procedure = checking.procedure ?? join(docs, "procedures", "plugin", "contract.md");
+
+        // The structural checks read code and run always. The document ones
+        // read #docs, which a project may have packed into one file: a packed
+        // project is not an unchecked one, so their absence skips them rather
+        // than throwing and taking the structural checks down with it.
+        const written = existsSync(docs);
+
         return [
             ...Project.findImportViolations(checking.plugins ?? join(root, "src", "plugins")),
             ...Project.findUnusedFields(checking.plugins ?? join(root, "src", "plugins")),
@@ -52,8 +60,8 @@ export const Project = {
             // plugin owns is code nobody notices going stale.
             ...Project.findUnusedFields(checking.utils ?? join(root, "src", "utils"), false),
             ...Project.findUnexplainedPlugins(checking.plugins ?? join(root, "src", "plugins")),
-            ...Project.docs(root, docs, checking.required ?? Project.required, limit),
-            ...Project.contract(checking.procedure ?? join(docs, "procedures", "plugin", "contract.md")),
+            ...(written ? Project.docs(root, docs, checking.required ?? Project.required, limit) : []),
+            ...(existsSync(procedure) ? Project.contract(procedure) : []),
         ];
     },
 
