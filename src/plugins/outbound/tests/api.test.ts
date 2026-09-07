@@ -52,6 +52,30 @@ describe("answers", () =>
         await expect(dial()({ method: "GET", url: "https://api.example.test/x" })).rejects.toMatchObject({ code: "MALFORMED" });
     });
 
+    test("answers a page as text when the call asked for text", async () =>
+    {
+        stubFetch({ body: "<html><h1>Hi</h1></html>" });
+
+        await expect(dial()({ method: "GET", url: "https://api.example.test/x", accepts: "text" }))
+            .resolves.toBe("<html><h1>Hi</h1></html>");
+    });
+
+    test("asking for text sends an accept that a page can answer", async () =>
+    {
+        let sent: Readonly<Record<string, string>> = {};
+
+        vi.stubGlobal("fetch", (_url: string, init?: RequestInit) =>
+        {
+            sent = init?.headers as Readonly<Record<string, string>>;
+
+            return Promise.resolve(new Response("<html></html>", { status: 200 }));
+        });
+
+        await dial()({ method: "GET", url: "https://api.example.test/x", accepts: "text" });
+
+        expect(sent["accept"]).toBe("*/*");
+    });
+
     test("refuses a non-2xx status, carrying it", async () =>
     {
         stubFetch({ status: 402, body: '{"error":"card declined"}' });

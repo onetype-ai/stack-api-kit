@@ -30,6 +30,9 @@ export default definePlugin("billing", {
 - Only https origins may be declared, so credentials never cross in the clear.
 - A redirect is an error rather than followed: the kernel checked the first
   url and never saw the second.
+- The answer is JSON. `accepts: "text"` reads it as a string instead, which is
+  what a page or a sitemap is: declared by the caller, never sniffed from what
+  came back.
 - The answer is read in chunks and stops at `maxBytes`, so a body that keeps
   arriving cannot take the process down.
 - `signal` cancels a call; the timeout is separate and reported apart from it.

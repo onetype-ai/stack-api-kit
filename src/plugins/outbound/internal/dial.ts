@@ -74,7 +74,7 @@ export function dial(dialing: DialerOptions = {})
                 redirect: "error",
 
                 headers: {
-                    accept: "application/json",
+                    accept: call.accepts === "text" ? "*/*" : "application/json",
                     ...(call.body !== undefined && !binary(call.body) && { "content-type": "application/json" }),
                     ...dialing.headers?.(),
                     ...call.headers,
@@ -87,6 +87,11 @@ export function dial(dialing: DialerOptions = {})
             if (!response.ok)
             {
                 throw new OutboundFault("STATUS", `The call was refused with status ${response.status}.`, response.status);
+            }
+
+            if (call.accepts === "text")
+            {
+                return text;
             }
 
             if (text === "")

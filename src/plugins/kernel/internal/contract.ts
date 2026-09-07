@@ -156,6 +156,14 @@ export type Outbound = {
     method: Method;
     url: string;
     body?: unknown;
+
+    /**
+     * What the answer is read as. Declared, never sniffed: a page that
+     * answers html one day and json the next changes nothing here, and a
+     * caller always knows which of the two it holds. Left out, json.
+     */
+    accepts?: "json" | "text";
+
     headers?: Readonly<Record<string, string>> | undefined;
     signal?: AbortSignal | undefined;
 };
