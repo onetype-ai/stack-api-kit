@@ -489,7 +489,7 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
             {
                 throw new KernelFault(
                     "OUT_OF_SCOPE",
-                    `"${plugin}" called ctx.forScope inside a request. The scope of a request is the caller's; forScope is for a listener or a scheduled command, where nobody is calling.`,
+                    `"${plugin}" called ctx.forScope where the caller has a scope of their own.`,
                     { plugin },
                 );
             }

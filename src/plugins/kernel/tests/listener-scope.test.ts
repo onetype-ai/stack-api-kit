@@ -98,7 +98,7 @@ describe("a listener acting for a scope", () =>
         const who = { id: "u1", permissions: [], claims: { shopId: "acme" } };
 
         expect(() => kernel.context("keeper", who).forScope("other"))
-            .toThrow(/forScope inside a request/);
+            .toThrow(/a scope of their own/);
 
         await kernel.stop();
         store.close();
