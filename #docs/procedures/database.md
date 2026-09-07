@@ -12,8 +12,8 @@ Nothing crosses that line. A plugin needing another's data asks its public
 API, or listens for what it announced. A join across the boundary is the
 boundary gone: the two are one plugin, or were never separate.
 
-Table names are global in SQLite, so prefix them: `items`, `items_tags`. Two
-plugins claiming one name is refused at startup.
+A table's name in the database is global, so prefix it there: `items_tags`,
+declared as `tags`. Two plugins landing on one name is refused at startup.
 
 ## Writing
 
@@ -42,9 +42,6 @@ interpolated.
 
 Never order or case-fold non-ASCII text in SQL: SQLite compares code points
 and folds only A to Z. See `text.md`.
-
-Scope every read to what the caller may see. A permission says they may read
-items, never that this item is theirs.
 
 A row is not output. What leaves is whatever the route's output schema names,
 so a column added later stays inside until someone decides otherwise.

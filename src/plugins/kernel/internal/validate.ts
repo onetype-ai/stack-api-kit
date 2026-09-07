@@ -1,6 +1,7 @@
 import type { Plugin } from "./contract";
 import type { KernelFault } from "./faults";
 import * as names from "./names";
+import { tableName } from "./tablename";
 import { canFilter } from "./output";
 
 /** One thing wrong, and everything needed to fix it. */
@@ -167,11 +168,13 @@ function checkOwn(name: string, plugin: Plugin, owned: Ownership, say: Report): 
         checkNamespaced(name, key, "command", say) && claim("commands", key, "DUPLICATE_COMMAND", "Command");
     }
 
-    // A table name is global in SQLite, so two plugins claiming one would
-    // share storage while both believing it private.
-    for (const key of Object.keys(plugin.definition.tables ?? {}))
+    // The name in the database is what is global, not the key it was
+    // declared under: two plugins sharing a key own different tables, and two
+    // sharing a name share storage while both believe it private. A store the
+    // project built answers no name, so the key stands in for it.
+    for (const [key, table] of Object.entries(plugin.definition.tables ?? {}))
     {
-        claim("tables", key, "DUPLICATE_TABLE", "Table");
+        claim("tables", tableName(table) ?? key, "DUPLICATE_TABLE", "Table");
     }
 
     for (const route of plugin.definition.routes ?? [])

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
+import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 import { createKernel, definePlugin, KernelFault } from "../api";
 import type { Definition, Plugin } from "../api";
@@ -233,14 +234,24 @@ describe("routes", () =>
 
 describe("declarations", () =>
 {
-    test("refuses two plugins claiming one table name", async () =>
+    test("refuses two plugins whose tables land on one name in the database", async () =>
     {
         const failed = await refusalFor([
-            participant("auth", { tables: { users: {} } }),
-            participant("billing", { tables: { users: {} } }),
+            participant("auth", { tables: { people: sqliteTable("users", { id: text("id").primaryKey() }) } }),
+            participant("billing", { tables: { payers: sqliteTable("users", { id: text("id").primaryKey() }) } }),
         ]);
 
         expect(failed?.code).toBe("DUPLICATE_TABLE");
+    });
+
+    test("allows two plugins declaring one key over tables of their own", async () =>
+    {
+        const failed = await refusalFor([
+            participant("auth", { tables: { rows: sqliteTable("auth_rows", { id: text("id").primaryKey() }) } }),
+            participant("billing", { tables: { rows: sqliteTable("billing_rows", { id: text("id").primaryKey() }) } }),
+        ]);
+
+        expect(failed).toBeUndefined();
     });
 
     test("refuses an outbound host that travels in the clear", async () =>
