@@ -67,7 +67,8 @@
     "files": [
         "dist",
         "README.md",
-        "#docs"
+        "#docs",
+        "!#docs/progress"
     ],
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
