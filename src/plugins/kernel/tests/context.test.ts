@@ -524,6 +524,22 @@ describe("outbound", () =>
             .rejects.toThrow(/does not declare/);
     });
 
+    test("a url that is not one says so, rather than to declare it", async () =>
+    {
+        const kernel = createKernel({
+            plugins: [participant("billing", { outbound: ["https://api.stripe.com"] })],
+            dial: () => Promise.resolve({}),
+        });
+
+        await kernel.start();
+
+        for (const url of ["", "/v1/charges", "htps:/api.stripe.com/v1"])
+        {
+            await expect(kernel.context("billing").fetch({ method: "GET", url }), url)
+                .rejects.toThrow(/is not an address/);
+        }
+    });
+
     test("allows a host it declared", async () =>
     {
         const calls: string[] = [];

@@ -79,6 +79,13 @@ function origin(url: string): string | undefined
         // `origin` is "null" for schemes the URL standard calls opaque, which
         // is most of them once past http: build it back from the parts, so a
         // declared redis:// host is comparable to the one being dialled.
+        // A url with no host names nobody: "htps:/example.com" parses, and
+        // its host is empty, so it is a typo rather than a host to declare.
+        if (parsed.host === "")
+        {
+            return undefined;
+        }
+
         return parsed.origin === "null" || parsed.origin === ""
             ? `${parsed.protocol}//${parsed.host}`
             : parsed.origin;
@@ -345,11 +352,23 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
                 return wiring.dial === undefined ? absent("dialer", "dial", "dial") : wiring.dial(call);
             }
 
-            if (host === undefined || !allowed.includes(host))
+            // Told apart, because "add it to outbound" cannot fix a url that
+            // is not one: the reader goes looking at a declaration that is
+            // already right.
+            if (host === undefined)
             {
                 throw new KernelFault(
                     "UNDECLARED_HOST",
-                    `"${plugin}" called ${host ?? `"${call.url}"`}, which it does not declare. Add it to outbound.`,
+                    `"${plugin}" called "${call.url}", which is not an address.`,
+                    { plugin },
+                );
+            }
+
+            if (!allowed.includes(host))
+            {
+                throw new KernelFault(
+                    "UNDECLARED_HOST",
+                    `"${plugin}" called ${host}, which it does not declare. Add it to outbound.`,
                     { plugin },
                 );
             }
