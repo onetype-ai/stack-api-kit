@@ -36,8 +36,8 @@ grants: (ctx, who) => Roles.of(ctx, who.id),
 ```
 
 `identifies` names no permission: `grants` fills them, so none grants itself.
-`mayGrant` is an optional ceiling; without one, any declared permission may be
-granted, so a plugin arriving later guards its own route.
+`mayGrant` grants nothing: it is what startup reads to refuse a route nobody
+could reach. Without one, any declared permission passes.
 
 `measure("bytes")` marks a number with what it counts: bytes where gigabytes
 were wanted does not compile.
