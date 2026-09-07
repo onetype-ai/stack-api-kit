@@ -219,7 +219,7 @@ function checkOwn(name: string, plugin: Plugin, owned: Ownership, say: Report): 
         }
     }
 
-    for (const host of plugin.definition.outbound ?? [])
+    for (const host of plugin.definition.outbound === "anywhere" ? [] : plugin.definition.outbound ?? [])
     {
         const wrong = whyUnreachable(host);
 

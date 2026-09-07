@@ -4,6 +4,7 @@ import type { Identity, Context, Outbound, Plugin } from "./contract";
 import type { events, Pending } from "./events";
 import { Refusal } from "./answer";
 import { KernelFault } from "./faults";
+import { whyUnfetchable } from "./reachable";
 import type { hooks } from "./hooks";
 import { createPermissions } from "./permissions";
 import type { Dialer, ScopeFilter, Outbox, Schedule, Storage } from "./store";
@@ -327,6 +328,22 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
         {
             const allowed = wiring.known.get(plugin)?.definition.outbound ?? [];
             const host = origin(call.url);
+
+            // A plugin whose hosts are rows rather than constants asks for
+            // every address instead of naming each. What it gets is not a
+            // list that permits everything but a different question: the
+            // public internet, and not the machine this runs on.
+            if (allowed === "anywhere")
+            {
+                const wrong = whyUnfetchable(call.url);
+
+                if (wrong !== undefined)
+                {
+                    throw new KernelFault("UNDECLARED_HOST", `"${plugin}" called an address it may not reach. ${wrong}`, { plugin });
+                }
+
+                return wiring.dial === undefined ? absent("dialer", "dial", "dial") : wiring.dial(call);
+            }
 
             if (host === undefined || !allowed.includes(host))
             {

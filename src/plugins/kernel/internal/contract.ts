@@ -375,8 +375,17 @@ export type Definition<
     /** Where its migrations live, run in dependency order before setup. */
     migrations?: string;
 
-    /** Hosts this plugin may call. Anything else is refused before it dials. */
-    outbound?: readonly string[];
+    /**
+     * Hosts this plugin may call. Anything else is refused before it dials.
+     *
+     * `"anywhere"` is for the plugin whose hosts are a row rather than a
+     * constant: a site a customer typed in five minutes ago cannot be
+     * written here. It widens what may be reached and narrows nothing else:
+     * a private address, a scheme that is not https, a port the web is not
+     * served on and a credential in the url stay refused, and the address a
+     * name resolves to is checked rather than the name.
+     */
+    outbound?: readonly string[] | "anywhere";
 
     services?: (ctx: Context<z.infer<Schema>, never, Db>) => Services;
 
