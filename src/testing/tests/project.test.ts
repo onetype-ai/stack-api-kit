@@ -45,7 +45,7 @@ function procedure(): string
 {
     return ["version", "describe", "dependsOn", "config", "permissions", "tables", "migrations",
         "outbound", "scope", "services", "routes", "emits", "listens", "hooks", "participates",
-        "commands",
+        "commands", "identifies", "grants", "mayGrant",
         "setup", "teardown"].map((key) => `- \`${key}\``).join("\n");
 }
 

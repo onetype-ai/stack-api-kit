@@ -1,26 +1,31 @@
 import { Hono } from "hono";
 import type { Context as HonoContext } from "hono";
 
-import type { Caller, Kernel, Method } from "../../kernel/api";
+import type { Identity, Kernel, Method } from "../../kernel/api";
 import { securityHeaders } from "./headers";
 import { cors, type CorsPolicy } from "./origin";
 import { input } from "./input";
+import { sessionCookie, type SessionOptions } from "./session";
+import { formBody, type Upload } from "./upload";
 
 /** What options needs to know. */
 export type ServerOptions = {
     kernel: Kernel;
 
     /**
-     * Who is calling. The project owns this entirely: a cookie, a bearer
-     * token, a header, whatever it decided a session is.
+     * Who is calling, where the project answers rather than a plugin.
      *
-     * Throwing answers 401. Returning undefined is an anonymous caller, which
-     * only a public route accepts.
+     * Left out, the kernel asks whichever plugin declared `identifies`, which
+     * is where a session already lives. Passed, this wins: it was given by
+     * name.
+     *
+     * Throwing answers 401. Undefined is a stranger, which only a public
+     * route accepts.
      */
-    identify?: ((c: HonoContext) => Caller | undefined | Promise<Caller | undefined>) | undefined;
+    identify?: ((c: HonoContext) => Identity | undefined | Promise<Identity | undefined>) | undefined;
 
     /**
-     * What to count an anonymous caller by, for a rate limit: an address, an
+     * What to count an anonymous identity by, for a rate limit: an address, an
      * api key, whatever the deployment can trust. Reading a forwarded header
      * blindly lets anyone spend anyone's budget, so the project decides.
      */
@@ -33,6 +38,17 @@ export type ServerOptions = {
 
     /** The largest body accepted, before it is parsed. */
     bodyBytes?: number;
+
+    /**
+     * What a session is kept in, when it is a cookie.
+     *
+     * A route answers `x-session-key` with `x-session-expires`, or
+     * `x-session-end` to close one; this turns that into `set-cookie` and
+     * takes the headers back out. Left out, they leave as they are and the
+     * project decides what they mean: a token in a mobile client is the same
+     * routes with nothing changed.
+     */
+    session?: SessionOptions | undefined;
 
     /** Where a line goes. */
     log?: ((level: "info" | "warn" | "error", line: string, about?: Readonly<Record<string, unknown>>) => void) | undefined;
@@ -59,7 +75,7 @@ export function requestId(sent: string | undefined): string
 /** The headers a route declared, read off the request in lowercase. */
 function headersOf(c: HonoContext, reads: readonly string[]): Readonly<Record<string, string>>
 {
-    const reading: Record<string, string> = {};
+    const headers: Record<string, string> = {};
 
     for (const name of reads)
     {
@@ -67,11 +83,11 @@ function headersOf(c: HonoContext, reads: readonly string[]): Readonly<Record<st
 
         if (value !== undefined)
         {
-            reading[name] = value;
+            headers[name] = value;
         }
     }
 
-    return reading;
+    return headers;
 }
 
 /** Which methods a declared path answers, matching `:param` segments. */
@@ -84,18 +100,18 @@ function methodsFor(answering: ReadonlyMap<string, Set<string>>, path: string): 
         return direct;
     }
 
-    const asked = path.split("/");
+    const segments = path.split("/");
 
-    for (const [declared, methods] of answering)
+    for (const [pattern, methods] of answering)
     {
-        const parts = declared.split("/");
+        const parts = pattern.split("/");
 
-        if (parts.length !== asked.length)
+        if (parts.length !== segments.length)
         {
             continue;
         }
 
-        if (parts.every((part, at) => part.startsWith(":") || part === asked[at]))
+        if (parts.every((part, at) => part.startsWith(":") || part === segments[at]))
         {
             return methods;
         }
@@ -160,6 +176,87 @@ async function bodyOf(stream: ReadableStream<Uint8Array> | null, bytes: number):
     }
 
     return all;
+}
+
+/** What a route was sent, or the refusal to answer instead. */
+type ReadBody =
+    | { body: unknown; uploads: Readonly<Record<string, Upload | Upload[]>> }
+    | { refused: { code: string; message: string }; status: number };
+
+const TOO_LARGE = { refused: { code: "TOO_LARGE", message: "The request body is too large." }, status: 413 } as const;
+
+/**
+ * The body a route asked for, bounded before anything parses it.
+ *
+ * A form is read by the platform rather than a parser of ours, and only where
+ * the route declared it takes one: a route expecting JSON cannot be handed a
+ * file, and one expecting a form cannot be handed JSON. Both refusals are 415,
+ * which says the body was the wrong kind rather than the wrong shape.
+ */
+async function bodyFor(request: Request, route: { method: string; accepts?: "json" | "form" }, bytes: number): Promise<ReadBody>
+{
+    if (!CARRIES.has(route.method))
+    {
+        return { body: undefined, uploads: {} };
+    }
+
+    const claimed = Number(request.headers.get("content-length") ?? "0");
+
+    if (Number.isFinite(claimed) && claimed > bytes)
+    {
+        return TOO_LARGE;
+    }
+
+    const contentType = (request.headers.get("content-type") ?? "").toLowerCase();
+    const wantsForm = route.accepts === "form";
+    const sentForm = contentType.startsWith("multipart/form-data");
+
+    if (sentForm !== wantsForm)
+    {
+        return {
+            refused: {
+                code: "UNSUPPORTED_BODY",
+                message: wantsForm
+                    ? "This route reads a form. Send multipart/form-data."
+                    : "This route reads JSON. Send a JSON body.",
+            },
+            status: 415,
+        };
+    }
+
+    // Bounded first either way: what the platform reads, it reads whole, so a
+    // form is counted before it is handed over rather than after.
+    const raw = await bodyOf(request.body, bytes);
+
+    if (raw === undefined)
+    {
+        return TOO_LARGE;
+    }
+
+    if (sentForm)
+    {
+        const read = await formBody(new Request(request.url, {
+            method: request.method,
+            headers: request.headers,
+            body: raw,
+        }));
+
+        return { body: read.fields, uploads: read.uploads };
+    }
+
+    if (raw.byteLength === 0)
+    {
+        return { body: undefined, uploads: {} };
+    }
+
+    try
+    {
+        return { body: JSON.parse(new TextDecoder().decode(raw)) as unknown, uploads: {} };
+    }
+    catch
+    {
+        return { refused: { code: "INVALID_JSON", message: "The request body is not valid JSON." }, status: 400 };
+    }
 }
 
 export function serve(options: ServerOptions): Hono
@@ -251,11 +348,15 @@ export function serve(options: ServerOptions): Hono
         {
             const requestId = requestIds.get(c.req.raw) ?? "";
 
-            let caller: Caller | undefined;
+            let identity: Identity | undefined;
 
             try
             {
-                caller = await options.identify?.(c);
+                // The project's own wins: it was passed by name, where the
+                // kernel's comes from whichever plugin declared it.
+                identity = options.identify === undefined
+                    ? await options.kernel.identify?.(c.req.raw)
+                    : await options.identify(c);
             }
             catch (cause)
             {
@@ -267,50 +368,23 @@ export function serve(options: ServerOptions): Hono
                 return c.json({ code: "UNAUTHENTICATED", message: "This request needs to be signed in." }, 401);
             }
 
-            let body: unknown;
+            const read = await bodyFor(c.req.raw, route, bodyBytes);
 
-            if (CARRIES.has(route.method))
+            if ("refused" in read)
             {
-                const claimed = Number(c.req.header("content-length") ?? "0");
-
-                if (Number.isFinite(claimed) && claimed > bodyBytes)
-                {
-                    return c.json({ code: "TOO_LARGE", message: "The request body is too large." }, 413);
-                }
-
-                // Read as bytes, and counted as bytes while they arrive.
-                // `content-length` is what the caller claimed and a chunked
-                // request sends none, so the limit above lets one through;
-                // buffering it whole first would let a caller spend the
-                // server's memory before anything refuses it. Measuring the
-                // decoded string instead counts UTF-16 units, so a body of
-                // Japanese passes a limit three times smaller than what
-                // actually arrived.
-                const raw = await bodyOf(c.req.raw.body, bodyBytes);
-
-                if (raw === undefined)
-                {
-                    return c.json({ code: "TOO_LARGE", message: "The request body is too large." }, 413);
-                }
-
-                if (raw.byteLength > 0)
-                {
-                    try
-                    {
-                        body = JSON.parse(new TextDecoder().decode(raw));
-                    }
-                    catch
-                    {
-                        return c.json({ code: "INVALID_JSON", message: "The request body is not valid JSON." }, 400);
-                    }
-                }
+                return c.json(read.refused, read.status as 413);
             }
 
             const answer = await options.kernel.handle({
                 method: route.method as Method,
                 path: route.path,
-                input: input({ params: c.req.param(), query: c.req.queries() as Record<string, string[]>, body }),
-                caller,
+                input: input({
+                    params: c.req.param(),
+                    query: c.req.queries() as Record<string, string[]>,
+                    body: read.body,
+                    uploads: read.uploads,
+                }),
+                identity,
                 headers: headersOf(c, route.reads),
                 ...(options.from !== undefined && { from: options.from(c) }),
             });
@@ -320,9 +394,18 @@ export function serve(options: ServerOptions): Hono
                 options.log?.("error", `${route.method} ${route.path} failed`, { requestId, plugin: route.plugin });
             }
 
-            for (const [name, value] of Object.entries(answer.headers ?? {}))
+            const session = options.session === undefined
+                ? { cookie: undefined, headers: answer.headers ?? {} }
+                : sessionCookie(answer.headers ?? {}, options.session, Date.now());
+
+            for (const [name, value] of Object.entries(session.headers))
             {
                 c.header(name, value);
+            }
+
+            if (session.cookie !== undefined)
+            {
+                c.header("set-cookie", session.cookie, { append: true });
             }
 
             return c.json(answer.body as Record<string, unknown>, answer.status as 200);

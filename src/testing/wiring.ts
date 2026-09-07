@@ -91,7 +91,7 @@ function walk(path: string): string[]
         return [];
     }
 
-    const found: string[] = [];
+    const paths: string[] = [];
 
     for (const entry of readdirSync(path))
     {
@@ -99,24 +99,24 @@ function walk(path: string): string[]
 
         if (statSync(full).isDirectory())
         {
-            found.push(...walk(full));
+            paths.push(...walk(full));
             continue;
         }
 
         if (/\.tsx?$/.test(entry))
         {
-            found.push(full);
+            paths.push(full);
         }
     }
 
-    return found;
+    return paths;
 }
 
 // A contract is what crosses a boundary, so only exported shapes count: an
 // internal type is read by whoever wrote it or it would not compile.
 function fieldsIn(source: string): { shape: string; field: string }[]
 {
-    const found: { shape: string; field: string }[] = [];
+    const fields: { shape: string; field: string }[] = [];
 
     for (const shape of source.matchAll(/export\s+(?:type\s+(\w+)\s*=\s*\{|interface\s+(\w+)[^{]*\{)/g))
     {
@@ -126,11 +126,11 @@ function fieldsIn(source: string): { shape: string; field: string }[]
 
         for (const field of body.matchAll(/(?:^|[;,{\n])\s*(?:readonly\s+)?(\w+)\s*\??\s*:/g))
         {
-            found.push({ shape: name, field: field[1] ?? "" });
+            fields.push({ shape: name, field: field[1] ?? "" });
         }
     }
 
-    return found;
+    return fields;
 }
 
 // Where the brace opened at `from` closes. Walking counts nested shapes as

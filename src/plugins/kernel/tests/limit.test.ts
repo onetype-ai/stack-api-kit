@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 
 import { createKernel, definePlugin } from "../api";
-import type { Caller, Definition, Options, Plugin } from "../api";
+import type { Identity, Definition, Options, Plugin } from "../api";
 import { limiter } from "../../guard/api";
 
 function budgetOf(limit?: { requests: number; seconds: number }): Plugin
@@ -23,7 +23,7 @@ function budgetOf(limit?: { requests: number; seconds: number }): Plugin
     } as Definition);
 }
 
-function createCaller(id: string): Caller
+function createIdentity(id: string): Identity
 {
     return { id, permissions: [], claims: {} };
 }
@@ -55,14 +55,14 @@ describe("a declared budget", () =>
         expect(answers[3]?.headers).toMatchObject({ "retry-after": expect.any(String) });
     });
 
-    test("counts each caller apart, so one flood does not spend another's", async () =>
+    test("counts each identity apart, so one flood does not spend another's", async () =>
     {
         const kernel = await startKernel({ plugins: [budgetOf({ requests: 1, seconds: 60 })] });
 
-        await kernel.handle({ method: "GET", path: "/thing", input: {}, caller: createCaller("u1") });
+        await kernel.handle({ method: "GET", path: "/thing", input: {}, identity: createIdentity("u1") });
 
-        const flooded = await kernel.handle({ method: "GET", path: "/thing", input: {}, caller: createCaller("u1") });
-        const other = await kernel.handle({ method: "GET", path: "/thing", input: {}, caller: createCaller("u2") });
+        const flooded = await kernel.handle({ method: "GET", path: "/thing", input: {}, identity: createIdentity("u1") });
+        const other = await kernel.handle({ method: "GET", path: "/thing", input: {}, identity: createIdentity("u2") });
 
         expect(flooded.status).toBe(429);
         expect(other.status).toBe(200);

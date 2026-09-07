@@ -12,11 +12,15 @@ export type StartOptions = {
      * Where the database is, or a store the project built itself.
      *
      * Given a path, the kit opens SQLite and migrates. Given a store, it uses
-     * that one and migrates only if it can: a project running Postgres, or
-     * anything else answering `Store`, replaces the database without the kit
-     * knowing which one it got.
+     * that one: Postgres, MySQL or anything else answering `Store` replaces
+     * the database without the kit knowing which one it got. The kernel asks
+     * a store for `of` and `tx` and nothing more.
+     *
+     * Left out entirely, nothing opens, and a plugin declaring tables is
+     * refused at startup by name. A site that keeps no rows says nothing
+     * about databases.
      */
-    database: DatabaseOptions | Store;
+    database?: DatabaseOptions | Store | undefined;
 
     config?: Readonly<Record<string, unknown>> | undefined;
 
@@ -47,6 +51,17 @@ export type StartOptions = {
      * limit means the same thing whichever process answered.
      */
     budget?: Budget | undefined;
+
+    /**
+     * Whether anything counts them at all.
+     *
+     * `false` allows every request, and says so loudly at startup. The numbers
+     * stay where they are declared, in the routes: how many attempts are
+     * reasonable is a decision, not a setting, and it must read the same in
+     * development as in production. What this turns off is the counting, and
+     * only somewhere nobody is attacking. A `budget` of your own wins over it.
+     */
+    limits?: boolean | undefined;
 
     /**
      * Whether events are kept until a listener has heard them.

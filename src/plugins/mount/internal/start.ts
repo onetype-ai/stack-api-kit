@@ -1,10 +1,32 @@
-import { database } from "../../database/api";
-import { limiter } from "../../guard/api";
+import { database, noStore } from "../../database/api";
+import { limiter, unlimited } from "../../guard/api";
 import { createKernel } from "../../kernel/api";
 import { dial } from "../../outbound/api";
 import { serve } from "../../http/api";
 import type { DatabaseOptions, Store } from "../../database/api";
+import type { Plugin } from "../../kernel/api";
 import type { RunningApp, StartOptions } from "../api";
+
+/** The store to run on: the project's own, one opened here, or none at all. */
+function storeFor(given: StartOptions["database"], withTables: readonly Plugin[]): Store
+{
+    if (given === undefined)
+    {
+        return noStore();
+    }
+
+    if (typeof (given as { tx?: unknown }).tx === "function")
+    {
+        return given as Store;
+    }
+
+    return database({
+        ...given as DatabaseOptions,
+        tables: Object.fromEntries(
+            withTables.map((plugin) => [plugin.name, plugin.definition.tables as Readonly<Record<string, unknown>>]),
+        ),
+    });
+}
 
 // The order is the point: the database opens and migrates before any plugin
 // runs, the kernel validates before any plugin acts, and the server is built
@@ -13,22 +35,21 @@ export async function start(starting: StartOptions): Promise<RunningApp>
 {
     const log = starting.log;
 
-    // A store the project built, or one opened here from a path. Report apart
-    // by what it answers to, not by a flag: a Store has methods, an DatabaseOptions
-    // has a file.
-    const given = starting.database;
-    const ready = typeof (given as { tx?: unknown }).tx === "function";
+    const withTables = starting.plugins.filter((plugin) => plugin.definition.tables !== undefined);
 
-    const store = ready
-        ? given as Store
-        : database({
-            ...given as DatabaseOptions,
-            tables: Object.fromEntries(
-                starting.plugins
-                    .filter((plugin) => plugin.definition.tables !== undefined)
-                    .map((plugin) => [plugin.name, plugin.definition.tables as Readonly<Record<string, unknown>>]),
-            ),
-        });
+    // Named rather than counted: an api that will not start says which plugin
+    // wants the database, so nobody goes looking for it.
+    if (starting.database === undefined && withTables.length > 0)
+    {
+        throw new TypeError(
+            `${withTables.map((plugin) => `"${plugin.name}"`).join(", ")} declare tables, and start() was given no database. Pass one: database: { file: "./data/app.db" }, or a store of your own.`,
+        );
+    }
+
+    // A store the project built, or one opened here from a path. Told apart
+    // by what it answers to, not by a flag: a Store has methods, a
+    // DatabaseOptions has a file.
+    const store = storeFor(starting.database, withTables);
 
     const migrations = starting.plugins
         .filter((plugin) => plugin.definition.migrations !== undefined)
@@ -41,20 +62,27 @@ export async function start(starting: StartOptions): Promise<RunningApp>
         );
     }
 
-    const ran = store.migrate(migrations);
+    const steps = store.migrate(migrations);
 
-    if (ran.length > 0)
+    if (steps.length > 0)
     {
-        log?.info("migrations applied", { count: ran.length, steps: ran.map((step) => `${step.plugin}/${step.name}`) });
+        log?.info("migrations applied", { count: steps.length, steps: steps.map((step) => `${step.plugin}/${step.name}`) });
     }
 
-    // Every route's declared limit is enforced by this one, so a plugin
-    // cannot turn off its own: it never holds it.
-    // A budget the project passed counts wherever it likes, which is what a
-    // deployment of more than one process needs. The kit's own counts here,
-    // and only what it counted can it sweep.
-    const ourLimiter = starting.budget === undefined ? limiter() : undefined;
-    const budget = starting.budget ?? ourLimiter ?? limiter();
+    // Every route's declared limit is enforced by this one, so a plugin cannot
+    // turn off its own: it never holds it. A budget the project passed counts
+    // wherever it likes, which is what more than one process needs; the kit's
+    // own counts here, and only what it counted can it sweep.
+    if (starting.limits === false)
+    {
+        log?.warn("RATE LIMITS ARE NOT BEING COUNTED", {
+            meaning: "every route's declared budget is ignored: nothing answers 429, however often it is called",
+            turnOn: "remove limits: false, or leave it out entirely",
+        });
+    }
+
+    const ourLimiter = starting.budget === undefined && starting.limits !== false ? limiter() : undefined;
+    const budget = starting.budget ?? ourLimiter ?? unlimited();
 
     const sweep = ourLimiter === undefined ? undefined : setInterval(() => void ourLimiter.sweep(), 60_000);
 

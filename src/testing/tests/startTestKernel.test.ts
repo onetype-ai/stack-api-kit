@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { z } from "zod";
 
 import { definePlugin } from "../../plugins/kernel/api";
-import { startTestKernel, TestTables, createCaller } from "../startTestKernel";
+import { startTestKernel, TestTables, createIdentity } from "../startTestKernel";
 
 import type { Plugin } from "../../plugins/kernel/api";
 
@@ -219,18 +219,18 @@ describe("a caller a test controls", () =>
 {
     test("carries the permissions it was given", () =>
     {
-        expect(createCaller(["found.read"])).toMatchObject({ permissions: ["found.read"], claims: {} });
+        expect(createIdentity(["found.read"])).toMatchObject({ permissions: ["found.read"], claims: {} });
     });
 
-    test("is one caller by default, so two tests do not share an id", () =>
+    test("is one identity by default, so two tests do not share an id", () =>
     {
-        expect(createCaller().id).toBe(createCaller().id);
-        expect(createCaller([], "u2").id).toBe("u2");
+        expect(createIdentity().id).toBe(createIdentity().id);
+        expect(createIdentity([], "u2").id).toBe("u2");
     });
 
     test("carries the claims a project decided a caller has", () =>
     {
-        const scoped = createCaller(["billing.read"], "u3", { tenantId: "acme" });
+        const scoped = createIdentity(["billing.read"], "u3", { tenantId: "acme" });
 
         expect(scoped.claims).toEqual({ tenantId: "acme" });
     });

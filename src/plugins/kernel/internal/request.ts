@@ -1,11 +1,11 @@
 import { answer, Reply, Refusal } from "./answer";
-import type { Caller, Context, Method, Route } from "./contract";
+import type { Identity, Context, Method, Route } from "./contract";
 import { KernelFault } from "./faults";
-import { permissions } from "./permissions";
+import { createPermissions } from "./permissions";
 
-/** What decides whether one caller has any budget left on one route. */
+/** What decides whether one identity has any budget left on one route. */
 export type Budget = {
-    take: (key: string, window: { requests: number; seconds: number }) => { allowed: boolean; resetsIn: number };
+    spend: (key: string, window: { requests: number; seconds: number }) => { allowed: boolean; resetsIn: number };
 };
 
 /** One request, as it reaches the kernel. */
@@ -13,7 +13,7 @@ export type Incoming = {
     method: Method;
     path: string;
     input: unknown;
-    caller?: Caller | undefined;
+    identity?: Identity | undefined;
 
     /** The request's headers, lowercase. A route sees only what it declared. */
     headers?: Readonly<Record<string, string>> | undefined;
@@ -69,30 +69,29 @@ export const notServing: Outgoing = {
  *   4. run
  *   5. filtered, so only what the output schema names leaves
  *
- * Authentication comes before parsing so an anonymous caller cannot reach a
+ * Authentication comes before parsing so an anonymous identity cannot reach a
  * schema, and filtering comes last so a handler cannot leak by returning too
  * much.
  */
 export async function respond(
     mounted: RouteOwner,
     incoming: Incoming,
-    context: (plugin: string, caller?: Caller, headers?: Readonly<Record<string, string>>) => Context,
+    context: (plugin: string, identity?: Identity, headers?: Readonly<Record<string, string>>) => Context,
     log: Log,
     budget?: Budget,
 ): Promise<Outgoing>
 {
     const { plugin, route } = mounted;
-    const caller = incoming.caller;
-    const may = permissions(() => caller);
+    const identity = incoming.identity;
+    const permissions = createPermissions(() => identity);
 
-    // An id of "" is nobody, not somebody. A project writing `id: row?.userId
-    // ?? ""` would otherwise authenticate a caller with no identity, and
-    // every such caller would share one rate-limit bucket besides.
-    const who = caller?.id !== undefined && caller.id.trim() !== "" ? caller.id : undefined;
+    /* identify may be written in JavaScript, where the type does not hold: an
+       id of "" is nobody, and every such one would share one rate-limit bucket. */
+    const identityId = identity !== undefined && identity.id.trim() !== "" ? identity.id : undefined;
 
     try
     {
-        if (route.public !== true && who === undefined)
+        if (route.public !== true && identityId === undefined)
         {
             throw new KernelFault("UNAUTHENTICATED", `${route.method} ${route.path} needs a caller.`, { plugin });
         }
@@ -101,7 +100,7 @@ export async function respond(
         // budget, and before the handler, so a refused request costs nothing.
         if (route.limit !== undefined && budget !== undefined)
         {
-            const verdict = budget.take(`${who ?? incoming.from ?? "anonymous"}:${route.method} ${route.path}`, route.limit);
+            const verdict = budget.spend(`${identityId ?? incoming.from ?? "anonymous"}:${route.method} ${route.path}`, route.limit);
 
             if (!verdict.allowed)
             {
@@ -113,7 +112,7 @@ export async function respond(
             }
         }
 
-        const lacking = (route.requires ?? []).filter((permission) => !may.has(permission));
+        const lacking = (route.requires ?? []).filter((permission) => !permissions.has(permission));
 
         if (lacking.length > 0)
         {
@@ -131,7 +130,7 @@ export async function respond(
             throw new Refusal(400, "INVALID_INPUT", "The request is not valid.", fields(parsed.error));
         }
 
-        const returned = await route.handle(parsed.data, context(plugin, caller, headersFor(route, incoming.headers)));
+        const returned = await route.handle(parsed.data, context(plugin, identity, headersFor(route, incoming.headers)));
 
         // A handler may say what status and headers its answer carries. The
         // body still passes the schema either way: what a route sends is

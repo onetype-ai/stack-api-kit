@@ -14,7 +14,7 @@ type Bucket = {
     until: number;
 };
 
-// A fixed window rather than a sliding log: one counter per caller instead of
+// A fixed window rather than a sliding log: one counter per identity instead of
 // one timestamp per request, which is what keeps a flood from costing memory
 // in proportion to itself.
 export function limiter(now: () => number = Date.now)
@@ -22,7 +22,7 @@ export function limiter(now: () => number = Date.now)
     const buckets = new Map<string, Bucket>();
 
     return {
-        take: (key: string, window: Window): Verdict =>
+        spend: (key: string, window: Window): Verdict =>
         {
             const at = now();
             const bucket = buckets.get(key);

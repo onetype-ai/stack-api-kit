@@ -2,10 +2,10 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 
 import { createKernel, definePlugin, Refusal } from "../api";
-import type { Caller, Definition, Kernel } from "../api";
+import type { Identity, Definition, Kernel } from "../api";
 
-/** A caller the test controls, as a project would build one. */
-function createCaller(permissions: readonly string[] = [], id: string | undefined = "u1"): Caller
+/** An identity the test controls, as a project would build one. */
+function createIdentity(permissions: readonly string[] = [], id = "u1"): Identity
 {
     return { id, permissions, claims: {} };
 }
@@ -32,9 +32,9 @@ describe("finding a route", () =>
     {
         const kernel = await startServer({});
 
-        const answered = await kernel.handle({ method: "GET", path: "/nope", input: {} });
+        const answer = await kernel.handle({ method: "GET", path: "/nope", input: {} });
 
-        expect(answered.status).toBe(404);
+        expect(answer.status).toBe(404);
     });
 
     test("answers 404 the same way whether or not the caller is signed in", async () =>
@@ -42,7 +42,7 @@ describe("finding a route", () =>
         const kernel = await startServer({});
 
         const anonymous = await kernel.handle({ method: "GET", path: "/nope", input: {} });
-        const signedIn = await kernel.handle({ method: "GET", path: "/nope", input: {}, caller: createCaller() });
+        const signedIn = await kernel.handle({ method: "GET", path: "/nope", input: {}, identity: createIdentity() });
 
         expect(anonymous).toEqual(signedIn);
     });
@@ -63,12 +63,12 @@ describe("authentication", () =>
             }],
         });
 
-        const answered = await kernel.handle({ method: "GET", path: "/items", input: {} });
+        const answer = await kernel.handle({ method: "GET", path: "/items", input: {} });
 
-        expect(answered.status).toBe(401);
+        expect(answer.status).toBe(401);
     });
 
-    test("lets a public route through with no caller", async () =>
+    test("lets a public route through with no identity", async () =>
     {
         const kernel = await startServer({
             routes: [{
@@ -82,9 +82,9 @@ describe("authentication", () =>
             }],
         });
 
-        const answered = await kernel.handle({ method: "GET", path: "/health", input: {} });
+        const answer = await kernel.handle({ method: "GET", path: "/health", input: {} });
 
-        expect(answered).toEqual({ status: 200, body: { up: true } });
+        expect(answer).toEqual({ status: 200, body: { up: true } });
     });
 
     test("never reaches the handler when the caller is refused", async () =>
@@ -131,35 +131,35 @@ describe("permissions", () =>
     {
         const kernel = await startServer(guarded);
 
-        const answered = await kernel.handle({ method: "GET", path: "/items", input: {}, caller: createCaller() });
+        const answer = await kernel.handle({ method: "GET", path: "/items", input: {}, identity: createIdentity() });
 
-        expect(answered.status).toBe(403);
+        expect(answer.status).toBe(403);
     });
 
     test("allows a caller carrying it", async () =>
     {
         const kernel = await startServer(guarded);
 
-        const answered = await kernel.handle({ method: "GET", path: "/items", input: {}, caller: createCaller(["items.read"]) });
+        const answer = await kernel.handle({ method: "GET", path: "/items", input: {}, identity: createIdentity(["items.read"]) });
 
-        expect(answered).toEqual({ status: 200, body: { ok: true } });
+        expect(answer).toEqual({ status: 200, body: { ok: true } });
     });
 
     test("never names the permission a caller lacks", async () =>
     {
         const kernel = await startServer(guarded);
 
-        const answered = await kernel.handle({ method: "GET", path: "/items", input: {}, caller: createCaller() });
+        const answer = await kernel.handle({ method: "GET", path: "/items", input: {}, identity: createIdentity() });
 
-        expect(JSON.stringify(answered.body)).not.toMatch(/items\.read/);
+        expect(JSON.stringify(answer.body)).not.toMatch(/items\.read/);
     });
 
-    test("answers one caller without remembering the previous one", async () =>
+    test("answers one identity without remembering the previous one", async () =>
     {
         const kernel = await startServer(guarded);
 
-        const allowed = await kernel.handle({ method: "GET", path: "/items", input: {}, caller: createCaller(["items.read"]) });
-        const refused = await kernel.handle({ method: "GET", path: "/items", input: {}, caller: createCaller() });
+        const allowed = await kernel.handle({ method: "GET", path: "/items", input: {}, identity: createIdentity(["items.read"]) });
+        const refused = await kernel.handle({ method: "GET", path: "/items", input: {}, identity: createIdentity() });
 
         expect(allowed.status).toBe(200);
         expect(refused.status).toBe(403);
@@ -184,10 +184,10 @@ describe("input", () =>
     {
         const kernel = await startServer(taking);
 
-        const answered = await kernel.handle({ method: "POST", path: "/items", input: { title: "" } });
+        const answer = await kernel.handle({ method: "POST", path: "/items", input: { title: "" } });
 
-        expect(answered.status).toBe(400);
-        expect(answered.body).toMatchObject({ code: "INVALID_INPUT", fields: { title: expect.any(String) } });
+        expect(answer.status).toBe(400);
+        expect(answer.body).toMatchObject({ code: "INVALID_INPUT", fields: { title: expect.any(String) } });
     });
 
     test("hands the handler only what the schema parsed", async () =>
@@ -219,9 +219,9 @@ describe("input", () =>
     {
         const kernel = await startServer(taking);
 
-        const answered = await kernel.handle({ method: "POST", path: "/items", input: { title: "one" } });
+        const answer = await kernel.handle({ method: "POST", path: "/items", input: { title: "one" } });
 
-        expect(answered.status).toBe(201);
+        expect(answer.status).toBe(201);
     });
 });
 
@@ -241,9 +241,9 @@ describe("output", () =>
             }],
         });
 
-        const answered = await kernel.handle({ method: "GET", path: "/me", input: {} });
+        const answer = await kernel.handle({ method: "GET", path: "/me", input: {} });
 
-        expect(answered.body).toEqual({ id: "u1" });
+        expect(answer.body).toEqual({ id: "u1" });
     });
 
     test("answers 500 rather than sending something the schema refuses", async () =>
@@ -260,10 +260,10 @@ describe("output", () =>
             }],
         });
 
-        const answered = await kernel.handle({ method: "GET", path: "/broken", input: {} });
+        const answer = await kernel.handle({ method: "GET", path: "/broken", input: {} });
 
-        expect(answered.status).toBe(500);
-        expect(answered.body).toEqual({ code: "INTERNAL", message: "The request could not be completed." });
+        expect(answer.status).toBe(500);
+        expect(answer.body).toEqual({ code: "INTERNAL", message: "The request could not be completed." });
     });
 });
 
@@ -286,10 +286,10 @@ describe("failures", () =>
             }],
         });
 
-        const answered = await kernel.handle({ method: "GET", path: "/items", input: {} });
+        const answer = await kernel.handle({ method: "GET", path: "/items", input: {} });
 
-        expect(answered.status).toBe(500);
-        expect(JSON.stringify(answered.body)).not.toMatch(/SQLITE|secret_token|column/);
+        expect(answer.status).toBe(500);
+        expect(JSON.stringify(answer.body)).not.toMatch(/SQLITE|secret_token|column/);
     });
 
     test("logs what it refused to tell the caller", async () =>
@@ -332,8 +332,8 @@ describe("failures", () =>
             }],
         });
 
-        const answered = await kernel.handle({ method: "GET", path: "/items", input: {} });
+        const answer = await kernel.handle({ method: "GET", path: "/items", input: {} });
 
-        expect(answered).toEqual({ status: 409, body: { code: "ITEM_LOCKED", message: "That item is being edited." } });
+        expect(answer).toEqual({ status: 409, body: { code: "ITEM_LOCKED", message: "That item is being edited." } });
     });
 });

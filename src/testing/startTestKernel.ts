@@ -3,7 +3,7 @@ import { limiter } from "../plugins/guard/api";
 import { createKernel } from "../plugins/kernel/api";
 
 import type { Handle, Store } from "../plugins/database/api";
-import type { Caller, Dialer, Kernel, Outbound, Plugin } from "../plugins/kernel/api";
+import type { Identity, Dialer, Kernel, Outbound, Plugin } from "../plugins/kernel/api";
 
 export type LogLine = {
     level: string;
@@ -124,9 +124,9 @@ export async function startTestKernel(given: TestKernelOptions): Promise<TestKer
 
     store.migrate(TestTables.migrations(given.plugins));
 
-    const written: LogLine[] = [];
-    const dialled: OutboundCall[] = [];
-    const recorded: EmittedEvent[] = [];
+    const lines: LogLine[] = [];
+    const calls: OutboundCall[] = [];
+    const events: EmittedEvent[] = [];
 
     // A plugin that hears everything, added to the ones under test. Named so
     // it cannot collide with a real one, and declared as listening to every
@@ -149,7 +149,7 @@ export async function startTestKernel(given: TestKernelOptions): Promise<TestKer
                         // listener, which tells a test nothing.
                         handle: (payload: never): void =>
                         {
-                            recorded.push({ plugin: plugin.name, event, payload });
+                            events.push({ plugin: plugin.name, event, payload });
                         },
                     }]),
                 ),
@@ -159,7 +159,7 @@ export async function startTestKernel(given: TestKernelOptions): Promise<TestKer
 
     const dial: Dialer = (call) =>
     {
-        dialled.push({ method: call.method, url: call.url, body: call.body, headers: call.headers });
+        calls.push({ method: call.method, url: call.url, body: call.body, headers: call.headers });
 
         return Promise.resolve(given.answers?.(call) ?? {});
     };
@@ -184,7 +184,7 @@ export async function startTestKernel(given: TestKernelOptions): Promise<TestKer
         config: given.config ?? {},
         log: (level, plugin, line, about) =>
         {
-            written.push({ level, plugin, line, ...about });
+            lines.push({ level, plugin, line, ...about });
         },
     });
 
@@ -193,9 +193,9 @@ export async function startTestKernel(given: TestKernelOptions): Promise<TestKer
     return {
         kernel,
         store,
-        logLines: written,
-        outboundCalls: () => [...dialled],
-        emittedEvents: () => [...recorded],
+        logLines: lines,
+        outboundCalls: () => [...calls],
+        emittedEvents: () => [...events],
 
         due: () => kernel.due(),
 
@@ -218,17 +218,17 @@ export async function startTestKernel(given: TestKernelOptions): Promise<TestKer
 }
 
 /**
- * A caller a test controls.
+ * An identity a test controls.
  *
  * `claims` is what the project decided a caller carries: a tenant, a role, a
  * plan. The kernel never reads it, so a test proving that one tenant cannot
- * reach another's rows has to be able to say who this caller belongs to.
+ * reach another's rows has to be able to say who this identity belongs to.
  */
-export function createCaller(
+export function createIdentity(
     permissions: readonly string[] = [],
     id = "11111111-1111-4111-8111-111111111111",
     claims: Readonly<Record<string, unknown>> = {},
-): Caller
+): Identity
 {
     return { id, permissions, claims };
 }

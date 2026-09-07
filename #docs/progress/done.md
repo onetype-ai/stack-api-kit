@@ -73,6 +73,43 @@ only the documents. Every one shipped green, and each found something:
   reader sees, which returns 7 for the emoji family in its own example. Three
   builds independently wrote `Intl.Segmenter` instead.
 
+## Found by reading it with fresh eyes
+
+A pass over the kit against one real project and its three authors' notes.
+Every one was reproduced before it was changed, and every guarantee below was
+broken on purpose and watched to fail.
+
+- **`Caller` was two things under one name**, and its `id` could be missing:
+  "an identity with no identity". Now `Identity`, with `id: string`, which
+  removed `ctx.caller?.id ?? ""` from every guarded route in the project using
+  it.
+- **A cookie was every project's own sixty lines.** `serve` takes `session`
+  now: a route answers `x-session-key`, the kit makes the cookie and takes the
+  header back out, so the key never leaves anywhere a script can read it.
+- **`database` was required by a site with no tables.** Optional now; a plugin
+  declaring tables without one is refused at startup, by name.
+- **Nothing could turn a limit off in development.** `limits: false`, said
+  loudly at startup. It cost a tester an hour and a half and two false reports.
+- **No multipart, on an argument that turned out to be wrong.** The parser is
+  the platform's — `Request.formData` — so `accepts: "form"` was a call, not a
+  parser. Measured: ten 5 MB uploads cost 224 MB as base64 against 6 MB
+  streamed, and multipart is a third fewer bytes besides. A filename is the
+  caller's claim, stripped of any path.
+- **The composition root had to know which plugin held sessions**, and to list
+  every permission a signed-in caller gets. That list fell behind three times
+  and broke only in production. `identifies` and `grants` are contract keys
+  now, `mayGrant` is checked at startup, and `main.ts` names no plugin at all.
+- **A test booting the plugin it hears was reported as a cycle.** The graph is
+  built from production code now; a real loop still fails.
+- **`measure("bytes")` makes a unit a type.** One project counted storage in
+  bytes, read a quota in gigabytes, and refused every caller on their first
+  file. That mistake no longer compiles.
+- **118 identifiers were verbs wearing a noun's clothes.** `found` was three
+  different things in three files, and `parsed` was two in one. Now 47, and
+  what remains is right.
+- **The declaration bundle was named by content hash.** `types.d.ts` now, so
+  the file worth opening when `reference.md` is not enough can be found.
+
 ## Removed
 
 `boot`, `Host`, `offer`/`take` and the six plugin factories. The composition

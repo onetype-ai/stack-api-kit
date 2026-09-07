@@ -2,56 +2,53 @@
 
 ## Description
 
-The plugin runtime an API builds on: registry, validation, routes, events,
-hooks, permissions.
+The plugin runtime an API builds on: registry, checks, routes, events,
+hooks, identity.
 
 ## Purpose
 
-A server grows into one thing unless something holds the seams. A plugin
-declares what crosses; the kernel refuses the rest, and knows no auth model.
+A server grows into one thing unless something holds the seams: a plugin
+declares what crosses, the rest is refused.
 
 ## Usage
 
 ```ts
 export default definePlugin.over<Rows, Services>()("items", {
-    version: "1.0.0",
-    describe: "Owns items.",
-    tables: { items },
-    services: (ctx) => ({ items: new ItemsService(ctx) }),
-    routes: itemRoutes,
+    version: "1.0.0", describe: "Items.", tables: { items },
+    services: (ctx) => ({ items: new Items(ctx) }),
+    routes: [defineRoute<Ctx>()({
+        method: "GET", path: "/items", describe: "Lists.",
+        requires: ["items.read"], input: Query.schema, output: Page.schema,
+        handle: (asked, ctx) => ctx.services.items.list(asked),
+    })],
 });
-
-const route = defineRoute<Ctx>();
-
-export const itemRoutes: readonly Endpoint<Ctx>[] = [
-    route({
-        method: "GET",
-        path: "/items",
-        describe: "Lists what the caller sees.",
-        requires: ["items.read"],
-        input: ListQuery.schema,
-        output: ItemPage.schema,
-        handle: (input, ctx) => ctx.services.items.list(input),
-    }),
-];
 ```
 
-`over` names what `ctx.db` and `ctx.services` are; `defineRoute` is what makes
-a handler read what its own schema parsed rather than `unknown`.
+`over` names what `ctx.db` and `ctx.services` are. `input` is body, query and
+path, plus files where `accepts: "form"`; `reads` the headers. `output` is a
+whitelist. A route is closed until `public`; `limit` needs a budget.
 
-`input` is body, query and path; `reads` the headers. `output` is a whitelist,
-and one that cannot strip is refused at startup. An `Answered` sets the status
-and headers. A route is closed until `public`; a `limit` needs a `budget`.
+One plugin says who is calling, one what it means:
 
-Listening is not depending: a listener names none, because an emitter does not
-know who hears it.
+```ts
+identifies: (ctx, request) => Sessions.of(ctx, request.headers.get("cookie")),
+grants: (ctx, who) => Roles.of(ctx, who.id),
+mayGrant: ["auth.self", "billing.manage"],
+```
+
+`identifies` names no permission: `grants` fills them, so none grants itself.
+`mayGrant` is every one it answers; a route needing another refuses the boot.
+
+
+`measure("bytes")` marks a number with what it counts: bytes where gigabytes
+were wanted does not compile.
 
 ## Refuses
 
-At startup: a duplicate plugin, an unknown or cyclic dependency, a name
-outside its namespace, a duplicate route, event, hook, command or permission,
-a reference to something undeclared, a bad path, an unfilterable output, a
-limit with no budget, a credential header.
+At startup: a duplicate plugin, dependency cycle, name outside its namespace,
+duplicate route, event, hook, command, permission or `identifies`, reference
+to anything undeclared, permission nothing grants, bad path, unfilterable
+output, limit without budget, credential header.
 
-At runtime: an undeclared event, a bad payload, a route or command without its
-permission, a caller past a budget, an undeclared host.
+At runtime: an undeclared event or host, a bad payload, a missing permission,
+a caller past budget.

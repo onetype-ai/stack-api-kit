@@ -33,6 +33,8 @@ export default { fetch: api.fetch, port: 3000 };
 
 `start` opens the database, migrates in dependency order, validates every
 contract, and either starts every plugin or throws naming the one that failed.
+`database` also takes a `Store` of your own, so Postgres replaces SQLite
+without the kit knowing; left out, nothing opens at all.
 
 Two entries: `.` is everything, `./testing` the checks a project runs on
 itself.

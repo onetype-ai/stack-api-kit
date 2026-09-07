@@ -171,7 +171,7 @@ describe("work asked for later", () =>
 
         const failed = await kernel.run("holds.release", {}).catch((cause: unknown) => cause) as Error;
 
-        expect(failed.message).toMatch(/A scheduled run has no caller/);
+        expect(failed.message).toMatch(/A scheduled run has no identity/);
         expect(failed.message).toMatch(/declares no requires/);
 
         await kernel.stop();

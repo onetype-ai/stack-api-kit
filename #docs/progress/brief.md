@@ -29,7 +29,7 @@ leak it. Those are mechanical, not agreed.
 
 ## Where we are
 
-Six plugins work. 293 tests, every one watched to fail before it was trusted,
+Six plugins work. 354 tests, every one watched to fail before it was trusted,
 and the database ones run against real in-memory SQLite with real migrations.
 
 A project declares plugins with `definePlugin`, brings them up with `start`,
@@ -37,8 +37,13 @@ and serves `api.fetch`.
 
 Seven systems have been built on it by agents reading only the documents, in
 seven domains, from a helpdesk to subscription billing. Every one shipped
-green. What they found is in `done.md`; what nobody has tried is in `todo.md`.
+green. An eighth was read back against the kit rather than built on it, which
+found what building never does: `Caller` meaning two things, a cookie every
+project wrote itself, a composition root that had to know which plugin held
+sessions. What all of that found is in `done.md`; what nobody has tried is in
+`todo.md`.
 
 ## Next
 
-Somebody trying to break it. Every author so far was building.
+Somebody trying to break it. Every author so far was building, and the one
+pass that read instead of building found ten things in an afternoon.

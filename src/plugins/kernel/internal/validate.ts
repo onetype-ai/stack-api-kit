@@ -70,8 +70,60 @@ export function validate(plugins: readonly Plugin[], config: Readonly<Record<str
     }
 
     checkCycles(by, say);
+    checkGranting(by, say);
 
     return wrong;
+}
+
+/**
+ * Who says who a caller is, and what being one means.
+ *
+ * Two plugins answering either question is two answers to one, and nothing
+ * decides between them. And a route requiring a permission nothing grants is
+ * a route nobody can reach: it starts, it answers 403 to everyone, and it is
+ * found by trying rather than by starting.
+ */
+function checkGranting(by: ReadonlyMap<string, Plugin>, say: Report): void
+{
+    for (const key of ["identifies", "grants"] as const)
+    {
+        const owners = [...by].filter(([, plugin]) => plugin.definition[key] !== undefined).map(([name]) => name);
+
+        if (owners.length > 1)
+        {
+            say("DUPLICATE_GRANTS", owners[1] as string, `"${owners.join('", "')}" all declare ${key}. One plugin answers this for the whole api.`);
+        }
+    }
+
+    const granting = [...by.values()].find((plugin) => plugin.definition.grants !== undefined);
+
+    if (granting === undefined)
+    {
+        return;
+    }
+
+    // Only checkable against what the plugin said it may grant: grants itself
+    // runs per request, and startup has none.
+    const may = new Set(granting.definition.mayGrant ?? []);
+
+    if (may.size === 0)
+    {
+        return;
+    }
+
+    for (const [name, plugin] of by)
+    {
+        for (const route of plugin.definition.routes ?? [])
+        {
+            for (const permission of route.requires ?? [])
+            {
+                if (!may.has(permission))
+                {
+                    say("UNGRANTABLE_PERMISSION", name, `Route ${route.method} "${route.path}" requires "${permission}", which "${granting.name}" never grants. Add it to mayGrant, or nobody can reach this route.`);
+                }
+            }
+        }
+    }
 }
 
 /** What a plugin declares, and whether anyone claimed it first. */
@@ -472,11 +524,11 @@ function checkConfig(name: string, plugin: Plugin, config: Readonly<Record<strin
         return;
     }
 
-    const answered = schema.safeParse(config[name] ?? {});
+    const parsed = schema.safeParse(config[name] ?? {});
 
-    if (!answered.success)
+    if (!parsed.success)
     {
-        const first = answered.error.issues[0];
+        const first = parsed.error.issues[0];
         const at = first === undefined || first.path.length === 0 ? "" : ` at "${first.path.join(".")}"`;
 
         say("INVALID_CONFIG", name, `Config for "${name}" is invalid${at}: ${first?.message ?? "it does not match the schema"}.`);
@@ -487,7 +539,7 @@ function checkConfig(name: string, plugin: Plugin, config: Readonly<Record<strin
 function checkCycles(by: ReadonlyMap<string, Plugin>, say: Report): void
 {
     const state = new Map<string, "open" | "done">();
-    const walking: string[] = [];
+    const trail: string[] = [];
     const reported = new Set<string>();
 
     function walk(name: string): void
@@ -499,8 +551,8 @@ function checkCycles(by: ReadonlyMap<string, Plugin>, say: Report): void
 
         if (state.get(name) === "open")
         {
-            const at = walking.indexOf(name);
-            const loop = [...walking.slice(at === -1 ? 0 : at), name];
+            const at = trail.indexOf(name);
+            const loop = [...trail.slice(at === -1 ? 0 : at), name];
             const key = [...loop].sort().join(",");
 
             if (!reported.has(key))
@@ -513,7 +565,7 @@ function checkCycles(by: ReadonlyMap<string, Plugin>, say: Report): void
         }
 
         state.set(name, "open");
-        walking.push(name);
+        trail.push(name);
 
         for (const need of [...(by.get(name)?.definition.dependsOn ?? [])].sort())
         {
@@ -523,7 +575,7 @@ function checkCycles(by: ReadonlyMap<string, Plugin>, say: Report): void
             }
         }
 
-        walking.pop();
+        trail.pop();
         state.set(name, "done");
     }
 

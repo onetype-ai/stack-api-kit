@@ -66,10 +66,10 @@ export function hooks<Context>(patience: number = PATIENCE)
 
                 try
                 {
-                    const answered = entry.participant.handle(parsed.data as never, ctx(entry.plugin));
+                    const answering = entry.participant.handle(parsed.data as never, ctx(entry.plugin));
 
                     const refusal = await Promise.race([
-                        answered,
+                        answering,
                         new Promise<typeof LATE>((done) =>
                         {
                             timer = setTimeout(() => done(LATE), patience);

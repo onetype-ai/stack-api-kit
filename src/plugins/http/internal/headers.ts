@@ -9,7 +9,7 @@
  * - DENY in frame-options and frame-ancestors 'none' keeps an error page out
  *   of someone else's iframe.
  * - no-store keeps an authenticated answer out of a shared cache. An API
- *   response is per-caller, and a cache that kept one would hand it to the
+ *   response is per-identity, and a cache that kept one would hand it to the
  *   next.
  * - no-referrer keeps a path with an id in it from reaching another origin.
  */

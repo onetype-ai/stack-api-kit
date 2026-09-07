@@ -35,10 +35,10 @@ describe("oversized", () =>
 {
     test("names a document past the limit, with its size", () =>
     {
-        const found = findOversizedDocs(tree({ "contract.md": "x".repeat(1801) }));
+        const problems = findOversizedDocs(tree({ "contract.md": "x".repeat(1801) }));
 
-        expect(found).toHaveLength(1);
-        expect(found[0]?.size).toBe(1801);
+        expect(problems).toHaveLength(1);
+        expect(problems[0]?.size).toBe(1801);
     });
 
     test("passes a document at the limit", () =>
@@ -48,9 +48,9 @@ describe("oversized", () =>
 
     test("ignores progress, which is a log rather than a contract", () =>
     {
-        const found = findOversizedDocs(tree({ "progress/done.md": "x".repeat(5000) }));
+        const problems = findOversizedDocs(tree({ "progress/done.md": "x".repeat(5000) }));
 
-        expect(found).toEqual([]);
+        expect(problems).toEqual([]);
     });
 
     test("an absent folder is not a failure", () =>
@@ -63,7 +63,7 @@ describe("missing", () =>
 {
     test("reports one that is absent", () =>
     {
-        expect(findMissingDocs(tree({ "usage.md": "found" }), ["usage.md", "gone.md"])).toEqual(["gone.md"]);
+        expect(findMissingDocs(tree({ "usage.md": "problems" }), ["usage.md", "gone.md"])).toEqual(["gone.md"]);
     });
 
     test("reports one that is present but empty", () =>

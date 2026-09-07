@@ -72,6 +72,15 @@ export type Route<Context, Input extends z.ZodType = z.ZodType> = Description & 
     limit?: { requests: number; seconds: number };
 
     /**
+     * What kind of body this takes. JSON unless it says otherwise.
+     *
+     * `"form"` reads `multipart/form-data`: text parts reach `input` as
+     * fields, file parts as `Upload`s under their own names. Declared rather
+     * than sniffed, so a route expecting JSON can never be handed a file.
+     */
+    accepts?: "json" | "form";
+
+    /**
      * Request headers this route reads, lowercase.
      *
      * Named rather than handed the lot: a handler that can read any header
@@ -131,12 +140,11 @@ export type Logger = {
     error: (line: string, about?: Readonly<Record<string, unknown>>) => void;
 };
 
-/** Who is calling, as whatever the project decided that means. */
-export type Caller = {
-    /** Stable identity, or undefined when nobody is signed in. */
-    id: string | undefined;
+/** Who this is, as whatever the project decided that means. Nobody signed in is no identity at all. */
+export type Identity = {
+    id: string;
 
-    /** What this caller may do. The project fills it; the kernel enforces it. */
+    /** What they may do. The project fills it; the kernel enforces it. */
     permissions: readonly string[];
 
     /** What the project attached: a tenant, a role, a session. Opaque here. */
@@ -169,8 +177,8 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
      */
     now: () => number;
 
-    /** Who is calling. Absent outside a request, as in setup. */
-    caller: Caller | undefined;
+    /** Who this request is for. Absent outside a request, as in setup. */
+    identity: Identity | undefined;
 
     /**
      * The request headers this route declared in `reads`, lowercase.
@@ -228,7 +236,7 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
         has: (permission: string) => boolean;
         all: (permissions: readonly string[]) => boolean;
 
-        /** What the project attached to this caller, unread by the kernel. */
+        /** What the project attached to this identity, unread by the kernel. */
         claims: () => Readonly<Record<string, unknown>>;
     };
 
@@ -238,7 +246,7 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
         /**
          * Runs one later, in seconds from now.
          *
-         * Only a command this plugin declares, and it runs with no caller:
+         * Only a command this plugin declares, and it runs for nobody:
          * whatever it needs to know about whose work it is travels in the
          * input, exactly as an event's payload does.
          *
@@ -381,6 +389,44 @@ export type Definition<
     participates?: Readonly<Record<string, Participation<Context<z.infer<Schema>, Exactly<Services>, Db>>>>;
 
     commands?: Readonly<Record<string, Run<Context<z.infer<Schema>, Exactly<Services>, Db>>>>;
+
+    /**
+     * Who is calling, read from the request this plugin knows how to read.
+     *
+     * At most one plugin declares this, and it is the one holding sessions: a
+     * composition root that had to wire it would have to know which plugin
+     * that is, and would go stale the day it was replaced.
+     *
+     * Answers the identity, or nothing for a stranger. Throwing is 401, never
+     * 500. `permissions` is filled from `grants`, so this never names one.
+     */
+    identifies?: (
+        ctx: Context<z.infer<Schema>, Exactly<Services>, Db>,
+        request: Request,
+    ) => Promise<Omit<Identity, "permissions"> | undefined> | Omit<Identity, "permissions"> | undefined;
+
+    /**
+     * What being signed in means here.
+     *
+     * At most one plugin declares this. Named as strings, so the plugin that
+     * grants a permission never imports the one that declared it, exactly as
+     * a route naming `requires` does not.
+     *
+     * The kernel refuses to start when a route requires a permission nothing
+     * grants: a route nobody can reach is the error this exists to catch.
+     */
+    grants?: (
+        ctx: Context<z.infer<Schema>, Exactly<Services>, Db>,
+        identity: Omit<Identity, "permissions">,
+    ) => Promise<readonly string[]> | readonly string[];
+
+    /**
+     * Every permission `grants` may ever answer.
+     *
+     * Read at startup, where no request exists, so the check runs before
+     * anything is served rather than on whoever asked first.
+     */
+    mayGrant?: readonly string[];
 
     setup?: (ctx: Context<z.infer<Schema>, Exactly<Services>, Db>) => void | Promise<void>;
     teardown?: (ctx: Context<z.infer<Schema>, Exactly<Services>, Db>) => void | Promise<void>;

@@ -1,6 +1,7 @@
 import { connect, type DatabaseOptions } from "./internal/connect";
 import { migrate, MigrationFault, type Source, type Step, migrationSteps } from "./internal/migrate";
 import { createScopeFilter } from "./internal/narrow";
+import { noStore } from "./internal/none";
 import { outbox } from "./internal/outbox";
 import { schedule } from "./internal/schedule";
 
@@ -44,7 +45,7 @@ export type Store<Handle = unknown> = {
     close: () => void;
 };
 
-export { MigrationFault, createScopeFilter, outbox, schedule, migrationSteps };
+export { MigrationFault, createScopeFilter, noStore, outbox, schedule, migrationSteps };
 export type { Handle, DatabaseOptions, Source, Step, Tables };
 
 /**

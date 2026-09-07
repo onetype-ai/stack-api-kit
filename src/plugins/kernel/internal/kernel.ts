@@ -1,12 +1,12 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import { context, type Wiring } from "./context";
-import type { Caller, Context, Method, Plugin, Route } from "./contract";
+import type { Identity, Context, Method, Plugin, Route } from "./contract";
 import { events, type Failure, type Pending } from "./events";
 import { KernelFault } from "./faults";
 import { hooks } from "./hooks";
 import { order } from "./order";
-import { permissions } from "./permissions";
+import { createPermissions } from "./permissions";
 import { type Budget, type Incoming, type RouteOwner, notServing, type Outgoing, respond, unknownRoute } from "./request";
 import type { Dialer, ScopeFilter, Outbox, Schedule, Storage } from "./store";
 import { validate } from "./validate";
@@ -101,6 +101,9 @@ export type Registration = {
     public: boolean;
     limit: { requests: number; seconds: number } | undefined;
 
+    /** What kind of body it takes: JSON unless it declared a form. */
+    accepts: "json" | "form";
+
     /** The request headers this route declared it reads, lowercase. */
     reads: readonly string[];
 };
@@ -114,7 +117,17 @@ export type Kernel = {
     routes: () => readonly Registration[];
     handle: (incoming: Incoming) => Promise<Outgoing>;
 
-    context: (plugin: string, caller?: Caller) => Context;
+    context: (plugin: string, identity?: Identity) => Context;
+
+    /**
+     * Who is calling, asked of the plugin that knows.
+     *
+     * Undefined when no plugin declares `identifies`, which is an api where
+     * nobody signs in: every closed route then answers 401, and that is it
+     * working rather than a mistake.
+     */
+    identify: ((request: Request) => Promise<Identity | undefined>) | undefined;
+
     events: { failures: () => readonly Failure[] };
 
     /**
@@ -125,7 +138,7 @@ export type Kernel = {
      * control.
      */
     due: () => Promise<void>;
-    run: (command: string, input: unknown, caller?: Caller) => Promise<void>;
+    run: (command: string, input: unknown, identity?: Identity) => Promise<void>;
 };
 
 const quiet: Log = () => {};
@@ -164,11 +177,11 @@ function routeFor(
         return { mounted: exact, params: {} };
     }
 
-    const asked = path.split("/");
+    const segments = path.split("/");
 
     // A static route the caller wrote encoded: found here rather than left to
     // the parameter routes below, which would answer for it.
-    const plain = routes.get(`${method} ${asked.map((segment) => decodeSegment(segment) ?? segment).join("/")}`);
+    const plain = routes.get(`${method} ${segments.map((segment) => decodeSegment(segment) ?? segment).join("/")}`);
 
     if (plain !== undefined)
     {
@@ -177,16 +190,16 @@ function routeFor(
 
     for (const [key, mounted] of routes)
     {
-        const [verb, declared] = key.split(" ");
+        const [verb, pattern] = key.split(" ");
 
-        if (verb !== method || declared === undefined)
+        if (verb !== method || pattern === undefined)
         {
             continue;
         }
 
-        const parts = declared.split("/");
+        const parts = pattern.split("/");
 
-        if (parts.length !== asked.length)
+        if (parts.length !== segments.length)
         {
             continue;
         }
@@ -194,16 +207,16 @@ function routeFor(
         const params: Record<string, string> = {};
         const fits = parts.every((part, at) =>
         {
-            const given = asked[at] ?? "";
+            const segment = segments[at] ?? "";
 
             if (!part.startsWith(":"))
             {
                 // Decoded before comparing, or "/users/%6de" misses the route
                 // "/users/me" declares and lands on "/users/:id" instead.
-                return part === decodeSegment(given);
+                return part === decodeSegment(segment);
             }
 
-            const value = decodeSegment(given);
+            const value = decodeSegment(segment);
 
             if (value === undefined)
             {
@@ -212,7 +225,7 @@ function routeFor(
 
             params[part.slice(1)] = value;
 
-            return given !== "";
+            return segment !== "";
         });
 
         if (fits)
@@ -232,13 +245,13 @@ function withPathParams(input: unknown, params: Readonly<Record<string, string>>
         return input;
     }
 
-    const given = input !== null && typeof input === "object" && !Array.isArray(input)
+    const body = input !== null && typeof input === "object" && !Array.isArray(input)
         ? { ...(input as Record<string, unknown>) }
         : {};
 
     // The path wins, as it does over HTTP: a router already matched it, so a
     // body claiming otherwise is confused or deliberate.
-    return { ...given, ...params };
+    return { ...body, ...params };
 }
 
 /**
@@ -254,12 +267,17 @@ export function createKernel(options: Options): Kernel
     const log = options.log ?? quiet;
 
     const known = new Map(options.plugins.map((plugin) => [plugin.name, plugin]));
+
+    // At most one of each, refused at startup, so finding the first is
+    // finding the only.
+    const identifying = options.plugins.find((plugin) => plugin.definition.identifies !== undefined);
+    const granting = options.plugins.find((plugin) => plugin.definition.grants !== undefined);
     const bus = events<Context>(Date.now, (plugin, line, about) =>
     {
         log("error", plugin, line, about);
     });
     const points = hooks<Context>(options.patience);
-    const parsed = new Map<string, unknown>();
+    const settings = new Map<string, unknown>();
     const pending = new Map<object, Pending[]>();
 
     const routes = new Map<string, RouteOwner>();
@@ -330,11 +348,11 @@ export function createKernel(options: Options): Kernel
     // that has already been accepted was promised an answer, and tearing the
     // plugins down underneath it turns that promise into a 500.
     const inFlight = new Set<Promise<unknown>>();
-    let started: Plugin[] = [];
+    let inOrder: Plugin[] = [];
 
     const wiring: Wiring = {
         known,
-        parsed,
+        settings,
         open: new AsyncLocalStorage<object>(),
         config,
         bus,
@@ -348,16 +366,16 @@ export function createKernel(options: Options): Kernel
         db: options.db,
         dial: options.dial,
         log,
-        run: (command, input, caller) => run(command, input, caller),
+        run: (command, input, identity) => run(command, input, identity),
     };
 
-    const seenBy = (plugin: string, caller?: Caller, headers?: Readonly<Record<string, string>>): Context =>
+    const seenBy = (plugin: string, identity?: Identity, headers?: Readonly<Record<string, string>>): Context =>
     {
-        return context(wiring, plugin, caller, undefined, headers);
+        return context(wiring, plugin, identity, undefined, headers);
     };
 
     /** Runs a command, after its permission and its schema. */
-    async function run(command: string, input: unknown, caller?: Caller): Promise<void>
+    async function run(command: string, input: unknown, identity?: Identity): Promise<void>
     {
         if (!running)
         {
@@ -367,46 +385,46 @@ export function createKernel(options: Options): Kernel
             );
         }
 
-        const declared = commands.get(command);
+        const entry = commands.get(command);
 
-        if (declared === undefined)
+        if (entry === undefined)
         {
             throw new KernelFault("UNDECLARED_COMMAND", `Command "${command}" is not declared by any plugin.`);
         }
 
-        const may = permissions(() => caller);
-        const lacking = declared.requires.filter((permission) => !may.has(permission));
+        const permissions = createPermissions(() => identity);
+        const lacking = entry.requires.filter((permission) => !permissions.has(permission));
 
         if (lacking.length > 0)
         {
-            // A scheduled run has no caller at all, which is not the same
+            // A scheduled run has no identity at all, which is not the same
             // problem as one who is short a permission: no permission can be
             // granted to nobody, so a command the schedule asks for declares
             // none. Saying only "the caller does not have" sends its author
             // looking for a permission to hand out.
-            const scheduled = caller === undefined
-                ? " A scheduled run has no caller, so a command asked for by commands.later declares no requires."
+            const scheduled = identity === undefined
+                ? " A scheduled run has no identity, so a command asked for by commands.later declares no requires."
                 : "";
 
             throw new KernelFault(
                 "PERMISSION_DENIED",
                 `Command "${command}" needs ${lacking.map((permission) => `"${permission}"`).join(", ")}, which the caller does not have.${scheduled}`,
-                { plugin: declared.plugin, detail: { lacking } },
+                { plugin: entry.plugin, detail: { lacking } },
             );
         }
 
-        const parsed = declared.schema.safeParse(input);
+        const parsed = entry.schema.safeParse(input);
 
         if (!parsed.success)
         {
             throw new KernelFault(
                 "INVALID_PAYLOAD",
                 `The input for "${command}" does not match its schema: ${parsed.error?.issues[0]?.message ?? "it was rejected"}.`,
-                { plugin: declared.plugin },
+                { plugin: entry.plugin },
             );
         }
 
-        await declared.run(parsed.data as never, seenBy(declared.plugin, caller));
+        await entry.run(parsed.data as never, seenBy(entry.plugin, identity));
     }
 
     return {
@@ -435,21 +453,21 @@ export function createKernel(options: Options): Kernel
                 );
             }
 
-            started = order(known);
+            inOrder = order(known);
 
-            for (const plugin of started)
+            for (const plugin of inOrder)
             {
                 const schema = plugin.definition.config;
 
                 if (schema !== undefined)
                 {
-                    parsed.set(plugin.name, schema.parse(config[plugin.name] ?? {}));
+                    settings.set(plugin.name, schema.parse(config[plugin.name] ?? {}));
                 }
             }
 
             // Declared before anything is wired: a listener may name an event
             // owned by a plugin that comes later in the order.
-            for (const plugin of started)
+            for (const plugin of inOrder)
             {
                 for (const [name, event] of Object.entries(plugin.definition.emits ?? {}))
                 {
@@ -462,7 +480,7 @@ export function createKernel(options: Options): Kernel
                 }
             }
 
-            for (const plugin of started)
+            for (const plugin of inOrder)
             {
                 for (const [name, listener] of Object.entries(plugin.definition.listens ?? {}))
                 {
@@ -494,21 +512,21 @@ export function createKernel(options: Options): Kernel
             // contract says the route is protected and it is not.
             if (options.budget === undefined)
             {
-                const declared = [...routes.values()].filter(({ route }) => route.limit !== undefined);
+                const bounded = [...routes.values()].filter(({ route }) => route.limit !== undefined);
 
-                if (declared.length > 0)
+                if (bounded.length > 0)
                 {
-                    const named = declared.map(({ plugin, route }) => `${plugin}: ${route.method} ${route.path}`);
+                    const named = bounded.map(({ plugin, route }) => `${plugin}: ${route.method} ${route.path}`);
 
                     throw new KernelFault(
                         "INVALID_ROUTE",
-                        `${declared.length} ${declared.length === 1 ? "route declares a limit" : "routes declare limits"} and no budget was given to createKernel, so nothing would enforce them:\n${named.map((route) => `  - ${route}`).join("\n")}\nPass \`budget\`, or remove the limits.`,
-                        { plugin: declared[0]?.plugin ?? "" },
+                        `${bounded.length} ${bounded.length === 1 ? "route declares a limit" : "routes declare limits"} and no budget was given to createKernel, so nothing would enforce them:\n${named.map((route) => `  - ${route}`).join("\n")}\nPass \`budget\`, or remove the limits.`,
+                        { plugin: bounded[0]?.plugin ?? "" },
                     );
                 }
             }
 
-            for (const plugin of started)
+            for (const plugin of inOrder)
             {
                 await plugin.definition.setup?.(seenBy(plugin.name));
             }
@@ -568,7 +586,7 @@ export function createKernel(options: Options): Kernel
                 await Promise.allSettled([...inFlight]);
             }
 
-            for (const plugin of [...started].reverse())
+            for (const plugin of [...inOrder].reverse())
             {
                 try
                 {
@@ -590,6 +608,7 @@ export function createKernel(options: Options): Kernel
                 requires: route.requires ?? [],
                 public: route.public === true,
                 limit: route.limit,
+                accepts: route.accepts ?? "json",
                 reads: route.reads ?? [],
             })),
 
@@ -602,9 +621,9 @@ export function createKernel(options: Options): Kernel
                 return Promise.resolve(notServing);
             }
 
-            const found = routeFor(routes, incoming.method, incoming.path);
+            const match = routeFor(routes, incoming.method, incoming.path);
 
-            if (found === undefined)
+            if (match === undefined)
             {
                 return Promise.resolve(unknownRoute);
             }
@@ -614,8 +633,8 @@ export function createKernel(options: Options): Kernel
             // it. Taking both means a test reads like the request it stands
             // for rather than like the routing table.
             const answer = respond(
-                found.mounted,
-                { ...incoming, input: withPathParams(incoming.input, found.params) },
+                match.mounted,
+                { ...incoming, input: withPathParams(incoming.input, match.params) },
                 seenBy,
                 log,
                 options.budget,
@@ -630,6 +649,25 @@ export function createKernel(options: Options): Kernel
         },
 
         context: seenBy,
+
+        identify: identifying === undefined ? undefined : async (request: Request) =>
+        {
+            const ctx = seenBy(identifying.name);
+            const who = await identifying.definition.identifies?.(ctx as never, request);
+
+            if (who === undefined)
+            {
+                return undefined;
+            }
+
+            // Filled here rather than by whoever answered: a plugin that
+            // named its own permissions could grant itself any of them.
+            const permissions = granting === undefined
+                ? []
+                : await granting.definition.grants?.(seenBy(granting.name) as never, who) ?? [];
+
+            return { ...who, permissions };
+        },
 
         events: { failures: bus.failures },
 

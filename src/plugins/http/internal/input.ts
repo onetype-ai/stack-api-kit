@@ -1,8 +1,11 @@
+import type { Upload } from "./upload";
+
 /** What one request carries, before any schema has looked at it. */
 export type RequestInput = {
     params: Readonly<Record<string, string>>;
     query: Readonly<Record<string, string[]>>;
     body: unknown;
+    uploads?: Readonly<Record<string, Upload | Upload[]>>;
 };
 
 const UNSAFE: ReadonlySet<string> = new Set(["__proto__", "constructor", "prototype"]);
@@ -14,6 +17,10 @@ const UNSAFE: ReadonlySet<string> = new Set(["__proto__", "constructor", "protot
  * parameter is the one part of a request a router already matched: a body
  * claiming a different `id` than the path it was sent to is either confused
  * or deliberate, and either way the path is the request.
+ *
+ * A file wins over all of them. A form carrying both a text part and a file
+ * part under one name would otherwise let the text decide what the schema
+ * sees, which is a file field a caller can turn into a string.
  *
  * Nothing is coerced here. A schema saying a page is a number is the thing
  * that turns "2" into 2, and it is the only thing that should: a converter
@@ -62,6 +69,16 @@ export function input(request: RequestInput): Record<string, unknown>
         }
 
         merged[key] = value;
+    }
+
+    for (const [key, upload] of Object.entries(request.uploads ?? {}))
+    {
+        if (UNSAFE.has(key))
+        {
+            continue;
+        }
+
+        merged[key] = upload;
     }
 
     return merged;

@@ -1,9 +1,9 @@
-export { answer, Reply, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, Refusal } from "./plugins/kernel/api";
+export { answer, Reply, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, Refusal } from "./plugins/kernel/api";
 export type {
     Announcement,
     Answer,
     Budget,
-    Caller,
+    Identity,
     Command,
     Context,
     Definition,
@@ -21,6 +21,7 @@ export type {
     Listener,
     Log,
     Logger,
+    Measured,
     Method,
     ScopeFilter,
     Options,
@@ -43,13 +44,13 @@ export type {
 export { database, MigrationFault, createScopeFilter, outbox, schedule } from "./plugins/database/api";
 export type { Handle, DatabaseOptions, Source, Step, Store, Tables } from "./plugins/database/api";
 
-export { securityHeaders, requestId, serve } from "./plugins/http/api";
-export type { Server, ServerOptions } from "./plugins/http/api";
+export { securityHeaders, requestId, serve, cookieIn, SessionHeaders, isUpload, claimedName } from "./plugins/http/api";
+export type { Server, ServerOptions, SessionOptions, Upload } from "./plugins/http/api";
 
 export { dial, OutboundFault } from "./plugins/outbound/api";
 export type { DialerOptions } from "./plugins/outbound/api";
 
-export { limiter, equalsInConstantTime } from "./plugins/guard/api";
+export { limiter, unlimited, equalsInConstantTime } from "./plugins/guard/api";
 export type { Limiter, Verdict, Window } from "./plugins/guard/api";
 
 export { discover, start } from "./plugins/mount/api";

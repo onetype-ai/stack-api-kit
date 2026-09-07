@@ -2,14 +2,16 @@ import { answer, Reply, Refusal } from "./internal/answer";
 import { createKernel } from "./internal/kernel";
 import { defineCommand, defineListener, defineParticipant, definePlugin, defineRoute } from "./internal/define";
 import { KernelFault } from "./internal/faults";
+import { measure } from "./internal/measure";
 
-export { answer, Reply, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, Refusal };
+export { answer, Reply, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, Refusal };
+export type { Measured } from "./internal/measure";
 
 export type { Answer } from "./internal/answer";
 export type { FaultCode } from "./internal/faults";
 
 export type {
-    Caller,
+    Identity,
     Command,
     Context,
     Definition,

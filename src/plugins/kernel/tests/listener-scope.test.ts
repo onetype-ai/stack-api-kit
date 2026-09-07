@@ -13,7 +13,7 @@ const notes = sqliteTable("acting_notes", {
     body: text("body").notNull(),
 });
 
-function recorder(recorded: string[]): Plugin[]
+function recorder(heard: string[]): Plugin[]
 {
     return [
         definePlugin("source", {
@@ -39,7 +39,7 @@ function recorder(recorded: string[]): Plugin[]
                         const { shopId } = payload as { shopId: string };
                         const acting = ctx.forScope(shopId);
 
-                        recorded.push((acting.stamped("notes") as { shopId: string }).shopId);
+                        heard.push((acting.stamped("notes") as { shopId: string }).shopId);
                     },
                 },
             },
@@ -63,10 +63,10 @@ describe("a listener acting for a scope", () =>
     test("reaches the scope its payload named", async () =>
     {
         const store = startServer();
-        const recorded: string[] = [];
+        const heard: string[] = [];
 
         const kernel = createKernel({
-            plugins: recorder(recorded),
+            plugins: recorder(heard),
             db: store,
             ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
         });
@@ -77,7 +77,7 @@ describe("a listener acting for a scope", () =>
 
         await new Promise((done) => setImmediate(done));
 
-        expect(recorded).toEqual(["acme"]);
+        expect(heard).toEqual(["acme"]);
 
         await kernel.stop();
         store.close();

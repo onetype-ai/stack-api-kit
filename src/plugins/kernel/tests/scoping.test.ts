@@ -5,7 +5,7 @@ import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { database } from "../../database/api";
 import { createKernel, definePlugin, Refusal } from "../api";
 
-import type { Caller, Plugin } from "../api";
+import type { Identity, Plugin } from "../api";
 
 const notes = sqliteTable("billing_notes", {
     id: text("id").primaryKey(),
@@ -61,7 +61,7 @@ function startServer()
     return store;
 }
 
-function shopCaller(tenant?: string): Caller
+function shopCaller(tenant?: string): Identity
 {
     return { id: "u1", permissions: [], claims: tenant === undefined ? {} : { tenantId: tenant } };
 }

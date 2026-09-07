@@ -65,7 +65,7 @@ export function findImportViolations(root: string): ImportViolation[]
 function withTestDependencies(plugins: readonly PluginImports[]): PluginImports[]
 {
     const answers = new Map(plugins.map((plugin) => [plugin.name, plugin.answers]));
-    const declared = new Map(plugins.map((plugin) => [plugin.name, plugin.declared]));
+    const dependsOn = new Map(plugins.map((plugin) => [plugin.name, plugin.declared]));
 
     return plugins.map((plugin) =>
     {
@@ -73,27 +73,27 @@ function withTestDependencies(plugins: readonly PluginImports[]): PluginImports[
         // depends on, and then whatever those need in turn. Seeding only from
         // what it hears leaves a three-deep dependency chain untestable
         // without writing a dependency that is not one.
-        const walked = new Set([...plugin.answers, ...plugin.declared]);
-        const walking = [...walked];
+        const reachable = new Set([...plugin.answers, ...plugin.declared]);
+        const queue = [...reachable];
 
-        while (walking.length > 0)
+        while (queue.length > 0)
         {
-            const next = walking.pop() as string;
+            const next = queue.pop() as string;
 
-            for (const set of [answers.get(next), declared.get(next)])
+            for (const set of [answers.get(next), dependsOn.get(next)])
             {
                 for (const further of set ?? [])
                 {
-                    if (further !== plugin.name && !walked.has(further))
+                    if (further !== plugin.name && !reachable.has(further))
                     {
-                        walked.add(further);
-                        walking.push(further);
+                        reachable.add(further);
+                        queue.push(further);
                     }
                 }
             }
         }
 
-        return { ...plugin, answers: walked };
+        return { ...plugin, answers: reachable };
     });
 }
 
@@ -101,7 +101,7 @@ function read(root: string, name: string, names: readonly string[]): PluginImpor
 {
     const others = new Set(names.filter((other) => other !== name));
     const contract = readFileSync(join(root, name, "plugin.ts"), "utf8");
-    const found = /dependsOn:\s*\[([^\]]*)\]/.exec(contract);
+    const dependsOn = /dependsOn:\s*\[([^\]]*)\]/.exec(contract);
 
     // An event or hook key is "<plugin>.<something>", so what a plugin
     // answers is the first segment of every key it listens to or joins.
@@ -127,7 +127,7 @@ function read(root: string, name: string, names: readonly string[]): PluginImpor
 
     return {
         name,
-        declared: new Set(found === null ? [] : [...found[1]!.matchAll(/"([^"]+)"/g)].map((match) => match[1]!)),
+        declared: new Set(dependsOn === null ? [] : [...dependsOn[1]!.matchAll(/"([^"]+)"/g)].map((match) => match[1]!)),
         answers: owners,
         crossings: files(root, name).flatMap(({ path, source }) => edgesFrom(name, path, source, others)),
     };
@@ -168,21 +168,21 @@ function edgesFrom(name: string, path: string, source: string, others: ReadonlyS
         }
 
         const parts = [name, ...path.split("/").slice(0, -1), ...specifier.split("/")];
-        const walked: string[] = [];
+        const resolved: string[] = [];
 
         for (const part of parts)
         {
             if (part === "..")
             {
-                walked.pop();
+                resolved.pop();
             }
             else if (part !== ".")
             {
-                walked.push(part);
+                resolved.push(part);
             }
         }
 
-        const target = walked[0];
+        const target = resolved[0];
 
         return target !== undefined && others.has(target) ? [{ from: path, to: target, specifier }] : [];
     });
@@ -251,11 +251,22 @@ function deep(plugins: readonly PluginImports[]): ImportViolation[]
     );
 }
 
+/**
+ * Plugins that import each other in a loop, tests excluded.
+ *
+ * A test boots what its plugin hears, and an emitter may depend on the plugin
+ * that hears it: that is a cycle on paper and never at runtime, since nothing
+ * a deployment loads imports the other way. Counting tests reported it anyway,
+ * which sent an author redesigning an architecture that was already sound.
+ */
 function findCycles(plugins: readonly PluginImports[]): ImportViolation[]
 {
-    const edges = new Map(plugins.map((plugin) => [plugin.name, new Set(plugin.crossings.map((crossing) => crossing.to))]));
-    const found: ImportViolation[] = [];
-    const walking = new Set<string>();
+    const edges = new Map(plugins.map((plugin) => [
+        plugin.name,
+        new Set(plugin.crossings.filter((crossing) => !isTestPath(crossing.from)).map((crossing) => crossing.to)),
+    ]));
+    const loops: ImportViolation[] = [];
+    const open = new Set<string>();
     const done = new Set<string>();
 
     function walk(name: string, trail: readonly string[]): void
@@ -265,9 +276,9 @@ function findCycles(plugins: readonly PluginImports[]): ImportViolation[]
             return;
         }
 
-        if (walking.has(name))
+        if (open.has(name))
         {
-            found.push({
+            loops.push({
                 rule: "cycle",
                 message: `Plugins import each other in a loop: ${[...trail.slice(trail.indexOf(name)), name].join(" -> ")}.`,
             });
@@ -275,14 +286,14 @@ function findCycles(plugins: readonly PluginImports[]): ImportViolation[]
             return;
         }
 
-        walking.add(name);
+        open.add(name);
 
         for (const target of edges.get(name) ?? [])
         {
             walk(target, [...trail, name]);
         }
 
-        walking.delete(name);
+        open.delete(name);
         done.add(name);
     }
 
@@ -291,5 +302,5 @@ function findCycles(plugins: readonly PluginImports[]): ImportViolation[]
         walk(one.name, []);
     }
 
-    return found;
+    return loops;
 }

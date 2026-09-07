@@ -193,7 +193,7 @@ describe("migrations", () =>
         store.close();
     });
 
-    test("leaves the ones before a failure applied and recorded", () =>
+    test("leaves the ones before a failure applied and heard", () =>
     {
         const store = database({ file: ":memory:", tables: { items: { items } } });
         const from = folder({ "0001-init.sql": CREATE, "0002-bad.sql": "THIS IS NOT SQL" });

@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 
 import { Reply, createKernel, definePlugin } from "../../kernel/api";
-import type { Caller, Definition, Kernel } from "../../kernel/api";
+import type { Identity, Definition, Kernel } from "../../kernel/api";
 import { requestId, serve, type ServerOptions } from "../api";
 
 async function startServer(found: Partial<Definition> = {}, options: Partial<ServerOptions> = {}): Promise<ReturnType<typeof serve>>
@@ -530,7 +530,7 @@ describe("headers a route declared", () =>
     });
 });
 
-describe("callers", () =>
+describe("identities", () =>
 {
     test("answers 401 when identify throws rather than 500", async () =>
     {
@@ -558,7 +558,7 @@ describe("callers", () =>
 
     test("passes the caller identify returned to the kernel", async () =>
     {
-        const caller: Caller = { id: "u1", permissions: ["items.read"], claims: {} };
+        const identity: Identity = { id: "u1", permissions: ["items.read"], claims: {} };
         const app = await startServer({
             permissions: { "items.read": { describe: "See items." } },
             routes: [{
@@ -568,9 +568,9 @@ describe("callers", () =>
                 requires: ["items.read"],
                 input: z.object({}),
                 output: z.object({ id: z.string() }),
-                handle: (_input, ctx) => ({ id: ctx.caller?.id ?? "" }),
+                handle: (_input, ctx) => ({ id: ctx.identity?.id ?? "" }),
             }],
-        }, { identify: () => caller });
+        }, { identify: () => identity });
 
         const answer = await app.request("/items");
 

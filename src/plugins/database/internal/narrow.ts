@@ -17,16 +17,16 @@ export function createScopeFilter(owned: Readonly<Record<string, Readonly<Record
     {
         // Table names are unique across the store, because a plugin's tables
         // live in its own namespace and the kernel checked that at startup.
-        const found = Object.values(owned)
+        const columns = Object.values(owned)
             .map((tables) => tables[table])
-            .find((columns) => columns !== undefined) as Column | undefined;
+            .find((held) => held !== undefined) as Column | undefined;
 
-        if (found === undefined)
+        if (columns === undefined)
         {
             throw new Error(`Cannot scope "${table}": no table of that name was given to the store.`);
         }
 
-        const wanted = found[column];
+        const wanted = columns[column];
 
         if (wanted === undefined)
         {

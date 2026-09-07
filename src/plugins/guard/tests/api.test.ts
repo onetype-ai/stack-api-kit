@@ -9,19 +9,19 @@ describe("limiting", () =>
         const limit = limiter();
         const window = { requests: 3, seconds: 60 };
 
-        const verdicts = [1, 2, 3, 4].map(() => limit.take("u1", window));
+        const verdicts = [1, 2, 3, 4].map(() => limit.spend("u1", window));
 
         expect(verdicts.map((verdict) => verdict.allowed)).toEqual([true, true, true, false]);
     });
 
-    test("counts each caller apart from the others", () =>
+    test("counts each identity apart from the others", () =>
     {
         const limit = limiter();
         const window = { requests: 1, seconds: 60 };
 
-        limit.take("u1", window);
+        limit.spend("u1", window);
 
-        expect(limit.take("u2", window).allowed).toBe(true);
+        expect(limit.spend("u2", window).allowed).toBe(true);
     });
 
     test("starts a new window once the old one passed", () =>
@@ -30,10 +30,10 @@ describe("limiting", () =>
         const limit = limiter(() => clock);
         const window = { requests: 1, seconds: 60 };
 
-        limit.take("u1", window);
+        limit.spend("u1", window);
         clock = 61_000;
 
-        expect(limit.take("u1", window).allowed).toBe(true);
+        expect(limit.spend("u1", window).allowed).toBe(true);
     });
 
     test("says how long until the window resets", () =>
@@ -41,10 +41,10 @@ describe("limiting", () =>
         let clock = 0;
         const limit = limiter(() => clock);
 
-        limit.take("u1", { requests: 1, seconds: 60 });
+        limit.spend("u1", { requests: 1, seconds: 60 });
         clock = 30_000;
 
-        expect(limit.take("u1", { requests: 1, seconds: 60 }).resetsIn).toBe(30);
+        expect(limit.spend("u1", { requests: 1, seconds: 60 }).resetsIn).toBe(30);
     });
 
     test("drops windows that have passed rather than growing forever", () =>
@@ -52,8 +52,8 @@ describe("limiting", () =>
         let clock = 0;
         const limit = limiter(() => clock);
 
-        limit.take("u1", { requests: 1, seconds: 60 });
-        limit.take("u2", { requests: 1, seconds: 60 });
+        limit.spend("u1", { requests: 1, seconds: 60 });
+        limit.spend("u2", { requests: 1, seconds: 60 });
 
         expect(limit.size()).toBe(2);
 

@@ -65,18 +65,18 @@ function read(plugin: string, from: string, name: string): Step
  */
 export function migrationSteps(source: Source): Step[]
 {
-    let found: string[];
+    let names: string[];
 
     try
     {
-        found = readdirSync(source.from);
+        names = readdirSync(source.from);
     }
     catch
     {
         throw new MigrationFault(`"${source.plugin}" declares migrations at "${source.from}", which cannot be read.`, source.plugin);
     }
 
-    const sql = found.filter((name) => name.endsWith(".sql"));
+    const sql = names.filter((name) => name.endsWith(".sql"));
 
     for (const name of sql)
     {
@@ -114,20 +114,20 @@ export function migrationSteps(source: Source): Step[]
 export function migrate(connection: Database.Database, sources: readonly Source[]): Step[] {
     connection.exec(LEDGER);
 
-    const seen = new Map<string, string>();
+    const applied = new Map<string, string>();
 
     for (const row of connection.prepare("SELECT plugin, name, hash FROM _migrations").all() as { plugin: string; name: string; hash: string }[])
     {
-        seen.set(`${row.plugin}/${row.name}`, row.hash);
+        applied.set(`${row.plugin}/${row.name}`, row.hash);
     }
 
-    const ran: Step[] = [];
+    const steps: Step[] = [];
 
     for (const source of sources)
     {
         for (const step of migrationSteps(source))
         {
-            const before = seen.get(`${step.plugin}/${step.name}`);
+            const before = applied.get(`${step.plugin}/${step.name}`);
 
             if (before === step.hash)
             {
@@ -165,9 +165,9 @@ export function migrate(connection: Database.Database, sources: readonly Source[
                 );
             }
 
-            ran.push(step);
+            steps.push(step);
         }
     }
 
-    return ran;
+    return steps;
 }

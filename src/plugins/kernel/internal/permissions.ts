@@ -1,4 +1,4 @@
-import type { Caller } from "./contract";
+import type { Identity } from "./contract";
 
 /**
  * What the caller of this request may do.
@@ -9,11 +9,11 @@ import type { Caller } from "./contract";
  * A project decides what fills this. The kernel only compares it against what
  * a route declared, and never grants anything of its own.
  */
-export function permissions(caller: () => Caller | undefined)
+export function createPermissions(identity: () => Identity | undefined)
 {
     const granted = (): ReadonlySet<string> =>
     {
-        return new Set(caller()?.permissions ?? []);
+        return new Set(identity()?.permissions ?? []);
     };
 
     return {
@@ -30,7 +30,7 @@ export function permissions(caller: () => Caller | undefined)
         },
 
         /**
-         * What the project attached to this caller: a tenant, a role, a
+         * What the project attached to this identity: a tenant, a role, a
          * session. Read back as it was given, and never interpreted here.
          *
          * The kernel cannot know what a tenant means, so it carries the value
@@ -39,7 +39,7 @@ export function permissions(caller: () => Caller | undefined)
          */
         claims: (): Readonly<Record<string, unknown>> =>
         {
-            return caller()?.claims ?? {};
+            return identity()?.claims ?? {};
         },
     };
 }

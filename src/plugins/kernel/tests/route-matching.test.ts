@@ -124,7 +124,7 @@ describe("a name that lives on every object", () =>
             method: "GET",
             path: "/billing/probe",
             input: {},
-            caller: { id: "one", claims: { shopId: "shop-1" }, permissions: [] },
+            identity: { id: "one", claims: { shopId: "shop-1" }, permissions: [] },
         });
 
         expect(answer.status).toBe(500);

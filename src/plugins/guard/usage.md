@@ -16,7 +16,7 @@ tells an attacker, in how long it took, how many characters were correct.
 ```ts
 const limit = limiter();
 
-const verdict = limit.take(`${caller.id}:${route.path}`, { requests: 60, seconds: 60 });
+const verdict = limit.spend(`${identity.id}:${route.path}`, { requests: 60, seconds: 60 });
 
 if (!verdict.allowed)
 {
@@ -31,11 +31,14 @@ if (!equalsInConstantTime(sent, expected))
 }
 ```
 
-- `take` counts one request in a fixed window and answers whether it is
+- `spend` counts one request against a fixed window and answers whether it is
   allowed, what is left, and when the window resets.
 - A window holds one counter per key rather than one entry per request, so a
   flood costs no memory in proportion to itself.
 - `sweep` drops windows that have passed; the plugin runs it on a timer.
+- `unlimited()` is the same shape and counts nothing, which is what
+  `start({ limits: false })` runs on. The numbers stay in the routes either
+  way: what changes is whether anything counts them, and startup says so.
 - `equalsInConstantTime` compares in constant time and answers false on a length difference
   rather than throwing.
 

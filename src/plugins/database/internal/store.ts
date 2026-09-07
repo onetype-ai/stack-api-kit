@@ -143,11 +143,11 @@ export function store(holding: StoreParts)
          * better-sqlite3 is synchronous, so one statement cannot interleave
          * with another. What can interleave is a statement issued while an
          * async transaction is parked on an await: it joins that transaction
-         * and is undone by its rollback, having told its caller it succeeded.
+         * and is undone by its rollback, having told its identity it succeeded.
          *
          * The kernel routes every non-transactional query through here, so
          * that window does not exist. It always queues: `depth` says a
-         * transaction is open somewhere, never that this caller is the one
+         * transaction is open somewhere, never that this identity is the one
          * inside it, and work that is genuinely inside one reaches the
          * database through the transaction's own handle instead.
          */

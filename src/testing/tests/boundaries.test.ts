@@ -42,7 +42,7 @@ describe("a plugin reaching another", () =>
 {
     test("passes when it is declared and goes through the public index", () =>
     {
-        const found = findImportViolations(
+        const problems = findImportViolations(
             tree({
                 auth: { "plugin.ts": contractFor("auth") },
                 demo: {
@@ -52,12 +52,12 @@ describe("a plugin reaching another", () =>
             }),
         );
 
-        expect(found).toEqual([]);
+        expect(problems).toEqual([]);
     });
 
     test("refuses an import nothing declared", () =>
     {
-        const found = findImportViolations(
+        const problems = findImportViolations(
             tree({
                 auth: { "plugin.ts": contractFor("auth") },
                 demo: {
@@ -67,13 +67,13 @@ describe("a plugin reaching another", () =>
             }),
         );
 
-        expect(found.map((violation) => violation.rule)).toContain("undeclared");
-        expect(found[0]?.message).toMatch(/without declaring "auth"/);
+        expect(problems.map((violation) => violation.rule)).toContain("undeclared");
+        expect(problems[0]?.message).toMatch(/without declaring "auth"/);
     });
 
     test("refuses a reach past the public index", () =>
     {
-        const found = findImportViolations(
+        const problems = findImportViolations(
             tree({
                 auth: { "plugin.ts": contractFor("auth") },
                 demo: {
@@ -83,12 +83,12 @@ describe("a plugin reaching another", () =>
             }),
         );
 
-        expect(found.map((violation) => violation.rule)).toContain("deep");
+        expect(problems.map((violation) => violation.rule)).toContain("deep");
     });
 
     test("refuses a relative path that climbs into another plugin", () =>
     {
-        const found = findImportViolations(
+        const problems = findImportViolations(
             tree({
                 auth: { "plugin.ts": contractFor("auth"), "types/Session.ts": "export type Session = { id: string };" },
                 demo: {
@@ -98,13 +98,13 @@ describe("a plugin reaching another", () =>
             }),
         );
 
-        expect(found.map((violation) => violation.rule)).toContain("deep");
-        expect(found.some((violation) => violation.message.includes("../../auth/types/Session"))).toBe(true);
+        expect(problems.map((violation) => violation.rule)).toContain("deep");
+        expect(problems.some((violation) => violation.message.includes("../../auth/types/Session"))).toBe(true);
     });
 
     test("ignores a relative import inside one plugin", () =>
     {
-        const found = findImportViolations(
+        const problems = findImportViolations(
             tree({
                 demo: {
                     "plugin.ts": contractFor("demo"),
@@ -114,7 +114,7 @@ describe("a plugin reaching another", () =>
             }),
         );
 
-        expect(found).toEqual([]);
+        expect(problems).toEqual([]);
     });
 });
 
@@ -122,28 +122,65 @@ describe("cycles", () =>
 {
     test("names a loop between two plugins", () =>
     {
-        const found = findImportViolations(
+        const problems = findImportViolations(
             tree({
                 a: { "plugin.ts": contractFor("a", ["b"]), "use.ts": 'import { b } from "@plugins/b";' },
                 b: { "plugin.ts": contractFor("b", ["a"]), "use.ts": 'import { a } from "@plugins/a";' },
             }),
         );
 
-        const cycle = found.find((violation) => violation.rule === "cycle");
+        const cycle = problems.find((violation) => violation.rule === "cycle");
 
         expect(cycle?.message).toMatch(/a -> b -> a|b -> a -> b/);
     });
 
     test("a one-way dependency is not a cycle", () =>
     {
-        const found = findImportViolations(
+        const problems = findImportViolations(
             tree({
                 auth: { "plugin.ts": contractFor("auth") },
                 demo: { "plugin.ts": contractFor("demo", ["auth"]), "use.ts": 'import { auth } from "@plugins/auth";' },
             }),
         );
 
-        expect(found.filter((violation) => violation.rule === "cycle")).toEqual([]);
+        expect(problems.filter((violation) => violation.rule === "cycle")).toEqual([]);
+    });
+
+    // A listener boots what it hears, and the emitter may depend on it: that
+    // is a loop on paper and never at runtime, since nothing a deployment
+    // loads imports the other way.
+    test("and neither is a test booting the plugin whose events it hears", () =>
+    {
+        const problems = findImportViolations(
+            tree({
+                activity: {
+                    "plugin.ts": `${contractFor("activity")}\nlistens: { "admin.viewed": {} }`,
+                    "tests/setup.ts": 'import admin from "@plugins/admin/plugin";',
+                },
+                admin: {
+                    "plugin.ts": `${contractFor("admin", ["activity"])}\nemits: { "admin.viewed": {} }`,
+                    "use.ts": 'import { Activity } from "@plugins/activity";',
+                },
+            }),
+        );
+
+        expect(problems.filter((violation) => violation.rule === "cycle")).toEqual([]);
+    });
+
+    test("but a loop through production code is still one, whatever the tests do", () =>
+    {
+        const problems = findImportViolations(
+            tree({
+                a: {
+                    "plugin.ts": contractFor("a", ["b"]),
+                    "use.ts": 'import { b } from "@plugins/b";',
+                    "tests/setup.ts": 'import b from "@plugins/b/plugin";',
+                },
+                b: { "plugin.ts": contractFor("b", ["a"]), "use.ts": 'import { a } from "@plugins/a";' },
+            }),
+        );
+
+        expect(problems.filter((violation) => violation.rule === "cycle").length).toBeGreaterThan(0);
     });
 });
 

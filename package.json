@@ -1,6 +1,6 @@
 {
     "name": "@onetype/stack-api-kit",
-    "version": "3.0.1",
+    "version": "4.0.0",
     "type": "module",
     "sideEffects": false,
     "exports": {
@@ -19,9 +19,9 @@
         "typecheck": "tsc --noEmit",
         "boundaries": "node tools/boundaries.mjs",
         "docs": "node tools/docs.mjs",
-        "build": "tsup",
-        "prepublishOnly": "tools/check.sh && tsup",
-        "prepack": "tsup"
+        "build": "tsup && node tools/name-types.mjs",
+        "prepublishOnly": "tools/check.sh && tsup && node tools/name-types.mjs",
+        "prepack": "tsup && node tools/name-types.mjs"
     },
     "dependencies": {
         "zod": "^4.5.4"

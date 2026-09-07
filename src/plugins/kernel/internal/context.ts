@@ -1,22 +1,22 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
-import type { Caller, Context, Outbound, Plugin } from "./contract";
+import type { Identity, Context, Outbound, Plugin } from "./contract";
 import type { events, Pending } from "./events";
 import { Refusal } from "./answer";
 import { KernelFault } from "./faults";
 import type { hooks } from "./hooks";
-import { permissions } from "./permissions";
+import { createPermissions } from "./permissions";
 import type { Dialer, ScopeFilter, Outbox, Schedule, Storage } from "./store";
 
 /** Everything a context is built from. One object, so the shape is one line. */
 export type Wiring = {
     known: ReadonlyMap<string, Plugin>;
-    parsed: ReadonlyMap<string, unknown>;
+    settings: ReadonlyMap<string, unknown>;
     /**
      * Which transaction the running code is inside, if any.
      *
      * Per call stack rather than per process: a field would say a transaction
-     * is open somewhere, never that *this* caller is the one inside it, so a
+     * is open somewhere, never that *this* identity is the one inside it, so a
      * request emitting outside any transaction would have its event held
      * against a stranger's, and lost when that stranger rolled back.
      */
@@ -44,7 +44,7 @@ export type Wiring = {
     /** How a declared scope becomes a condition. */
     narrow: ScopeFilter | undefined;
     log: (level: "debug" | "info" | "warn" | "error", plugin: string, line: string, about?: Readonly<Record<string, unknown>>) => void;
-    run: (command: string, input: unknown, caller?: Caller) => Promise<void>;
+    run: (command: string, input: unknown, identity?: Identity) => Promise<void>;
 };
 
 /** Where in a transaction a context sits, if it is in one at all. */
@@ -95,17 +95,17 @@ function dialable(url: string): boolean
 }
 
 /**
- * Builds what one plugin sees, for one caller.
+ * Builds what one plugin sees, for one identity.
  *
  * Built per request rather than kept: one kernel answers every request, and a
  * context holding a caller would hand the next request the previous one.
  */
-export function context(wiring: Wiring, plugin: string, caller?: Caller, within?: OpenTx, headers: Readonly<Record<string, string>> = {}, acting?: string): Context
+export function context(wiring: Wiring, plugin: string, identity?: Identity, within?: OpenTx, headers: Readonly<Record<string, string>> = {}, acting?: string): Context
 {
-    const may = permissions(() => caller);
+    const permissions = createPermissions(() => identity);
     const seenBy = (plugin: string, inside = within): Context =>
     {
-        return context(wiring, plugin, caller, inside, headers, acting);
+        return context(wiring, plugin, identity, inside, headers, acting);
     };
 
     /** What a listener is handed: this plugin, and nobody calling. */
@@ -114,7 +114,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
         return context(wiring, plugin, undefined, undefined, {});
     };
 
-    // Built lazily and once per context: a service reads ctx.caller, so one
+    // Built lazily and once per context: a service reads ctx.identity, so one
     // made at startup would answer every request as nobody. A plugin whose
     // services are never touched builds none.
     const built = new Map<string, unknown>();
@@ -138,7 +138,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
     };
 
     /**
-     * What a declared scope resolves to for this caller.
+     * What a declared scope resolves to for this identity.
      *
      * Shared by `scoped` and `stamped`, because a read and a write must agree
      * about whose rows these are: two lookups is two chances to disagree.
@@ -170,7 +170,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
         }
 
         // Refused, never defaulted: a default tenant is everybody's.
-        const tenant = caller === undefined ? acting : caller.claims[scope.claim];
+        const tenant = identity === undefined ? acting : identity.claims[scope.claim];
 
         if (typeof tenant !== "string" || tenant.trim() === "")
         {
@@ -186,14 +186,14 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
 
     const ctx: Context = {
         name: plugin,
-        config: wiring.parsed.get(plugin) ?? wiring.config[plugin],
+        config: wiring.settings.get(plugin) ?? wiring.config[plugin],
 
         get services(): unknown
         {
             return of(plugin);
         },
 
-        caller,
+        identity,
         headers,
 
         now: wiring.now,
@@ -356,7 +356,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
             emit: (event, payload) =>
             {
                 // Checked here even when it is deferred: a payload rejected after
-                // a commit, from a stack with no caller in it, is one nobody
+                // a commit, from a stack with no identity in it, is one nobody
                 // can trace back to what emitted it.
                 const payloadChecked = wiring.bus.checkDeclared(plugin, event, payload);
 
@@ -375,7 +375,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
                 }
 
                 // On nobody's behalf, always. A listener that inherited the
-                // emitter's caller would work in one process and answer as
+                // emitter's identity would work in one process and answer as
                 // nobody after a restart, because an outbox keeps a payload
                 // and not a request. Whose work this was travels in the
                 // payload or not at all.
@@ -390,12 +390,12 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
             },
         },
 
-        permissions: may,
+        permissions,
 
         commands: {
             run: (command, input) =>
             {
-                return wiring.run(command, input, caller);
+                return wiring.run(command, input, identity);
             },
 
             later: (command, input, inSeconds) =>
@@ -449,7 +449,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
             // Only where nobody is calling. Inside a request the scope is
             // decided by who is asking, and letting a handler name another
             // is how a caller reaches rows that are not theirs.
-            if (caller !== undefined)
+            if (identity !== undefined)
             {
                 throw new KernelFault(
                     "OUT_OF_SCOPE",
@@ -488,9 +488,9 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
 
         use: <Reached,>(name: string): Reached =>
         {
-            const declared = wiring.known.get(plugin)?.definition.dependsOn ?? [];
+            const dependsOn = wiring.known.get(plugin)?.definition.dependsOn ?? [];
 
-            if (name !== plugin && !declared.includes(name))
+            if (name !== plugin && !dependsOn.includes(name))
             {
                 throw new KernelFault(
                     "UNDECLARED_DEPENDENCY",
@@ -499,7 +499,7 @@ export function context(wiring: Wiring, plugin: string, caller?: Caller, within?
                 );
             }
 
-            // The other plugin's services, against this same caller. One
+            // The other plugin's services, against this same identity. One
             // built at startup would answer as whoever asked first.
             return of(name) as Reached;
         },

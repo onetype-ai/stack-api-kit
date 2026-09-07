@@ -11,12 +11,12 @@ default" holds under somebody trying.
 
 ## Postgres
 
-`start` already takes a store, so this is a plugin nobody has written. It
-answers the two costs SQLite imposes: one writer for the whole process, and
-ordering that has to happen in a service because SQL sorts by code point.
+`start` takes a `Store` as readily as a path, and a store that is not SQLite
+is proved by a test: the kernel asks for `of` and `tx` and never learns which
+it got. What nobody has written is the store itself.
 
-Until it exists, one process holds one database, which is fine for an isolated
-environment and not for anything sharing one.
+It answers the two costs SQLite imposes: one writer for the whole process, and
+ordering that has to happen in a service because SQL sorts by code point.
 
 ## A limiter more than one process can share
 
@@ -37,3 +37,13 @@ one process is the deployment; wrong the moment it is not.
   participant a dependency without saying so.
 - **Error messages are English.** The kit has no locale; whoever needs another
   translates a `Refusal` by its `code`.
+- **A route without a `limit` has none, and nothing says so.** Measured on the
+  one project built here: 77 of 77 routes carry one, public ones included. The
+  kit cannot know the right number for somebody's route, and a check that
+  shouted at every deliberately unbounded one would be worse than none. The
+  opposite is caught: a declared limit with no budget refuses the boot.
+- **A budget counts by one key.** `identityId ?? from`, where the project
+  writes `from`: an address, an address and an email, whatever it decides. A
+  sign-in counted per address locks an office behind one of them, which is
+  real — and a decision about who the users are, not something the kit should
+  settle.
