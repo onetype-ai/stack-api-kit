@@ -1,0 +1,1 @@
+CREATE TABLE holders (id TEXT PRIMARY KEY);

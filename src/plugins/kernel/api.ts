@@ -3,8 +3,9 @@ import { createKernel } from "./internal/kernel";
 import { defineCommand, defineListener, defineParticipant, definePlugin, defineRoute } from "./internal/define";
 import { KernelFault } from "./internal/faults";
 import { measure } from "./internal/measure";
+import { order } from "./internal/order";
 
-export { answer, Reply, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, Refusal };
+export { answer, Reply, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, order, Refusal };
 export type { Measured } from "./internal/measure";
 
 export type { Answer } from "./internal/answer";

@@ -1,6 +1,6 @@
 import { database, noStore } from "../../database/api";
 import { limiter, unlimited } from "../../guard/api";
-import { createKernel } from "../../kernel/api";
+import { createKernel, order } from "../../kernel/api";
 import { dial } from "../../outbound/api";
 import { serve } from "../../http/api";
 import type { DatabaseOptions, Store } from "../../database/api";
@@ -51,7 +51,9 @@ export async function start(starting: StartOptions): Promise<RunningApp>
     // DatabaseOptions has a file.
     const store = storeFor(starting.database, withTables);
 
-    const migrations = starting.plugins
+    // In dependency order, so a plugin's tables exist before one depending on
+    // it references them. The same order the kernel starts them in.
+    const migrations = order(new Map(starting.plugins.map((plugin) => [plugin.name, plugin])))
         .filter((plugin) => plugin.definition.migrations !== undefined)
         .map((plugin) => ({ plugin: plugin.name, from: plugin.definition.migrations as string }));
 
