@@ -70,7 +70,7 @@ export function validate(plugins: readonly Plugin[], config: Readonly<Record<str
     }
 
     checkCycles(by, say);
-    checkGranting(by, say);
+    checkGranting(by, owned, say);
 
     return wrong;
 }
@@ -83,7 +83,7 @@ export function validate(plugins: readonly Plugin[], config: Readonly<Record<str
  * a route nobody can reach: it starts, it answers 403 to everyone, and it is
  * found by trying rather than by starting.
  */
-function checkGranting(by: ReadonlyMap<string, Plugin>, say: Report): void
+function checkGranting(by: ReadonlyMap<string, Plugin>, owned: Ownership, say: Report): void
 {
     for (const key of ["identifies", "grants"] as const)
     {
@@ -102,9 +102,13 @@ function checkGranting(by: ReadonlyMap<string, Plugin>, say: Report): void
         return;
     }
 
-    // Only checkable against what the plugin said it may grant: grants itself
-    // runs per request, and startup has none.
-    const may = new Set(granting.definition.mayGrant ?? []);
+    // `grants` runs per request, so startup can only check the ceiling. A
+    // plugin that named one is held to it; one that named none may grant
+    // anything declared, so a plugin arriving later guards its own route
+    // without editing whoever holds identity.
+    const may = granting.definition.mayGrant === undefined
+        ? new Set(owned.permissions.keys())
+        : new Set(granting.definition.mayGrant);
 
     if (may.size === 0)
     {

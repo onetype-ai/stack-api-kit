@@ -33,22 +33,20 @@ One plugin says who is calling, one what it means:
 ```ts
 identifies: (ctx, request) => Sessions.of(ctx, request.headers.get("cookie")),
 grants: (ctx, who) => Roles.of(ctx, who.id),
-mayGrant: ["auth.self", "billing.manage"],
 ```
 
 `identifies` names no permission: `grants` fills them, so none grants itself.
-`mayGrant` is every one it answers; a route needing another refuses the boot.
-
+`mayGrant` is an optional ceiling; without one, any declared permission may be
+granted, so a plugin arriving later guards its own route.
 
 `measure("bytes")` marks a number with what it counts: bytes where gigabytes
 were wanted does not compile.
 
 ## Refuses
 
-At startup: a duplicate plugin, dependency cycle, name outside its namespace,
-duplicate route, event, hook, command, permission or `identifies`, reference
-to anything undeclared, permission nothing grants, bad path, unfilterable
-output, limit without budget, credential header.
+At startup: anything declared twice, named outside its own namespace, or
+referenced that nobody declared; a cycle; a route nobody can reach; a closed
+route with no budget; a handler reading a credential header.
 
 At runtime: an undeclared event or host, a bad payload, a missing permission,
-a caller past budget.
+a caller past budget. Every refusal names the plugin and the fix.

@@ -133,3 +133,77 @@ describe("two plugins answering one question", () =>
         expect((failed as Error).message).toContain("identifies");
     });
 });
+
+describe("a plugin that grants without saying what it may grant", () =>
+{
+    const open = definePlugin("auth", {
+        version: "1.0.0",
+        describe: "Knows who is calling, and names no permission it does not own.",
+        permissions: { "auth.self": { describe: "Read your own account." } },
+        identifies: (_ctx, request) =>
+        {
+            const key = request.headers.get("x-key");
+
+            return key === null ? undefined : { id: `person-${key}`, claims: { key } };
+        },
+        grants: () => ["auth.self", "billing.manage"],
+    } as Partial<Definition> as Definition);
+
+    const arriving = definePlugin("billing", {
+        version: "1.0.0",
+        describe: "Arrives later, and guards its own route.",
+        permissions: { "billing.manage": { describe: "Manage invoices." } },
+        routes: [{
+            method: "GET",
+            path: "/invoices",
+            describe: "Lists invoices.",
+            requires: ["billing.manage"],
+            input: z.object({}), output: z.object({ how: z.number() }),
+            handle: () => ({ how: 0 }),
+        }],
+    } as Partial<Definition> as Definition);
+
+    test("lets a plugin that arrives later guard a route with a permission of its own", async () =>
+    {
+        const kernel = createKernel({ plugins: [open, arriving] });
+
+        await kernel.start();
+
+        expect(kernel.started()).toBe(true);
+    });
+
+    test("and a route naming a permission nobody declared is refused, as it always was", async () =>
+    {
+        const lost = definePlugin("billing", {
+            version: "1.0.0",
+            describe: "Guards with a permission nothing owns.",
+            routes: [{
+                method: "GET",
+                path: "/invoices",
+                describe: "Lists invoices.",
+                requires: ["nowhere.manage"],
+                input: z.object({}), output: z.object({ how: z.number() }),
+                handle: () => ({ how: 0 }),
+            }],
+        } as Partial<Definition> as Definition);
+
+        const kernel = createKernel({ plugins: [open, lost] });
+
+        await expect(kernel.start()).rejects.toThrow(/nowhere.manage/);
+    });
+
+    test("while a plugin naming mayGrant is still held to exactly that list", async () =>
+    {
+        const narrow = definePlugin("auth", {
+            version: "1.0.0",
+            describe: "Grants only its own.",
+            permissions: { "auth.self": { describe: "Read your own account." } },
+            grants: () => ["auth.self"],
+            mayGrant: ["auth.self"],
+        } as Partial<Definition> as Definition);
+
+        const kernel = createKernel({ plugins: [narrow, arriving] });
+
+        await expect(kernel.start()).rejects.toThrow(/never grants/);
+    });
+});
