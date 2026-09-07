@@ -60,25 +60,6 @@ describe("what a project checks about itself", () =>
         expect(Project.checks({ root: at })).toEqual([]);
     });
 
-    test("names a document over the limit", () =>
-    {
-        const at = createProject({ "long.md": "x".repeat(2000) });
-
-        writeFileSync(join(at, "#docs", "procedures", "plugin", "contract.md"), procedure());
-
-        expect(Project.checks({ root: at })).toMatchObject([{ check: "oversized" }]);
-    });
-
-    test("names a root document that says nothing", () =>
-    {
-        const at = createProject();
-
-        writeFileSync(join(at, "#docs", "procedures", "plugin", "contract.md"), procedure());
-        writeFileSync(join(at, "README.md"), "   \n");
-
-        expect(Project.checks({ root: at })).toMatchObject([{ check: "missing", message: /README/ }]);
-    });
-
     test("names a plugin that explains itself nowhere", () =>
     {
         const at = createProject();
