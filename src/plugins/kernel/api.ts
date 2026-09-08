@@ -13,6 +13,7 @@ export type { FaultCode } from "./internal/faults";
 
 export type {
     Identity,
+    Channel,
     Command,
     Context,
     Definition,
@@ -29,6 +30,7 @@ export type {
     Participant,
     Permission,
     Plugin,
+    Reach,
     Route,
     Run,
     Schematic,
@@ -36,8 +38,8 @@ export type {
 
 export type { Failure } from "./internal/events";
 export type { Budget, Incoming, Outgoing } from "./internal/request";
-export type { Announcement, Dialer, ScopeFilter, Outbox, Schedule, Scheduled, Storage } from "./internal/store";
-export type { Kernel, Log, Options, Registration } from "./internal/kernel";
+export type { Announcement, Dialer, ScopeFilter, Outbox, Pushed, Schedule, Scheduled, Sockets, Storage } from "./internal/store";
+export type { Declared, Kernel, Log, Options, Registration } from "./internal/kernel";
 export type { ContractProblem } from "./internal/validate";
 
 /** The runtime, for a plugin that declared "kernel" in needs. */

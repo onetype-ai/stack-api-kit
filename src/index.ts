@@ -3,9 +3,11 @@ export type {
     Announcement,
     Answer,
     Budget,
+    Channel,
     Identity,
     Command,
     Context,
+    Declared,
     Definition,
     Description,
     Dialer,
@@ -33,10 +35,13 @@ export type {
     Participant,
     Permission,
     Plugin,
+    Pushed,
+    Reach,
     Registration,
     Route,
     Run,
     Schematic,
+    Sockets,
     Storage,
     ContractProblem,
 } from "./plugins/kernel/api";
@@ -44,8 +49,8 @@ export type {
 export { database, MigrationFault, createScopeFilter, outbox, schedule } from "./plugins/database/api";
 export type { Handle, DatabaseOptions, Source, Step, Store, Tables } from "./plugins/database/api";
 
-export { securityHeaders, requestId, serve, cookieIn, SessionHeaders, isUpload, claimedName } from "./plugins/http/api";
-export type { Server, ServerOptions, SessionOptions, Upload } from "./plugins/http/api";
+export { securityHeaders, requestId, serve, sockets, cookieIn, SessionHeaders, isUpload, claimedName } from "./plugins/http/api";
+export type { Joined, Server, ServerOptions, SessionOptions, Upload } from "./plugins/http/api";
 
 export { dial, OutboundFault } from "./plugins/outbound/api";
 export type { DialerOptions } from "./plugins/outbound/api";

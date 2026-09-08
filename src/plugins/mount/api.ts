@@ -1,6 +1,6 @@
 import type { DatabaseOptions, Store } from "../database/api";
-import type { ServerOptions } from "../http/api";
-import type { Budget, Dialer, Kernel, Logger, Plugin } from "../kernel/api";
+import type { Joined, ServerOptions } from "../http/api";
+import type { Budget, Dialer, Identity, Kernel, Logger, Plugin } from "../kernel/api";
 import type { DialerOptions } from "../outbound/api";
 import { discover } from "./internal/discover";
 import { start } from "./internal/start";
@@ -23,6 +23,14 @@ export type StartOptions = {
     database?: DatabaseOptions | Store | undefined;
 
     config?: Readonly<Record<string, unknown>> | undefined;
+
+    /**
+     * Whether the kernel holds open sockets, and what claim keeps them apart.
+     *
+     * Left out, `ctx.push` throws rather than going quiet: a message nobody
+     * could receive is worse unnoticed than refused.
+     */
+    sockets?: { claim: string } | true | undefined;
 
     /**
      * Who is calling.
@@ -93,6 +101,14 @@ export type RunningApp = {
 
     /** What a runtime serves: `export default { fetch }`. */
     fetch: (request: Request) => Response | Promise<Response>;
+
+    /**
+     * What a socket joins, when `sockets` was asked for.
+     *
+     * The kit holds no wire: whoever upgrades a request calls `joined` once
+     * for that connection and speaks to it through what comes back.
+     */
+    sockets: { joined: (who: Identity | undefined, send: (text: string) => void) => Joined } | undefined;
 
     stop: () => Promise<void>;
 };

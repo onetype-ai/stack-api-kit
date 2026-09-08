@@ -2,7 +2,7 @@ import { database, noStore } from "../../database/api";
 import { limiter, unlimited } from "../../guard/api";
 import { createKernel, order } from "../../kernel/api";
 import { dial } from "../../outbound/api";
-import { serve } from "../../http/api";
+import { serve, sockets } from "../../http/api";
 import type { DatabaseOptions, Store } from "../../database/api";
 import type { Plugin } from "../../kernel/api";
 import type { RunningApp, StartOptions } from "../api";
@@ -100,9 +100,16 @@ export async function start(starting: StartOptions): Promise<RunningApp>
     // narrow by would be a scope that does not scope.
     const scoping = starting.plugins.some((plugin) => plugin.definition.scope !== undefined);
 
+    // Built before the kernel it reads from, and handed a way back to it: a
+    // kernel holds this, so it cannot be given one already made.
+    const wires = starting.sockets === undefined
+        ? undefined
+        : sockets({ channels: () => kernel.channels() }, typeof starting.sockets === "object" ? starting.sockets.claim : undefined);
+
     const kernel = createKernel({
         plugins: starting.plugins,
         db: store,
+        ...(wires !== undefined && { sockets: wires }),
         ...(outbox !== undefined && { outbox }),
         ...(later !== undefined && { schedule: later }),
         ...(scoping && store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
@@ -142,6 +149,7 @@ export async function start(starting: StartOptions): Promise<RunningApp>
         store,
         app,
         fetch: app.fetch,
+        sockets: wires === undefined ? undefined : { joined: wires.joined },
 
         stop: async (): Promise<void> =>
         {

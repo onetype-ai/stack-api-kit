@@ -20,6 +20,7 @@ const api = await start({
     plugins: discover(import.meta.glob("./plugins/*/plugin.ts")),
     database: { file: "./data/app.db" },
     http: { origins: ["https://app.example.com"] },
+    sockets: true,
 });
 
 export default { fetch: api.fetch, port: 3000 };

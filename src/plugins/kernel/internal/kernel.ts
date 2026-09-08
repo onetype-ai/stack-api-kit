@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import { context, type Wiring } from "./context";
-import type { Identity, Context, Method, Plugin, Route } from "./contract";
+import type { Identity, Context, Method, Plugin, Reach, Route } from "./contract";
 import { events, type Failure, type Pending } from "./events";
 import { KernelFault } from "./faults";
 import { hooks } from "./hooks";
@@ -95,6 +95,14 @@ export type Options = {
 };
 
 /** A route, and the plugin it came from. */
+/** One channel a plugin declared, as a reader of the api sees it. */
+export type Declared = {
+    plugin: string;
+    channel: string;
+    reach: Reach;
+    requires: readonly string[];
+};
+
 export type Registration = {
     plugin: string;
     method: Method;
@@ -118,6 +126,9 @@ export type Kernel = {
     started: () => boolean;
 
     routes: () => readonly Registration[];
+
+    /** Every channel a plugin declared, and what it takes to hear one. */
+    channels: () => readonly Declared[];
     handle: (incoming: Incoming) => Promise<Outgoing>;
 
     context: (plugin: string, identity?: Identity) => Context;
@@ -615,6 +626,15 @@ export function createKernel(options: Options): Kernel
                 accepts: route.accepts ?? "json",
                 reads: route.reads ?? [],
             })),
+
+        channels: (): readonly Declared[] =>
+            [...known.values()].flatMap((plugin) =>
+                Object.entries(plugin.definition.channels ?? {}).map(([channel, declared]) => ({
+                    plugin: plugin.name,
+                    channel,
+                    reach: declared.reach,
+                    requires: declared.requires ?? [],
+                }))),
 
         handle: (incoming: Incoming): Promise<Outgoing> =>
         {
