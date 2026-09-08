@@ -16,5 +16,5 @@ test("and it names what it does take", async () =>
     const plugin = definePlugin("thing", { version: "1.0.0", describe: "A thing." });
 
     await expect(startTestKernel({ plugins: [plugin], scoped: true } as never))
-        .rejects.toThrow(/plugins, config, answers, outbox, schedule, now/);
+        .rejects.toThrow(/plugins, config, answers, outbox, schedule, sockets, now/);
 });

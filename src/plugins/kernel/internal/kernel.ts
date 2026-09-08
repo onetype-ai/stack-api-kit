@@ -147,11 +147,14 @@ export type Kernel = {
     /**
      * Runs whatever the schedule says is due, once, and waits for it.
      *
+     * Answers how many it took, so a caller draining a chain knows when
+     * nothing is left rather than guessing at a count of turns.
+     *
      * What the beat does on a timer, asked for. A test moves its clock and
      * calls this instead of waiting a real second for an interval it does not
      * control.
      */
-    due: () => Promise<void>;
+    due: () => Promise<number>;
     run: (command: string, input: unknown, identity?: Identity) => Promise<void>;
 };
 
@@ -312,11 +315,11 @@ export function createKernel(options: Options): Kernel
      * throws goes back with its attempt counted, so a partner that was down
      * for a minute costs a minute rather than the work.
      */
-    async function due(): Promise<void>
+    async function due(): Promise<number>
     {
         if (options.schedule === undefined || !running)
         {
-            return;
+            return 0;
         }
 
         const clock = options.now ?? Date.now;
@@ -356,6 +359,8 @@ export function createKernel(options: Options): Kernel
                 }
             }
         }
+
+        return taken.length;
     }
 
     // What is still being answered. A shutdown waits for these: a request

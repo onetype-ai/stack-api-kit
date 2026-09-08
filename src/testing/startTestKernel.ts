@@ -3,7 +3,7 @@ import { limiter } from "../plugins/guard/api";
 import { createKernel } from "../plugins/kernel/api";
 
 import type { Handle, Store } from "../plugins/database/api";
-import type { Identity, Dialer, Kernel, Outbound, Plugin } from "../plugins/kernel/api";
+import type { Identity, Dialer, Kernel, Outbound, Plugin, Pushed } from "../plugins/kernel/api";
 
 export type LogLine = {
     level: string;
@@ -42,6 +42,14 @@ export type TestKernelOptions = {
      */
     schedule?: boolean;
 
+    /**
+     * Whether a plugin may push, as `start({ sockets: true })` does.
+     *
+     * Nothing here holds a wire: what was pushed is kept, so a test reads it
+     * from `pushed()` rather than opening a socket to hear it.
+     */
+    sockets?: boolean;
+
     /** What the clock answers, so a test can reach tomorrow. */
     now?: () => number;
 };
@@ -68,6 +76,9 @@ export type TestKernel = {
      */
     emittedEvents: () => EmittedEvent[];
 
+    /** Everything pushed since boot, in order, with how far each was to go. */
+    pushed: () => Pushed[];
+
     /**
      * Waits until every listener an emit started has finished.
      *
@@ -84,8 +95,19 @@ export type TestKernel = {
      * A test moves its own clock forward and asks, rather than waiting for a
      * beat: what is being proved is that the work runs at its moment, not
      * that an interval fired.
+     *
+     * Answers how many it took, so a chain is drained rather than counted.
      */
-    due: () => Promise<void>;
+    due: () => Promise<number>;
+
+    /**
+     * Runs what is due, and what that starts, until nothing is left.
+     *
+     * A command asking for another needs one `due()` per link, which reads
+     * as superstition in a test. `most` bounds it, because work that asks
+     * for itself as it ends would otherwise never stop.
+     */
+    drain: (most?: number) => Promise<void>;
 
     stop: () => Promise<void>;
 };
@@ -105,7 +127,7 @@ export const TestTables = {
 };
 
 /** Everything `startTestKernel` knows how to be given. */
-const TAKES: ReadonlySet<string> = new Set(["plugins", "config", "answers", "outbox", "schedule", "now"]);
+const TAKES: ReadonlySet<string> = new Set(["plugins", "config", "answers", "outbox", "schedule", "sockets", "now"]);
 
 export async function startTestKernel(given: TestKernelOptions): Promise<TestKernel>
 {
@@ -168,8 +190,11 @@ export async function startTestKernel(given: TestKernelOptions): Promise<TestKer
     const later = given.schedule === true ? store.schedule?.() : undefined;
     const scoping = given.plugins.some((plugin) => plugin.definition.scope !== undefined);
 
+    const pushes: Pushed[] = [];
+
     const kernel = createKernel({
         plugins: [...given.plugins, listening],
+        ...(given.sockets === true && { sockets: { push: (sending: Pushed) => pushes.push(sending) } }),
         ...(outbox !== undefined && { outbox }),
         ...(later !== undefined && { schedule: later }),
         ...(scoping && store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
@@ -196,8 +221,20 @@ export async function startTestKernel(given: TestKernelOptions): Promise<TestKer
         logLines: lines,
         outboundCalls: () => [...calls],
         emittedEvents: () => [...events],
+        pushed: () => [...pushes],
 
         due: () => kernel.due(),
+
+        drain: async (most = 20): Promise<void> =>
+        {
+            for (let turn = 0; turn < most; turn += 1)
+            {
+                if (await kernel.due() === 0)
+                {
+                    return;
+                }
+            }
+        },
 
         settle: async (): Promise<void> =>
         {
