@@ -586,3 +586,104 @@ describe("outbound", () =>
             .rejects.toThrow(/does not declare/);
     });
 });
+
+describe("push", () =>
+{
+    /** A socket layer a test drives: it keeps what it was handed. */
+    function withSockets(): { push: (sending: unknown) => void; sent: () => unknown[] }
+    {
+        const sent: unknown[] = [];
+
+        return { push: (sending) => sent.push(sending), sent: () => sent };
+    }
+
+    const said = { describe: "Said something.", schema: z.object({ text: z.string() }), reach: "everyone" } as const;
+
+    test("refuses a channel the plugin never declared", async () =>
+    {
+        const sockets = withSockets();
+        const kernel = createKernel({ plugins: [participant("chat", { channels: { "chat.said": said } })], sockets });
+
+        await kernel.start();
+
+        expect(() => kernel.context("chat").push("chat.other", { text: "hi" }))
+            .toThrow(/does not declare/);
+    });
+
+    test("refuses when no socket server was given", async () =>
+    {
+        const kernel = createKernel({ plugins: [participant("chat", { channels: { "chat.said": said } })] });
+
+        await kernel.start();
+
+        expect(() => kernel.context("chat").push("chat.said", { text: "hi" }))
+            .toThrow(/no socket server was given/);
+    });
+
+    test("checks what is pushed against the channel's schema", async () =>
+    {
+        const sockets = withSockets();
+        const kernel = createKernel({ plugins: [participant("chat", { channels: { "chat.said": said } })], sockets });
+
+        await kernel.start();
+
+        expect(() => kernel.context("chat").push("chat.said", { text: 7 })).toThrow();
+        expect(sockets.sent()).toEqual([]);
+    });
+
+    const scoped = { describe: "Said something.", schema: z.object({ text: z.string() }), reach: "scope" } as const;
+
+    function shop(): Plugin
+    {
+        return participant("chat", {
+            channels: { "chat.said": scoped },
+            tables: { chatRooms: {} },
+            scope: { describe: "The shop.", claim: "shopId", tables: { chatRooms: "shopId" } },
+        });
+    }
+
+    test("keeps a scoped push inside the scope its caller carries", async () =>
+    {
+        const sockets = withSockets();
+        const kernel = createKernel({ plugins: [shop()], sockets, db: withStore() });
+
+        await kernel.start();
+
+        kernel.context("chat", { id: "u1", permissions: [], claims: { shopId: "acme" } })
+            .push("chat.said", { text: "hi" });
+
+        expect(sockets.sent()).toMatchObject([{ reach: "scope", within: "acme" }]);
+    });
+
+    test("and refuses one from a caller with no scope at all", async () =>
+    {
+        const sockets = withSockets();
+        const kernel = createKernel({ plugins: [shop()], sockets, db: withStore() });
+
+        await kernel.start();
+
+        expect(() => kernel.context("chat").push("chat.said", { text: "hi" }))
+            .toThrow(/nothing to say whose rows/);
+
+        expect(sockets.sent()).toEqual([]);
+    });
+
+    test("hands the socket layer the message, its reach and who pushed it", async () =>
+    {
+        const sockets = withSockets();
+        const kernel = createKernel({ plugins: [participant("chat", { channels: { "chat.said": said } })], sockets });
+
+        await kernel.start();
+
+        kernel.context("chat").push("chat.said", { text: "hi" });
+
+        expect(sockets.sent()).toEqual([{
+            channel: "chat.said",
+            message: { text: "hi" },
+            reach: "everyone",
+            requires: [],
+            within: undefined,
+            from: undefined,
+        }]);
+    });
+});

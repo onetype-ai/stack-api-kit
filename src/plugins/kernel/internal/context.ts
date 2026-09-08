@@ -7,7 +7,7 @@ import { KernelFault } from "./faults";
 import { whyUnfetchable } from "./reachable";
 import type { hooks } from "./hooks";
 import { createPermissions } from "./permissions";
-import type { Dialer, ScopeFilter, Outbox, Schedule, Storage } from "./store";
+import type { Dialer, ScopeFilter, Outbox, Schedule, Sockets, Storage } from "./store";
 
 /** Everything a context is built from. One object, so the shape is one line. */
 export type Wiring = {
@@ -30,6 +30,9 @@ export type Wiring = {
     /** What each plugin owns: one thing, living as long as the kernel does. */
     owned: Map<string, unknown>;
     db: Storage | undefined;
+
+    /** What holds the open sockets, when the project started a server. */
+    sockets: Sockets | undefined;
 
     /** Where events wait for delivery, when the project gave one. */
     outbox: Outbox | undefined;
@@ -417,6 +420,45 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
                 // payload or not at all.
                 wiring.bus.deliver(plugin, event, payloadChecked, (to) => heard(to));
             },
+        },
+
+        push: (channel: string, message: unknown): void =>
+        {
+            const declared = wiring.known.get(plugin)?.definition.channels?.[channel];
+
+            if (declared === undefined)
+            {
+                throw new KernelFault(
+                    "UNDECLARED_CHANNEL",
+                    `"${plugin}" pushed on "${channel}", which it does not declare. Add it to channels.`,
+                    { plugin },
+                );
+            }
+
+            if (wiring.sockets === undefined)
+            {
+                absent("socket server", "push", "sockets");
+            }
+
+            const scope = wiring.known.get(plugin)?.definition.scope;
+            const within = identity === undefined ? acting : identity.claims[scope?.claim ?? ""];
+
+            // Refused rather than sent everywhere: a scoped message with no
+            // scope to stay inside is the one mistake this reach exists to
+            // stop, and sending it wider is how a tenant reads another's.
+            if (declared.reach === "scope" && typeof within !== "string")
+            {
+                throw new Refusal(403, "OUT_OF_SCOPE", "This request carries nothing to say whose rows it may reach.");
+            }
+
+            wiring.sockets.push({
+                channel,
+                message: declared.schema.parse(message),
+                reach: declared.reach,
+                requires: declared.requires ?? [],
+                within: declared.reach === "scope" ? (within as string) : undefined,
+                from: identity,
+            });
         },
 
         hooks: {

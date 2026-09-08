@@ -1,4 +1,4 @@
-import type { Outbound } from "./contract";
+import type { Identity, Outbound, Reach } from "./contract";
 
 /**
  * What the kernel needs to reach storage.
@@ -108,3 +108,22 @@ export type ScopeFilter = (table: string, column: string, value: string) => unkn
 
 /** What the kernel needs to call another server. */
 export type Dialer = (call: Outbound) => Promise<unknown>;
+
+/** One message on its way out, and how far it goes. */
+export type Pushed = {
+    channel: string;
+    message: unknown;
+    reach: Reach;
+    requires: readonly string[];
+
+    /** The scope it stays inside, when its reach is one. */
+    within: string | undefined;
+
+    /** Whose request pushed it, for a reach of "connection" or "viewer". */
+    from: Identity | undefined;
+};
+
+/** What holds the open sockets, when anything does. */
+export type Sockets = {
+    push: (sending: Pushed) => void;
+};

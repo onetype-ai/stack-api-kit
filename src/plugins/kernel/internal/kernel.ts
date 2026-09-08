@@ -8,7 +8,7 @@ import { hooks } from "./hooks";
 import { order } from "./order";
 import { createPermissions } from "./permissions";
 import { type Budget, type Incoming, type RouteOwner, notServing, type Outgoing, respond, unknownRoute } from "./request";
-import type { Dialer, ScopeFilter, Outbox, Schedule, Storage } from "./store";
+import type { Dialer, ScopeFilter, Outbox, Schedule, Sockets, Storage } from "./store";
 import { validate } from "./validate";
 
 /** Where a line goes. The project decides; a plugin never writes directly. */
@@ -24,6 +24,9 @@ export type Options = {
     plugins: readonly Plugin[];
     config?: Readonly<Record<string, unknown>>;
     db?: Storage;
+
+    /** What holds the open sockets. Without one, ctx.push throws. */
+    sockets?: Sockets;
     dial?: Dialer;
     log?: Log;
 
@@ -364,6 +367,7 @@ export function createKernel(options: Options): Kernel
         narrow: options.narrow,
         owned: new Map<string, unknown>(),
         db: options.db,
+        sockets: options.sockets,
         dial: options.dial,
         log,
         run: (command, input, identity) => run(command, input, identity),

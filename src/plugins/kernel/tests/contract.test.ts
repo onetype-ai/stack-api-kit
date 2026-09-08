@@ -317,6 +317,43 @@ describe("declarations", () =>
     });
 });
 
+describe("channels", () =>
+{
+    test("refuses one named outside the plugin that declares it", async () =>
+    {
+        const failed = await refusalFor([
+            participant("billing", {
+                channels: { "other.said": { describe: "Said.", schema: z.object({}), reach: "everyone" } },
+            }),
+        ]);
+
+        expect(failed?.code).toBe("INVALID_NAME");
+    });
+
+    test("refuses one reaching a scope where the plugin declares none", async () =>
+    {
+        const failed = await refusalFor([
+            participant("billing", {
+                channels: { "billing.said": { describe: "Said.", schema: z.object({}), reach: "scope" } },
+            }),
+        ]);
+
+        expect(failed?.code).toBe("UNDECLARED_SCOPE");
+        expect(failed?.message).toMatch(/reaches a scope/);
+    });
+
+    test("and takes one that reaches everyone, which says so in the contract", async () =>
+    {
+        const failed = await refusalFor([
+            participant("billing", {
+                channels: { "billing.said": { describe: "Said.", schema: z.object({}), reach: "everyone" } },
+            }),
+        ]);
+
+        expect(failed).toBeUndefined();
+    });
+});
+
 describe("references", () =>
 {
     test("refuses listening to an event nothing declares", async () =>

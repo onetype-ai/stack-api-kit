@@ -17,6 +17,24 @@ export type Permission = Description;
 export type Event = Schematic;
 
 /**
+ * How far a pushed message travels.
+ *
+ * `connection` is the one socket that asked, `viewer` every socket one
+ * person has open, `scope` everyone the claim puts together, and `everyone`
+ * is what it says: written out, like `public` on a route, because a channel
+ * the world may hear is a decision rather than an oversight.
+ */
+export type Reach = "connection" | "viewer" | "scope" | "everyone";
+
+/** A channel a plugin pushes on, and how far what it pushes goes. */
+export type Channel = Schematic & {
+    reach: Reach;
+
+    /** What a listener must hold, beyond being within reach. */
+    requires?: readonly string[];
+};
+
+/**
  * What a listener does when an event arrives.
  *
  * `payload` is `unknown`, never `never`: a handler typed `(payload: never)`
@@ -235,6 +253,15 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
         emit: (event: string, payload: unknown) => void;
     };
 
+    /**
+     * Sends a message to whoever is listening on a channel this plugin
+     * declared, as far as its `reach` says and no further.
+     *
+     * An event tells the rest of the api; a push tells whoever is watching.
+     * Nothing waits for either.
+     */
+    push: (channel: string, message: unknown) => void;
+
     hooks: {
         /** Runs a hook and answers the first refusal, or undefined. */
         run: (hook: string, payload: unknown) => Promise<string | undefined>;
@@ -400,6 +427,9 @@ export type Definition<
     routes?: readonly Endpoint<Context<z.infer<Schema>, Exactly<Services>, Db>>[];
 
     emits?: Readonly<Record<string, Event>>;
+
+    /** Channels it pushes on. What it pushes is checked against the schema. */
+    channels?: Readonly<Record<string, Channel>>;
     listens?: Readonly<Record<string, EmittedEvent<Context<z.infer<Schema>, Exactly<Services>, Db>>>>;
 
     hooks?: Readonly<Record<string, Hook>>;

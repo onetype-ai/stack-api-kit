@@ -16,6 +16,7 @@ type Report = (code: KernelFault["code"], plugin: string, message: string) => vo
 type Ownership = {
     routes: Map<string, string>;
     events: Map<string, string>;
+    channels: Map<string, string>;
     hooks: Map<string, string>;
     commands: Map<string, string>;
     permissions: Map<string, string>;
@@ -53,6 +54,7 @@ export function validate(plugins: readonly Plugin[], config: Readonly<Record<str
     const owned: Ownership = {
         routes: new Map(),
         events: new Map(),
+        channels: new Map(),
         hooks: new Map(),
         commands: new Map(),
         permissions: new Map(),
@@ -161,6 +163,18 @@ function checkOwn(name: string, plugin: Plugin, owned: Ownership, say: Report): 
     for (const key of Object.keys(plugin.definition.hooks ?? {}))
     {
         checkNamespaced(name, key, "hook", say) && claim("hooks", key, "DUPLICATE_HOOK", "Hook");
+    }
+
+    for (const [key, channel] of Object.entries(plugin.definition.channels ?? {}))
+    {
+        checkNamespaced(name, key, "channel", say) && claim("channels", key, "DUPLICATE_CHANNEL", "Channel");
+
+        // A channel reaching a scope in a plugin that declares none reaches
+        // nobody, and does it quietly.
+        if (channel.reach === "scope" && plugin.definition.scope === undefined)
+        {
+            say("UNDECLARED_SCOPE", name, `Channel "${key}" reaches a scope, and "${name}" declares none. Declare one, or reach further.`);
+        }
     }
 
     for (const key of Object.keys(plugin.definition.commands ?? {}))
