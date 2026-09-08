@@ -27,8 +27,8 @@ export type StartOptions = {
     /**
      * Whether the kernel holds open sockets, and what claim keeps them apart.
      *
-     * Left out, `ctx.push` throws rather than going quiet: a message nobody
-     * could receive is worse unnoticed than refused.
+     * Open unless refused with `false`: a frontend reaches the api through
+     * one, so the default carries it.
      */
     sockets?: boolean | { claim: string } | undefined;
 
