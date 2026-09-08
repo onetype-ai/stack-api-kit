@@ -26,10 +26,21 @@ export type SessionOptions = {
     domain?: string;
 };
 
+/** Before this, a number is a lifetime rather than a moment: 2001-09-09. */
+const LEAST_MOMENT = 1_000_000_000_000;
+
 /** What a route says about the session, and what never reaches the caller. */
 export const SessionHeaders = {
     key: "x-session-key",
+
+    /**
+     * When the session ends, in epoch milliseconds: `Date.now() + lifetime`.
+     *
+     * A moment rather than a duration, however the name reads. A header is a
+     * string, so nothing but this says which.
+     */
     expires: "x-session-expires",
+
     end: "x-session-end",
 } as const;
 
@@ -112,6 +123,16 @@ export function sessionCookie(
     }
 
     const expires = Number(answered[SessionHeaders.expires] ?? 0);
+
+    // A number this small is a lifetime somebody meant as one: no moment
+    // lands before 2001, and the two are told apart nowhere else. Refused
+    // rather than served, because the cookie it would make is thrown away on
+    // arrival and every test still passes.
+    if (Number.isFinite(expires) && expires > 0 && expires < LEAST_MOMENT)
+    {
+        throw new TypeError(`${SessionHeaders.expires} is a moment in epoch milliseconds, and ${String(expires)} is a lifetime. Send Date.now() + lifetime.`);
+    }
+
     const seconds = Number.isFinite(expires) ? (expires - now) / 1000 : 0;
 
     return { cookie: cookieFor(key, seconds, options), headers };

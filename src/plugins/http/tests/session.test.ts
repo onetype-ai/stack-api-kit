@@ -91,6 +91,17 @@ describe("a route that ends one", () =>
     });
 });
 
+describe("when a session ends", () =>
+{
+    test("is a moment, and a lifetime sent instead is refused rather than kept", () =>
+    {
+        const now = Date.now();
+
+        expect(() => sessionCookie({ "x-session-key": "abc", "x-session-expires": "2592000" }, settings, now))
+            .toThrow(/moment in epoch milliseconds/);
+    });
+});
+
 describe("what a cookie carries", () =>
 {
     test("is marked Secure only where a browser would keep it", () =>
