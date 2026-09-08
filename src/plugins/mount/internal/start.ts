@@ -102,7 +102,7 @@ export async function start(starting: StartOptions): Promise<RunningApp>
 
     // Built before the kernel it reads from, and handed a way back to it: a
     // kernel holds this, so it cannot be given one already made.
-    const wires = starting.sockets === undefined
+    const wires = starting.sockets === undefined || starting.sockets === false
         ? undefined
         : sockets({ channels: () => kernel.channels() }, typeof starting.sockets === "object" ? starting.sockets.claim : undefined);
 

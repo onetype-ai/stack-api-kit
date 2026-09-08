@@ -30,7 +30,7 @@ export type StartOptions = {
      * Left out, `ctx.push` throws rather than going quiet: a message nobody
      * could receive is worse unnoticed than refused.
      */
-    sockets?: { claim: string } | true | undefined;
+    sockets?: boolean | { claim: string } | undefined;
 
     /**
      * Who is calling.
