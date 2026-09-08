@@ -12,13 +12,23 @@ export class OutboundFault extends Error
 
     readonly status: number | undefined;
 
-    constructor(code: OutboundFault["code"], message: string, status?: number, cause?: unknown)
+    /**
+     * How long the partner asked to be left alone, in seconds.
+     *
+     * The one header worth carrying: a 429 that says 120 and a 429 that says
+     * nothing are the same refusal to a caller reading only the status, and
+     * one of them costs the partner nothing to honour.
+     */
+    readonly retryAfter: number | undefined;
+
+    constructor(code: OutboundFault["code"], message: string, status?: number, cause?: unknown, retryAfter?: number)
     {
         super(message, cause === undefined ? undefined : { cause });
 
         this.name = "OutboundFault";
         this.code = code;
         this.status = status;
+        this.retryAfter = retryAfter;
     }
 }
 
@@ -86,7 +96,13 @@ export function dial(dialing: DialerOptions = {})
 
             if (!response.ok)
             {
-                throw new OutboundFault("STATUS", `The call was refused with status ${response.status}.`, response.status);
+                throw new OutboundFault(
+                    "STATUS",
+                    `The call was refused with status ${response.status}.`,
+                    response.status,
+                    undefined,
+                    waiting(response.headers.get("retry-after")),
+                );
             }
 
             if (call.accepts === "text")
@@ -118,6 +134,31 @@ export function dial(dialing: DialerOptions = {})
             call.signal?.removeEventListener("abort", cancel);
         }
     };
+}
+
+/**
+ * What a Retry-After asks for, in seconds.
+ *
+ * Written either way by the standard: a count of seconds, or the moment to
+ * come back at. Anything else is a partner saying nothing.
+ */
+function waiting(said: string | null): number | undefined
+{
+    if (said === null)
+    {
+        return undefined;
+    }
+
+    const seconds = Number(said);
+
+    if (Number.isFinite(seconds) && seconds >= 0)
+    {
+        return Math.round(seconds);
+    }
+
+    const moment = Date.parse(said);
+
+    return Number.isNaN(moment) ? undefined : Math.max(0, Math.round((moment - Date.now()) / 1000));
 }
 
 // Read in chunks rather than at once: content-length is what the other side

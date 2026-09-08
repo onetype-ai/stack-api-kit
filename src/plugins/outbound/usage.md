@@ -41,4 +41,5 @@ export default definePlugin("billing", {
 
 An `OutboundFault` carrying a code: `TIMEOUT`, `ABORTED`, `NETWORK`,
 `TOO_LARGE`, `MALFORMED`, or `STATUS` with the status it was refused with.
-Nothing it throws carries a header, a token, or the body that was sent.
+`retryAfter` is the seconds a partner asked for, when it asked. Nothing else
+it throws carries a header, a token, or the body that was sent.

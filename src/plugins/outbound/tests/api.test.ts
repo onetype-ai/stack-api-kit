@@ -6,6 +6,7 @@ type FetchStub = {
     status?: number;
     body?: string;
     redirected?: boolean;
+    headers?: Record<string, string>;
 };
 
 function stubFetch(answer: FetchStub = {}): void
@@ -20,7 +21,7 @@ function stubFetch(answer: FetchStub = {}): void
         const status = answer.status ?? 200;
         const text = answer.body ?? "{}";
 
-        return Promise.resolve(new Response(text === "" ? null : text, { status }));
+        return Promise.resolve(new Response(text === "" ? null : text, { status, ...(answer.headers !== undefined && { headers: answer.headers }) }));
     });
 }
 
@@ -143,5 +144,41 @@ describe("redirects", () =>
         await dial()({ method: "GET", url: "https://api.example.test/x" });
 
         expect(asked?.redirect).toBe("error");
+    });
+});
+
+describe("what a partner asked for when it refused", () =>
+{
+    test("carries how long it wants to be left alone", async () =>
+    {
+        stubFetch({ status: 429, body: "{}", headers: { "retry-after": "120" } });
+
+        const failed = await dial()({ method: "GET", url: "https://api.example.test/x" })
+            .catch((cause: unknown) => cause) as OutboundFault;
+
+        expect(failed.retryAfter).toBe(120);
+    });
+
+    test("and reads a moment as the seconds until it", async () =>
+    {
+        const at = new Date(Date.now() + 60_000).toUTCString();
+
+        stubFetch({ status: 503, body: "{}", headers: { "retry-after": at } });
+
+        const failed = await dial()({ method: "GET", url: "https://api.example.test/x" })
+            .catch((cause: unknown) => cause) as OutboundFault;
+
+        expect(failed.retryAfter).toBeGreaterThan(50);
+        expect(failed.retryAfter).toBeLessThanOrEqual(60);
+    });
+
+    test("while one that said nothing carries nothing", async () =>
+    {
+        stubFetch({ status: 429, body: "{}" });
+
+        const failed = await dial()({ method: "GET", url: "https://api.example.test/x" })
+            .catch((cause: unknown) => cause) as OutboundFault;
+
+        expect(failed.retryAfter).toBeUndefined();
     });
 });
