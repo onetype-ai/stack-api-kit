@@ -137,3 +137,32 @@ export function sessionCookie(
 
     return { cookie: cookieFor(key, seconds, options), headers };
 }
+
+/**
+ * The same request, carrying the key its cookie holds.
+ *
+ * The other half of what `session` does: a route answers a key and the kit
+ * turns it into a cookie, so the cookie is turned back before anything reads
+ * the request. Without this, `session` is a switch in `main.ts` that stops
+ * every plugin reading a header from signing anybody in.
+ */
+export function withSessionKey(request: Request, options: SessionOptions | undefined): Request
+{
+    if (options === undefined || request.headers.has(SessionHeaders.key))
+    {
+        return request;
+    }
+
+    const key = cookieIn(request.headers.get("cookie") ?? undefined, options.name);
+
+    if (key === undefined)
+    {
+        return request;
+    }
+
+    const headers = new Headers(request.headers);
+
+    headers.set(SessionHeaders.key, key);
+
+    return new Request(request, { headers });
+}

@@ -5,7 +5,7 @@ import type { Identity, Kernel, Method } from "../../kernel/api";
 import { securityHeaders } from "./headers";
 import { cors, type CorsPolicy } from "./origin";
 import { input } from "./input";
-import { sessionCookie, type SessionOptions } from "./session";
+import { sessionCookie, withSessionKey, type SessionOptions } from "./session";
 import { formBody, type Upload } from "./upload";
 
 /** What options needs to know. */
@@ -355,7 +355,7 @@ export function serve(options: ServerOptions): Hono
                 // The project's own wins: it was passed by name, where the
                 // kernel's comes from whichever plugin declared it.
                 identity = options.identify === undefined
-                    ? await options.kernel.identify?.(c.req.raw)
+                    ? await options.kernel.identify?.(withSessionKey(c.req.raw, options.session))
                     : await options.identify(c);
             }
             catch (cause)

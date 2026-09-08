@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { createKernel, definePlugin, Reply } from "../../kernel/api";
 import { serve } from "../api";
-import { cookieFor, cookieIn, sessionCookie } from "../internal/session";
+import { cookieFor, cookieIn, sessionCookie, SessionHeaders } from "../internal/session";
 
 import type { Definition } from "../../kernel/api";
 
@@ -88,6 +88,32 @@ describe("a route that ends one", () =>
 
         expect(cookie).toContain("app_session=;");
         expect(cookie).toContain("Max-Age=0");
+    });
+});
+
+describe("a plugin that only ever learned about headers", () =>
+{
+    test("is handed the key the cookie holds, so `session` changes nothing for it", async () =>
+    {
+        let seen: string | null = null;
+
+        const app = await startServer({
+            identifies: (_ctx, request: Request) =>
+            {
+                seen = request.headers.get(SessionHeaders.key);
+
+                return seen === null ? undefined : { id: "u1", claims: {} };
+            },
+            routes: [{
+                method: "GET", path: "/me", describe: "Who is asking.", public: true,
+                input: z.object({}), output: z.object({ ok: z.boolean() }),
+                handle: () => ({ ok: true }),
+            }],
+        } as Partial<Definition>, settings);
+
+        await app.fetch(new Request("http://localhost/me", { headers: { cookie: "app_session=abc123" } }));
+
+        expect(seen).toBe("abc123");
     });
 });
 
