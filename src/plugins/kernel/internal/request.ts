@@ -6,6 +6,16 @@ import { createPermissions } from "./permissions";
 /** What decides whether one identity has any budget left on one route. */
 export type Budget = {
     spend: (key: string, window: { requests: number; seconds: number }) => { allowed: boolean; resetsIn: number };
+
+    /**
+     * Gives one spend back, for a route counting only what it guards against.
+     *
+     * Optional, because a project brings its own budget and one written
+     * before this still counts every call. A route asking for it and getting
+     * nothing back is a route that counts everything, which is where it
+     * started.
+     */
+    refund?: (key: string) => void;
 };
 
 /** One request, as it reaches the kernel. */
@@ -17,6 +27,14 @@ export type Incoming = {
 
     /** The request's headers, lowercase. A route sees only what it declared. */
     headers?: Readonly<Record<string, string>> | undefined;
+
+    /**
+     * The body's bytes as they arrived, for a route that declared `keepsRaw`.
+     *
+     * Carried beside `input` rather than instead of it: the schema still
+     * runs, and a signature still has the string it was computed over.
+     */
+    sent?: Uint8Array | undefined;
 
     /**
      * Where it came from, when nobody is signed in: an address, a key, or
@@ -76,7 +94,7 @@ export const notServing: Outgoing = {
 export async function respond(
     mounted: RouteOwner,
     incoming: Incoming,
-    context: (plugin: string, identity?: Identity, headers?: Readonly<Record<string, string>>) => Context,
+    context: (plugin: string, identity?: Identity, headers?: Readonly<Record<string, string>>, sent?: Uint8Array) => Context,
     log: Log,
     budget?: Budget,
 ): Promise<Outgoing>
@@ -89,6 +107,11 @@ export async function respond(
        id of "" is nobody, and every such one would share one rate-limit bucket. */
     const identityId = identity !== undefined && identity.id.trim() !== "" ? identity.id : undefined;
 
+    // Spent up front, because a refused request must not reach the handler.
+    // A route that counts only failures gives it back once the answer says it
+    // succeeded, which is the first moment anything knows.
+    let spent: string | undefined;
+
     try
     {
         if (route.public !== true && identityId === undefined)
@@ -100,10 +123,14 @@ export async function respond(
         // budget, and before the handler, so a refused request costs nothing.
         if (route.limit !== undefined && budget !== undefined)
         {
-            const verdict = budget.spend(`${identityId ?? incoming.from ?? "anonymous"}:${route.method} ${route.path}`, route.limit);
+            spent = `${identityId ?? incoming.from ?? "anonymous"}:${route.method} ${route.path}`;
+
+            const verdict = budget.spend(spent, route.limit);
 
             if (!verdict.allowed)
             {
+                spent = undefined;
+
                 return {
                     status: 429,
                     body: { code: "RATE_LIMITED", message: "Too many requests. Try again shortly." },
@@ -130,7 +157,11 @@ export async function respond(
             throw new Refusal(400, "INVALID_INPUT", "The request is not valid.", fields(parsed.error));
         }
 
-        const returned = await route.handle(parsed.data, context(plugin, identity, headersFor(route, incoming.headers)));
+        // Handed on only where the route asked: bytes nobody declared are
+        // bytes a log can carry, the same reason `reads` names its headers.
+        const sent = route.keepsRaw === true ? incoming.sent : undefined;
+
+        const returned = await route.handle(parsed.data, context(plugin, identity, headersFor(route, incoming.headers), sent));
 
         // A handler may say what status and headers its answer carries. The
         // body still passes the schema either way: what a route sends is
@@ -151,12 +182,23 @@ export async function respond(
             return { status: 500, body: { code: "INTERNAL", message: "The request could not be completed." } };
         }
 
-        if (carried !== undefined)
+        const status = carried?.status ?? (route.method === "POST" ? 201 : 200);
+
+        // Read off the status rather than off "the handler returned": a
+        // handler may answer Reply(409) without throwing, and giving that one
+        // its spend back would hand an attacker a free attempt for every
+        // refusal a route chose to return rather than raise.
+        if (spent !== undefined && route.limit?.countSuccess === false && status < 400)
         {
-            return { status: carried.status, body: filtered.data, headers: filterHeaders(carried.headers, plugin, route, log) };
+            budget?.refund?.(spent);
         }
 
-        return { status: route.method === "POST" ? 201 : 200, body: filtered.data };
+        if (carried !== undefined)
+        {
+            return { status, body: filtered.data, headers: filterHeaders(carried.headers, plugin, route, log) };
+        }
+
+        return { status, body: filtered.data };
     }
     catch (cause)
     {

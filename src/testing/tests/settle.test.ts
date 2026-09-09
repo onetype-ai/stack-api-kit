@@ -98,3 +98,66 @@ test("a chain of two listeners settles too", async () =>
 
     expect(arrivals).toEqual(["second", "third"]);
 });
+
+test("a listener that throws is raised where the test waited, not left silent", async () =>
+{
+    const api = await startTestKernel({
+        plugins: [
+            definePlugin("source", {
+                version: "1.0.0",
+                describe: "Emits.",
+                emits: { "source.happened": { describe: "Happened.", schema: z.object({ id: z.string() }) } },
+            }),
+            definePlugin("sink", {
+                version: "1.0.0",
+                describe: "Breaks when it hears.",
+                listens: {
+                    "source.happened": {
+                        describe: "Throws.",
+                        handle: () => { throw new Error("the sink broke"); },
+                    },
+                },
+            }),
+        ],
+    });
+
+    api.kernel.context("source").events.emit("source.happened", { id: "one" });
+
+    await expect(api.settle()).rejects.toThrow(/sink listening to "source.happened": the sink broke/);
+
+    await api.stop();
+});
+
+test("a failure already read is not raised again", async () =>
+{
+    const api = await startTestKernel({
+        plugins: [
+            definePlugin("source", {
+                version: "1.0.0",
+                describe: "Emits.",
+                emits: { "source.happened": { describe: "Happened.", schema: z.object({ id: z.string() }) } },
+            }),
+            definePlugin("sink", {
+                version: "1.0.0",
+                describe: "Breaks when it hears.",
+                listens: {
+                    "source.happened": {
+                        describe: "Throws.",
+                        handle: () => { throw new Error("expected"); },
+                    },
+                },
+            }),
+        ],
+    });
+
+    api.kernel.context("source").events.emit("source.happened", { id: "one" });
+
+    await expect(api.settle()).rejects.toThrow(/expected/);
+
+    // Taken deliberately, so the next wait is about what comes next.
+    expect(api.kernel.events.failures()).toHaveLength(1);
+
+    await api.settle();
+
+    await api.stop();
+});

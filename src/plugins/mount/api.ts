@@ -2,7 +2,7 @@ import type { DatabaseOptions, Store } from "../database/api";
 import type { Joined, ServerOptions } from "../http/api";
 import type { Budget, Dialer, Identity, Kernel, Logger, Plugin } from "../kernel/api";
 import type { DialerOptions } from "../outbound/api";
-import { discover } from "./internal/discover";
+import { discover, discoverFrom } from "./internal/discover";
 import { start } from "./internal/start";
 
 export type StartOptions = {
@@ -113,4 +113,5 @@ export type RunningApp = {
     stop: () => Promise<void>;
 };
 
-export { discover, start };
+export { discover, discoverFrom, start };
+export type { Found, Skipped } from "./internal/discover";

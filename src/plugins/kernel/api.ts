@@ -4,14 +4,18 @@ import { defineCommand, defineListener, defineParticipant, definePlugin, defineR
 import { KernelFault } from "./internal/faults";
 import { measure } from "./internal/measure";
 import { order } from "./internal/order";
+import { tableIndexes } from "./internal/tableindexes";
+import { tableName } from "./internal/tablename";
 
-export { answer, Reply, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, order, Refusal };
+export { answer, Reply, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, order, Refusal, tableIndexes, tableName };
 export type { Measured } from "./internal/measure";
+export type { DeclaredIndex } from "./internal/tableindexes";
 
 export type { Answer } from "./internal/answer";
 export type { FaultCode } from "./internal/faults";
 
 export type {
+    Answered,
     Identity,
     Channel,
     Command,
@@ -38,7 +42,7 @@ export type {
 
 export type { Failure } from "./internal/events";
 export type { Budget, Incoming, Outgoing } from "./internal/request";
-export type { Announcement, Dialer, ScopeFilter, Outbox, Pushed, Schedule, Scheduled, Sockets, Storage } from "./internal/store";
+export type { Abandoned, Announcement, Dialer, ScopeFilter, Outbox, Pushed, Schedule, Scheduled, Sockets, Storage } from "./internal/store";
 export type { Declared, Kernel, Log, Options, Registration } from "./internal/kernel";
 export type { ContractProblem } from "./internal/validate";
 

@@ -337,3 +337,48 @@ describe("failures", () =>
         expect(answer).toEqual({ status: 409, body: { code: "ITEM_LOCKED", message: "That item is being edited." } });
     });
 });
+
+describe("bytes carried beside the parsed body", () =>
+{
+    /** Two routes taking the same body: one asked for the bytes, one did not. */
+    const both: Partial<Definition> = {
+        routes: [
+            {
+                method: "POST", path: "/keeps", describe: "Asked for them.", public: true,
+                keepsRaw: true,
+                input: z.object({ id: z.string() }),
+                output: z.object({ saw: z.string() }),
+                handle: (_input, ctx) => ({ saw: ctx.sent === undefined ? "none" : new TextDecoder().decode(ctx.sent) }),
+            },
+            {
+                method: "POST", path: "/plain", describe: "Did not.", public: true,
+                input: z.object({ id: z.string() }),
+                output: z.object({ saw: z.string() }),
+                handle: (_input, ctx) => ({ saw: ctx.sent === undefined ? "none" : new TextDecoder().decode(ctx.sent) }),
+            },
+        ],
+    };
+
+    const bytes = new TextEncoder().encode('{"id":"a"}');
+
+    test("reach the route that declared keepsRaw", async () =>
+    {
+        const kernel = await startServer(both);
+
+        const answer = await kernel.handle({ method: "POST", path: "/keeps", input: { id: "a" }, sent: bytes });
+
+        expect(answer.body).toEqual({ saw: '{"id":"a"}' });
+    });
+
+    test("are dropped for a route that did not, even when handed them", async () =>
+    {
+        const kernel = await startServer(both);
+
+        // Handed in deliberately: the kernel is the second lock, so a caller
+        // building an Incoming itself cannot hand bytes to a route that never
+        // declared it wanted them.
+        const answer = await kernel.handle({ method: "POST", path: "/plain", input: { id: "a" }, sent: bytes });
+
+        expect(answer.body).toEqual({ saw: "none" });
+    });
+});

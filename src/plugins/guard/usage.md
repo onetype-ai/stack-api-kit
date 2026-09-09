@@ -33,12 +33,15 @@ if (!equalsInConstantTime(sent, expected))
 
 - `spend` counts one request against a fixed window and answers whether it is
   allowed, what is left, and when the window resets.
+- `refund` gives one back, never below zero. A route declaring
+  `limit: { countSuccess: false }` counts only the calls that did not succeed:
+  five wrong passwords is an attack, five right ones is somebody with five
+  devices. Leave it out where the successful call is the expensive one.
 - A window holds one counter per key rather than one entry per request, so a
   flood costs no memory in proportion to itself.
 - `sweep` drops windows that have passed; the plugin runs it on a timer.
 - `unlimited()` is the same shape and counts nothing, which is what
-  `start({ limits: false })` runs on. The numbers stay in the routes either
-  way: what changes is whether anything counts them, and startup says so.
+  `start({ limits: false })` runs on, saying so loudly at boot.
 - `equalsInConstantTime` compares in constant time and answers false on a length difference
   rather than throwing.
 

@@ -157,3 +157,108 @@ function isWhitelist(schema: unknown, depth: number, seen: Set<unknown>): boolea
         }
     }
 }
+
+/**
+ * Number fields a schema names, and whether each carries a range.
+ *
+ * A number that crosses a boundary without one says only "number", which
+ * tells a consumer nothing: the same field bounded to 0..1 where it enters
+ * and bare where it leaves is a promise made and then withdrawn, and the
+ * consumer that assumed a share is the one that breaks.
+ */
+export function rangedNumbers(schema: unknown): ReadonlyMap<string, boolean>
+{
+    const found = new Map<string, boolean>();
+
+    collect(schema, found, 0, new Set());
+
+    return found;
+}
+
+function collect(schema: unknown, found: Map<string, boolean>, depth: number, seen: Set<unknown>): void
+{
+    if (depth > 24 || schema === null || typeof schema !== "object" || seen.has(schema))
+    {
+        return;
+    }
+
+    seen.add(schema);
+
+    const def = (schema as { _zod?: { def?: Record<string, unknown> } })._zod?.def;
+
+    if (def === undefined)
+    {
+        return;
+    }
+
+    const kind = String(def["type"] ?? "");
+
+    if (kind === "object")
+    {
+        const shape = def["shape"];
+
+        if (shape !== null && typeof shape === "object")
+        {
+            for (const [key, field] of Object.entries(shape as Record<string, unknown>))
+            {
+                const inner = bare(field);
+                const within = (inner as { _zod?: { def?: Record<string, unknown> } })?._zod?.def;
+
+                if (String(within?.["type"] ?? "") === "number" && !found.has(key))
+                {
+                    found.set(key, ranged(within?.["checks"]));
+                }
+
+                collect(inner, found, depth + 1, seen);
+            }
+        }
+    }
+
+    for (const key of ["innerType", "element", "valueType", "keyType", "left", "right"])
+    {
+        collect(def[key], found, depth + 1, seen);
+    }
+
+    for (const member of Array.isArray(def["options"]) ? (def["options"] as unknown[]) : [])
+    {
+        collect(member, found, depth + 1, seen);
+    }
+}
+
+/** Past optional, nullable, default and readonly to what actually holds the value. */
+function bare(schema: unknown): unknown
+{
+    let current = schema;
+
+    for (let step = 0; step < 12; step += 1)
+    {
+        const def = (current as { _zod?: { def?: Record<string, unknown> } })?._zod?.def;
+        const kind = String(def?.["type"] ?? "");
+
+        if (kind !== "optional" && kind !== "nullable" && kind !== "default" && kind !== "readonly" && kind !== "nonoptional")
+        {
+            return current;
+        }
+
+        current = def?.["innerType"];
+    }
+
+    return current;
+}
+
+/** Whether any check bounds the value from either side. */
+function ranged(checks: unknown): boolean
+{
+    if (!Array.isArray(checks))
+    {
+        return false;
+    }
+
+    return checks.some((one) =>
+    {
+        const def = (one as { _zod?: { def?: { check?: unknown } }; def?: { check?: unknown } })._zod?.def ?? (one as { def?: { check?: unknown } }).def;
+        const name = String(def?.check ?? "");
+
+        return name === "greater_than" || name === "less_than";
+    });
+}

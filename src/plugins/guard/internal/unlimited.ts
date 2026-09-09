@@ -12,6 +12,7 @@ export function unlimited()
 {
     return {
         spend: (): Verdict => ({ allowed: true, remaining: Number.MAX_SAFE_INTEGER, resetsIn: 0 }),
+        refund: (): void => undefined,
         sweep: (): number => 0,
         size: (): number => 0,
     };

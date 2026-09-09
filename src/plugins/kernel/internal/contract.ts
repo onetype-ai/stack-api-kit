@@ -86,8 +86,16 @@ export type Route<Context, Input extends z.ZodType = z.ZodType> = Description & 
      */
     public?: boolean;
 
-    /** Requests per window for one caller, when this route needs its own. */
-    limit?: { requests: number; seconds: number };
+    /**
+     * Requests per window for one caller, when this route needs its own.
+     *
+     * `countSuccess: false` counts only the calls that did not succeed, which
+     * is what a route guarding a secret wants: five wrong passwords is an
+     * attack, five right ones is somebody with five devices. Leave it out on
+     * a route guarding cost or load, where the successful call is the
+     * expensive one.
+     */
+    limit?: { requests: number; seconds: number; countSuccess?: boolean };
 
     /**
      * What kind of body this takes. JSON unless it says otherwise.
@@ -106,6 +114,24 @@ export type Route<Context, Input extends z.ZodType = z.ZodType> = Description & 
      * carries a credential. What is not named does not arrive.
      */
     reads?: readonly string[];
+
+    /**
+     * Whether this route also sees the bytes exactly as they arrived.
+     *
+     * `input` is still parsed and still passes the schema: this is the same
+     * body, unchanged, alongside it as `ctx.sent`.
+     *
+     * For one job, and it cannot be done without them: a signature computed
+     * over what a partner sent. Parsing reorders keys and drops whitespace,
+     * so `JSON.stringify` of the parsed value is a different string, and no
+     * canonical form recovers the original: a sender is free to send
+     * `{\n  "id": "a"\n}` and sign that.
+     *
+     * Declared rather than always present, because bytes nobody asked for are
+     * bytes a log can carry: what is not named does not arrive, as with
+     * `reads`.
+     */
+    keepsRaw?: boolean;
 
     /**
      * What answers the request.
@@ -169,6 +195,15 @@ export type Identity = {
     claims: Readonly<Record<string, unknown>>;
 };
 
+/**
+ * What `identifies` answers: an identity without permissions.
+ *
+ * `permissions?: never` is not decoration. Without it a plugin may write them
+ * in, TypeScript allows it through the union a return type is, and the kernel
+ * drops them without a word: `grants` fills them, so nobody grants themselves.
+ */
+export type Answered = Omit<Identity, "permissions"> & { permissions?: never };
+
 /** One outbound call, to a host the plugin declared. */
 export type Outbound = {
     method: Method;
@@ -213,6 +248,15 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
      * name.
      */
     headers: Readonly<Record<string, string>>;
+
+    /**
+     * The bytes of the request body, exactly as they arrived.
+     *
+     * Present only where the route declared `keepsRaw`, and only inside a
+     * request. `input` holds the same body parsed and checked; this holds
+     * what a signature was computed over.
+     */
+    sent: Uint8Array | undefined;
 
     /**
      * This plugin's own tables.
@@ -450,7 +494,7 @@ export type Definition<
     identifies?: (
         ctx: Context<z.infer<Schema>, Exactly<Services>, Db>,
         request: Request,
-    ) => Promise<Omit<Identity, "permissions"> | undefined> | Omit<Identity, "permissions"> | undefined;
+    ) => Promise<Answered | undefined> | Answered | undefined;
 
     /**
      * What being signed in means here.

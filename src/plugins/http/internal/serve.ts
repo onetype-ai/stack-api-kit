@@ -180,7 +180,7 @@ async function bodyOf(stream: ReadableStream<Uint8Array> | null, bytes: number):
 
 /** What a route was sent, or the refusal to answer instead. */
 type ReadBody =
-    | { body: unknown; uploads: Readonly<Record<string, Upload | Upload[]>> }
+    | { body: unknown; uploads: Readonly<Record<string, Upload | Upload[]>>; sent?: Uint8Array }
     | { refused: { code: string; message: string }; status: number };
 
 const TOO_LARGE = { refused: { code: "TOO_LARGE", message: "The request body is too large." }, status: 413 } as const;
@@ -193,7 +193,7 @@ const TOO_LARGE = { refused: { code: "TOO_LARGE", message: "The request body is 
  * file, and one expecting a form cannot be handed JSON. Both refusals are 415,
  * which says the body was the wrong kind rather than the wrong shape.
  */
-async function bodyFor(request: Request, route: { method: string; accepts?: "json" | "form" }, bytes: number): Promise<ReadBody>
+async function bodyFor(request: Request, route: { method: string; accepts?: "json" | "form"; keepsRaw?: boolean }, bytes: number): Promise<ReadBody>
 {
     if (!CARRIES.has(route.method))
     {
@@ -249,9 +249,13 @@ async function bodyFor(request: Request, route: { method: string; accepts?: "jso
         return { body: undefined, uploads: {} };
     }
 
+    // Kept only where the route declared it: these are the bytes a signature
+    // was computed over, and parsing is what makes them unrecoverable.
+    const kept = route.keepsRaw === true ? { sent: raw } : {};
+
     try
     {
-        return { body: JSON.parse(new TextDecoder().decode(raw)) as unknown, uploads: {} };
+        return { body: JSON.parse(new TextDecoder().decode(raw)) as unknown, uploads: {}, ...kept };
     }
     catch
     {
@@ -386,6 +390,7 @@ export function serve(options: ServerOptions): Hono
                 }),
                 identity,
                 headers: headersOf(c, route.reads),
+                ...("sent" in read && read.sent !== undefined && { sent: read.sent }),
                 ...(options.from !== undefined && { from: options.from(c) }),
             });
 

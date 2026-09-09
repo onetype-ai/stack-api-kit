@@ -58,17 +58,24 @@ type OpenTx = {
 };
 
 /**
- * What an absent dependency answers: a refusal naming what to pass.
+ * What an absent dependency answers: a refusal naming who and what to pass.
  *
  * `used` is what the plugin called; `pass` is the option that supplies it.
  * They are rarely the same word, and saying only the first sends a reader
  * looking for an option that does not exist.
+ *
+ * The plugin is named because this refusal is rarely read by whoever caused
+ * it: one plugin reaching for something the project did not pass stops every
+ * test that boots it as a dependency, in files its author never opened. "A
+ * plugin" leaves them a stack trace to read; the name leaves them nothing to
+ * read at all.
  */
-function absent(what: string, used: string, pass: string): never
+function absent(plugin: string, what: string, used: string, pass: string): never
 {
     throw new KernelFault(
         "NOT_STARTED",
-        `A plugin used ctx.${used}, but no ${what} was given. Pass \`${pass}\` to createKernel, \`${pass}: true\` to start, or \`${pass}: true\` to startTestKernel in a test.`,
+        `"${plugin}" used ctx.${used}, but no ${what} was given. Pass \`${pass}\` to createKernel, \`${pass}: true\` to start, or \`${pass}: true\` to startTestKernel in a test.`,
+        { plugin },
     );
 }
 
@@ -111,12 +118,12 @@ function dialable(url: string): boolean
  * Built per request rather than kept: one kernel answers every request, and a
  * context holding a caller would hand the next request the previous one.
  */
-export function context(wiring: Wiring, plugin: string, identity?: Identity, within?: OpenTx, headers: Readonly<Record<string, string>> = {}, acting?: string): Context
+export function context(wiring: Wiring, plugin: string, identity?: Identity, within?: OpenTx, headers: Readonly<Record<string, string>> = {}, acting?: string, sent?: Uint8Array): Context
 {
     const permissions = createPermissions(() => identity);
     const seenBy = (plugin: string, inside = within): Context =>
     {
-        return context(wiring, plugin, identity, inside, headers, acting);
+        return context(wiring, plugin, identity, inside, headers, acting, sent);
     };
 
     /** What a listener is handed: this plugin, and nobody calling. */
@@ -180,8 +187,37 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
             );
         }
 
+        // Nobody calling and no scope acted for: a listener, a scheduled
+        // command or a public route reached a scoped table with no way to
+        // say whose. That is the code's mistake, not the caller's, and 403
+        // sends it to whoever cannot fix it.
+        if (identity === undefined && acting === undefined)
+        {
+            throw new KernelFault(
+                "UNSCOPED_CALLER",
+                `"${plugin}" scoped "${table}" where nobody is calling. Name the scope with ctx.forScope(...), or read without scoping.`,
+                { plugin },
+            );
+        }
+
         // Refused, never defaulted: a default tenant is everybody's.
         const tenant = identity === undefined ? acting : identity.claims[scope.claim];
+
+        // A signed-in caller whose claim is missing, or there but not a
+        // string, is a contract that never met: whoever identifies always
+        // answers the same shape, so every session hits it. A fault, not one
+        // caller being turned away. An empty string is the caller's, below.
+        if (identity !== undefined && typeof identity.claims[scope.claim] !== "string")
+        {
+            const held = identity.claims[scope.claim];
+            const carried = held === undefined ? "carries no such claim" : `carries it as ${typeof held}, and a scope narrows by a string`;
+
+            throw new KernelFault(
+                "UNCLAIMED_SCOPE",
+                `"${plugin}" scopes by "${scope.claim}", and the identity answered ${carried}. Put it in the claims identifies returns, or scope by one it carries.`,
+                { plugin },
+            );
+        }
 
         if (typeof tenant !== "string" || tenant.trim() === "")
         {
@@ -206,6 +242,7 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
 
         identity,
         headers,
+        sent,
 
         now: wiring.now,
 
@@ -235,7 +272,7 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
                 return within.db;
             }
 
-            return wiring.db === undefined ? absent("store", "db", "db") : wiring.db.of(plugin);
+            return wiring.db === undefined ? absent(plugin, "store", "db", "db") : wiring.db.of(plugin);
         },
 
         write: <Returned,>(run: () => Promise<Returned>): Promise<Returned> =>
@@ -257,7 +294,7 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
 
             if (store === undefined)
             {
-                return absent("store", "db", "db");
+                return absent(plugin, "store", "db", "db");
             }
 
             const mark = {};
@@ -352,7 +389,7 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
                     throw new KernelFault("UNDECLARED_HOST", `"${plugin}" called an address it may not reach. ${wrong}`, { plugin });
                 }
 
-                return wiring.dial === undefined ? absent("dialer", "dial", "dial") : wiring.dial(call);
+                return wiring.dial === undefined ? absent(plugin, "dialer", "dial", "dial") : wiring.dial(call);
             }
 
             // Told apart, because "add it to outbound" cannot fix a url that
@@ -388,7 +425,7 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
                 );
             }
 
-            return wiring.dial === undefined ? absent("dialer", "dial", "dial") : wiring.dial(call);
+            return wiring.dial === undefined ? absent(plugin, "dialer", "dial", "dial") : wiring.dial(call);
         },
 
         events: {
@@ -437,7 +474,7 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
 
             if (wiring.sockets === undefined)
             {
-                absent("socket server", "push", "sockets");
+                absent(plugin, "socket server", "push", "sockets");
             }
 
             const scope = wiring.known.get(plugin)?.definition.scope;
@@ -480,7 +517,7 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
             {
                 if (wiring.schedule === undefined)
                 {
-                    absent("schedule", "commands.later", "schedule");
+                    absent(plugin, "schedule", "commands.later", "schedule");
                 }
 
                 const owns = wiring.known.get(plugin)?.definition.commands ?? {};
@@ -545,7 +582,7 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
                 );
             }
 
-            return context(wiring, plugin, undefined, within, headers, claim);
+            return context(wiring, plugin, undefined, within, headers, claim, sent);
         },
 
         stamped: (table: string): Readonly<Record<string, string>> =>
@@ -560,7 +597,7 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
             const { column, tenant } = scopeFor(table);
 
             return (wiring.narrow === undefined
-                ? absent("createScopeFilter", "scoped", "narrow")
+                ? absent(plugin, "createScopeFilter", "scoped", "narrow")
                 : wiring.narrow(table, column, tenant)) as Condition;
         },
 

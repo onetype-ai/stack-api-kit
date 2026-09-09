@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 import { database } from "../../database/api";
-import { createKernel, definePlugin, Refusal } from "../api";
+import { createKernel, definePlugin, KernelFault, Refusal } from "../api";
 
 import type { Identity, Plugin } from "../api";
 
@@ -98,7 +98,7 @@ describe("a table a plugin scoped", () =>
         store.close();
     });
 
-    test("refuses a caller carrying no such claim, rather than defaulting", async () =>
+    test("faults when a signed-in caller carries no such claim, naming both sides", async () =>
     {
         const store = startServer();
 
@@ -112,7 +112,75 @@ describe("a table a plugin scoped", () =>
 
         const nobody = kernel.context("billing", shopCaller()).services as { list: () => Promise<string[]> };
 
-        await expect(nobody.list()).rejects.toThrow(Refusal);
+        // Never a Refusal: every session hits this, so it is a contract that
+        // never met, not one caller being turned away.
+        await expect(nobody.list()).rejects.toThrow(KernelFault);
+        await expect(nobody.list()).rejects.toThrow(/scopes by "tenantId".*carries no such claim/s);
+
+        await kernel.stop();
+        store.close();
+    });
+
+    test("faults when the claim is there but not a string, naming what it got", async () =>
+    {
+        const store = startServer();
+
+        const kernel = createKernel({
+            plugins: [createBilling()],
+            db: store,
+            ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
+        });
+
+        await kernel.start();
+
+        // A number reads as a tenant nobody has: without this it fell through
+        // to the empty-claim refusal, so every session saw 403 and the cause
+        // was the one thing the message did not mention.
+        const wrong = kernel.context("billing", { id: "u1", permissions: [], claims: { tenantId: 42 } }).services as { list: () => Promise<string[]> };
+
+        await expect(wrong.list()).rejects.toThrow(KernelFault);
+        await expect(wrong.list()).rejects.toThrow(/carries it as number, and a scope narrows by a string/);
+
+        await kernel.stop();
+        store.close();
+    });
+
+    test("refuses a caller whose claim is there but empty, rather than defaulting", async () =>
+    {
+        const store = startServer();
+
+        const kernel = createKernel({
+            plugins: [createBilling()],
+            db: store,
+            ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
+        });
+
+        await kernel.start();
+
+        const blank = kernel.context("billing", shopCaller("")).services as { list: () => Promise<string[]> };
+
+        await expect(blank.list()).rejects.toThrow(Refusal);
+
+        await kernel.stop();
+        store.close();
+    });
+
+    test("faults when nothing is calling and no scope was acted for", async () =>
+    {
+        const store = startServer();
+
+        const kernel = createKernel({
+            plugins: [createBilling()],
+            db: store,
+            ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
+        });
+
+        await kernel.start();
+
+        const nobody = kernel.context("billing").services as { list: () => Promise<string[]> };
+
+        await expect(nobody.list()).rejects.toThrow(KernelFault);
+        await expect(nobody.list()).rejects.toThrow(/where nobody is calling.*ctx\.forScope/s);
 
         await kernel.stop();
         store.close();

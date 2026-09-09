@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 
-import { createKernel, definePlugin } from "../api";
+import { Refusal, Reply, createKernel, definePlugin } from "../api";
 import type { Identity, Definition, Options, Plugin } from "../api";
 import { limiter } from "../../guard/api";
 
@@ -112,6 +112,103 @@ describe("a declared budget", () =>
         }
 
         expect(answers.every((answer) => answer.status === 200)).toBe(true);
+    });
+});
+
+describe("a budget counting only what it guards against", () =>
+{
+    function guarding(): Plugin
+    {
+        return definePlugin("gate", {
+            version: "1.0.0",
+            describe: "Takes a secret.",
+            routes: [{
+                method: "POST",
+                path: "/gate",
+                describe: "Opens.",
+                public: true,
+                limit: { requests: 3, seconds: 300, countSuccess: false },
+                input: z.object({ secret: z.string() }),
+                output: z.object({ ok: z.boolean() }),
+                handle: (given: { secret: string }) =>
+                {
+                    if (given.secret !== "right")
+                    {
+                        throw new Refusal(401, "NO", "Wrong.");
+                    }
+
+                    return { ok: true };
+                },
+            }],
+        } as Definition);
+    }
+
+    async function press(kernel: Awaited<ReturnType<typeof startKernel>>, secret: string, times: number): Promise<number[]>
+    {
+        const got: number[] = [];
+
+        for (let turn = 0; turn < times; turn += 1)
+        {
+            const answer = await kernel.handle({ method: "POST", path: "/gate", input: { secret }, from: "1.2.3.4" });
+
+            got.push(answer.status);
+        }
+
+        return got;
+    }
+
+    test("lets a caller succeed past the window, and still stops one guessing", async () =>
+    {
+        const kernel = await startKernel({ plugins: [guarding()] });
+
+        // Six devices signing in is not six attacks.
+        expect(await press(kernel, "right", 6)).toEqual([201, 201, 201, 201, 201, 201]);
+
+        // The same caller guessing still runs out.
+        expect(await press(kernel, "wrong", 5)).toEqual([401, 401, 401, 429, 429]);
+    });
+
+    test("counts every call when the route does not say otherwise", async () =>
+    {
+        const kernel = await startKernel({ plugins: [budgetOf({ requests: 3, seconds: 60 })] });
+
+        const got: number[] = [];
+
+        for (let turn = 0; turn < 5; turn += 1)
+        {
+            got.push((await kernel.handle({ method: "GET", path: "/thing", input: {}, from: "1.2.3.4" })).status);
+        }
+
+        expect(got).toEqual([200, 200, 200, 429, 429]);
+    });
+
+    test("keeps the spend when a handler answers a refusal rather than raising one", async () =>
+    {
+        const kernel = await startKernel({
+            plugins: [definePlugin("claims", {
+                version: "1.0.0",
+                describe: "Answers a conflict without throwing.",
+                routes: [{
+                    method: "POST",
+                    path: "/claims",
+                    describe: "Claims.",
+                    public: true,
+                    limit: { requests: 3, seconds: 300, countSuccess: false },
+                    input: z.object({}),
+                    output: z.object({ ok: z.boolean() }),
+                    handle: () => new Reply(409, { ok: false }),
+                }],
+            } as Definition)],
+        });
+
+        const got: number[] = [];
+
+        for (let turn = 0; turn < 5; turn += 1)
+        {
+            got.push((await kernel.handle({ method: "POST", path: "/claims", input: {}, from: "9.9.9.9" })).status);
+        }
+
+        expect(got).toEqual([409, 409, 409, 429, 429]);
     });
 });
 

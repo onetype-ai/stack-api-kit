@@ -530,6 +530,85 @@ describe("headers a route declared", () =>
     });
 });
 
+describe("the bytes a route asked to keep", () =>
+{
+    /** What a partner signs is the string it sent, not the shape it means. */
+    const signed: Partial<Definition> = {
+        routes: [
+            {
+                method: "POST",
+                path: "/hook",
+                describe: "Takes a signed delivery.",
+                public: true,
+                reads: ["x-signature"],
+                keepsRaw: true,
+                input: z.object({ id: z.string(), amount: z.number() }),
+                output: z.object({ sent: z.string(), parsed: z.string() }),
+                handle: (input, ctx) => ({
+                    sent: ctx.sent === undefined ? "none" : new TextDecoder().decode(ctx.sent),
+                    parsed: JSON.stringify(input),
+                }),
+            },
+            {
+                method: "POST",
+                path: "/plain",
+                describe: "Takes the same body, and asked for nothing.",
+                public: true,
+                input: z.object({ id: z.string(), amount: z.number() }),
+                output: z.object({ sent: z.string() }),
+                handle: (_input, ctx) => ({ sent: ctx.sent === undefined ? "none" : "bytes" }),
+            },
+        ],
+    };
+
+    // Key order and whitespace a partner chose, which no schema preserves.
+    const AS_SENT = '{\n  "amount": 42,\n  "id": "evt_1"\n}';
+
+    test("reaches the handler exactly as they arrived", async () =>
+    {
+        const app = await startServer(signed);
+
+        const answer = await app.request("/hook", {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-signature": "abc" },
+            body: AS_SENT,
+        });
+
+        expect(await answer.json()).toMatchObject({ sent: AS_SENT });
+    });
+
+    test("is not what the parsed body serialises back to", async () =>
+    {
+        const app = await startServer(signed);
+
+        const answer = await app.request("/hook", {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-signature": "abc" },
+            body: AS_SENT,
+        });
+
+        const body = await answer.json() as { sent: string; parsed: string };
+
+        // The whole reason the bytes have to be carried: this is what a
+        // handler would have signed instead, and it is a different string.
+        expect(body.parsed).not.toBe(body.sent);
+        expect(body.parsed).toBe('{"id":"evt_1","amount":42}');
+    });
+
+    test("never reaches a route that did not declare it", async () =>
+    {
+        const app = await startServer(signed);
+
+        const answer = await app.request("/plain", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: AS_SENT,
+        });
+
+        expect(await answer.json()).toEqual({ sent: "none" });
+    });
+});
+
 describe("identities", () =>
 {
     test("answers 401 when identify throws rather than 500", async () =>

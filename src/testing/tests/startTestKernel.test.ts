@@ -235,3 +235,75 @@ describe("a caller a test controls", () =>
         expect(scoped.claims).toEqual({ tenantId: "acme" });
     });
 });
+
+describe("a caller whose permissions grants decided", () =>
+{
+    const guarded = definePlugin("guarded", {
+        version: "1.0.0",
+        describe: "Holds one closed route.",
+        permissions: { "guarded.read": { describe: "Read it." } },
+        routes: [{
+            method: "GET" as const,
+            path: "/guarded",
+            describe: "Closed.",
+            requires: ["guarded.read"],
+            input: z.object({}),
+            output: z.object({ ok: z.boolean() }),
+            handle: () => ({ ok: true }),
+        }],
+    });
+
+    function sessions(roles: Readonly<Record<string, readonly string[]>>): Plugin
+    {
+        return definePlugin("sessions", {
+            version: "1.0.0",
+            describe: "Says what a role holds.",
+            mayGrant: ["guarded.read"],
+            identifies: () => undefined,
+            grants: (_ctx, who) => roles[String(who.claims["role"])] ?? [],
+        });
+    }
+
+    test("asks the plugin that decides, rather than the test's own copy", async () =>
+    {
+        const api = await startTestKernel({ plugins: [sessions({ reader: ["guarded.read"], stranger: [] }), guarded] });
+
+        const reader = await api.granted({ role: "reader" });
+        const stranger = await api.granted({ role: "stranger" });
+
+        expect(reader.permissions).toEqual(["guarded.read"]);
+        expect(stranger.permissions).toEqual([]);
+        expect(reader.claims).toEqual({ role: "reader" });
+
+        await api.stop();
+    });
+
+    test("sees a role widened, which a written-out list cannot", async () =>
+    {
+        // The role table changed under the test: stranger now holds it too.
+        const api = await startTestKernel({ plugins: [sessions({ stranger: ["guarded.read"] }), guarded] });
+
+        const written = await api.kernel.handle({
+            method: "GET", path: "/guarded", input: {},
+            identity: createIdentity([], "u1", { role: "stranger" }),
+        });
+        const decided = await api.kernel.handle({
+            method: "GET", path: "/guarded", input: {},
+            identity: await api.granted({ role: "stranger" }),
+        });
+
+        expect(written.status).toBe(403);
+        expect(decided.status).toBe(200);
+
+        await api.stop();
+    });
+
+    test("says so where nothing grants, rather than answering an empty identity", async () =>
+    {
+        const api = await startTestKernel({ plugins: [guarded] });
+
+        await expect(api.granted({ role: "reader" })).rejects.toThrow(/nothing decides/);
+
+        await api.stop();
+    });
+});

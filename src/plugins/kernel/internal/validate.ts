@@ -2,7 +2,7 @@ import type { Plugin } from "./contract";
 import type { KernelFault } from "./faults";
 import * as names from "./names";
 import { tableName } from "./tablename";
-import { canFilter } from "./output";
+import { canFilter, rangedNumbers } from "./output";
 
 /** One thing wrong, and everything needed to fix it. */
 export type ContractProblem = {
@@ -207,6 +207,7 @@ function checkOwn(name: string, plugin: Plugin, owned: Ownership, say: Report): 
             say("INVALID_OUTPUT", name, `Route ${route.method} "${route.path}" has an output schema that cannot filter what leaves. Use z.object naming every field that may be sent: it strips the rest. z.any, z.unknown, z.record, z.looseObject, a catchall and a transform all forward whatever the handler returned.`);
         }
 
+        checkRanges(name, route, say);
         checkLimit(name, route, say);
         checkHeaders(name, route, say);
     }
@@ -263,7 +264,18 @@ function checkOwn(name: string, plugin: Plugin, owned: Ownership, say: Report): 
  * A handler holding one would put it in a log the moment anyone logged its
  * input, and the framework cannot know which handler is careful.
  */
-const SECRET: ReadonlySet<string> = new Set(["cookie", "authorization", "proxy-authorization", "set-cookie"]);
+export const SECRET: ReadonlySet<string> = new Set(["cookie", "authorization", "proxy-authorization", "set-cookie"]);
+
+/**
+ * A header naming a signature, by shape rather than by partner.
+ *
+ * A list of names would be a list of whose webhooks the kit has heard of:
+ * `stripe-signature`, `x-hub-signature-256`, `svix-signature`,
+ * `x-shopify-hmac-sha256` and the next one nobody has written yet. The word
+ * is the thing they have in common, and it is a word nobody puts in a header
+ * name by accident.
+ */
+const SIGNATURE = /(^|-)(signature|sig|hmac)(-|$)/;
 
 /** The headers a route asks to read. */
 function checkHeaders(name: string, route: NonNullable<Plugin["definition"]["routes"]>[number], say: Report): void
@@ -280,6 +292,18 @@ function checkHeaders(name: string, route: NonNullable<Plugin["definition"]["rou
         if (SECRET.has(header))
         {
             say("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" reads "${header}", which carries a credential. Whoever identifies the caller reads it; a handler holding it would log it.`);
+
+            continue;
+        }
+
+        // Refused rather than warned, because this one cannot be made to work
+        // by being careful: a signature is over the bytes that arrived, and
+        // parsing reorders keys and drops whitespace. Re-serialising the
+        // parsed value gives a different string, and no canonical form
+        // recovers the original.
+        if (SIGNATURE.test(header) && route.keepsRaw !== true)
+        {
+            say("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" reads "${header}" and does not declare keepsRaw. A signature is checked against the bytes that arrived, and this route never sees them: the body is parsed before the handler runs. Add keepsRaw: true and check ctx.sent, or drop "${header}" from reads and stop claiming the check.`);
         }
     }
 }
@@ -367,6 +391,35 @@ function checkLimit(name: string, route: NonNullable<Plugin["definition"]["route
     if (!Number.isInteger(limit.seconds) || limit.seconds < 1)
     {
         say("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" declares a window of ${limit.seconds} seconds. A window without length is one that never resets.`);
+    }
+}
+
+/**
+ * A number the route bounds on the way in and lets out bare.
+ *
+ * The range is the field's meaning, not decoration: a caller told 0..1 is a
+ * share, and the same field answered as a plain number leaves the consumer to
+ * guess. It guesses the shape it already knows, so a scale that outgrew one
+ * reads as a share of a hundred and nothing anywhere is wrong.
+ *
+ * Only the same route is compared. Two plugins naming one field mean two
+ * different things often enough that the name alone proves nothing.
+ */
+function checkRanges(name: string, route: NonNullable<Plugin["definition"]["routes"]>[number], say: Report): void
+{
+    if (route.input === undefined || route.output === undefined)
+    {
+        return;
+    }
+
+    const leaving = rangedNumbers(route.output);
+
+    for (const [field, bounded] of rangedNumbers(route.input))
+    {
+        if (bounded && leaving.get(field) === false)
+        {
+            say("INVALID_OUTPUT", name, `Route ${route.method} "${route.path}" bounds "${field}" on the way in and answers it bare. Give the output the same range, or the caller has to guess what the number means.`);
+        }
     }
 }
 
@@ -469,12 +522,18 @@ function checkReferences(name: string, plugin: Plugin, by: ReadonlyMap<string, P
         }
     };
 
-    for (const need of declared)
+    const absent = [...declared].filter((need) => !by.has(need));
+
+    if (absent.length > 0)
     {
-        if (!by.has(need))
-        {
-            say("UNKNOWN_DEPENDENCY", name, `"${name}" depends on "${need}", which no plugin provides. Pass it to createKernel, or remove it from dependsOn.`);
-        }
+        // Named together, and said to be a chain: what is added next declares
+        // its own dependsOn, which this run cannot read because those plugins
+        // are not here. A caller adding one at a time pays a boot per link.
+        const one = absent.length === 1;
+        const missing = absent.map((need) => `"${need}"`).join(", ");
+        const each = one ? "That one declares its own dependsOn" : "Those declare their own dependsOn";
+
+        say("UNKNOWN_DEPENDENCY", name, `"${name}" depends on ${missing}, which no plugin provides. Pass ${one ? "it" : "them"} to createKernel, or remove ${one ? "it" : "them"} from dependsOn. ${each}, which this run cannot read from here: pass what they name too, or every boot names one more link.`);
     }
 
     const reach = (kind: keyof Ownership, key: string, code: KernelFault["code"], label: string): void =>
@@ -502,6 +561,13 @@ function checkReferences(name: string, plugin: Plugin, by: ReadonlyMap<string, P
     for (const key of Object.keys(plugin.definition.listens ?? {}))
     {
         mustExist("events", key, "UNDECLARED_EVENT", "Event");
+
+        // Delivery skips the emitter, so this listener would never run: five
+        // places would say it had, and the row it writes would not be there.
+        if (owned.events.get(key) === name)
+        {
+            say("UNHEARD_EVENT", name, `"${name}" listens to its own "${key}", and a plugin never hears what it emitted. Call the service directly.`);
+        }
     }
 
     // A hook is the same: the owner runs it and reads what comes back, so the

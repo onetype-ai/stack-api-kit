@@ -39,6 +39,59 @@ describe("what a generated application cannot get wrong here", () =>
         await expect(kernel.start()).rejects.toThrow(/credential/);
     });
 
+    /** One route reading one header, with or without the bytes it needs. */
+    function signing(header: string, keepsRaw: boolean)
+    {
+        return createKernel({
+            plugins: [definePlugin("billing", {
+                version: "1.0.0",
+                describe: "Takes a signed webhook.",
+                routes: [defineRoute<TestContext>()({
+                    method: "POST",
+                    path: "/billing/webhook",
+                    describe: "Takes a signed delivery.",
+                    public: true,
+                    reads: [header],
+                    ...keepsRaw && { keepsRaw: true },
+                    input: z.object({ id: z.string() }),
+                    output: z.object({ ok: z.boolean() }),
+                    handle: () => ({ ok: true }),
+                })],
+            })],
+        });
+    }
+
+    test("a route claiming a signature check without the bytes refuses to start", async () =>
+    {
+        // Refused rather than warned: no amount of care in the handler makes
+        // this work, because the bytes it would check are already gone.
+        await expect(signing("stripe-signature", false).start())
+            .rejects.toThrow(/reads "stripe-signature" and does not declare keepsRaw/);
+    });
+
+    test("the same route starts once it declares keepsRaw", async () =>
+    {
+        await expect(signing("stripe-signature", true).start()).resolves.toBeUndefined();
+    });
+
+    test("knows a signature header by its shape, not by whose webhook it is", async () =>
+    {
+        // A list of names would be a list of partners the kit has heard of.
+        for (const header of ["x-hub-signature-256", "svix-signature", "x-shopify-hmac-sha256", "paypal-transmission-sig"])
+        {
+            await expect(signing(header, false).start()).rejects.toThrow(/does not declare keepsRaw/);
+        }
+    });
+
+    test("says nothing about an ordinary header", async () =>
+    {
+        // "sig" as a whole word, not as letters inside another one.
+        for (const header of ["origin", "accept-language", "x-request-id", "x-sigma"])
+        {
+            await expect(signing(header, false).start()).resolves.toBeUndefined();
+        }
+    });
+
     test("a route is closed until it says otherwise, so a stranger is 401", async () =>
     {
         const kernel = createKernel({

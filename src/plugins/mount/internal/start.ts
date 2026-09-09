@@ -1,6 +1,6 @@
-import { database, noStore } from "../../database/api";
+import { database, migrationSteps, noStore } from "../../database/api";
 import { limiter, unlimited } from "../../guard/api";
-import { createKernel, order } from "../../kernel/api";
+import { createKernel, order, tableIndexes } from "../../kernel/api";
 import { dial } from "../../outbound/api";
 import { serve, sockets } from "../../http/api";
 import type { DatabaseOptions, Store } from "../../database/api";
@@ -26,6 +26,137 @@ function storeFor(given: StartOptions["database"], withTables: readonly Plugin[]
             withTables.map((plugin) => [plugin.name, plugin.definition.tables as Readonly<Record<string, unknown>>]),
         ),
     });
+}
+
+
+/** One index a table declares that no migration creates. */
+type UnmigratedIndex = {
+    plugin: string;
+    table: string;
+    name: string;
+    unique: boolean;
+};
+
+/**
+ * Declared indexes no migration creates.
+ *
+ * Two places hold the same truth here: the table says an index exists, the
+ * migration is what actually makes one. A uniqueIndex declared and never
+ * created reads as a guarantee and accepts the duplicate it was there to
+ * refuse, with nothing failing.
+ *
+ * Read from the migration files rather than from what a boot applied: the
+ * second boot applies nothing.
+ */
+function missingIndexes(plugins: readonly Plugin[], sources: readonly { plugin: string; from: string }[]): UnmigratedIndex[]
+{
+    const declared: UnmigratedIndex[] = [];
+
+    for (const plugin of plugins)
+    {
+        for (const [key, table] of Object.entries(plugin.definition.tables ?? {}))
+        {
+            for (const index of tableIndexes(table))
+            {
+                declared.push({ plugin: plugin.name, table: key, name: index.name, unique: index.unique });
+            }
+        }
+    }
+
+    if (declared.length === 0)
+    {
+        return [];
+    }
+
+    let sql = "";
+
+    for (const source of sources)
+    {
+        for (const step of migrationSteps(source))
+        {
+            sql += `${step.sql}\n`;
+        }
+    }
+
+    const created = new Set(
+        [...sql.matchAll(/CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?"?([A-Za-z0-9_]+)"?/gi)]
+            .map((found) => found[1] ?? ""),
+    );
+
+    return declared.filter((one) => !created.has(one.name));
+}
+
+
+/** One migration reaching a table another plugin owns, undeclared. */
+type UndeclaredRead = {
+    plugin: string;
+    table: string;
+    owner: string;
+};
+
+/**
+ * Migrations reading a table another plugin owns without depending on it.
+ *
+ * A cross-plugin import is checked against `dependsOn`, and SQL is the one
+ * place that rule was never enforced: a migration naming another plugin's
+ * table works only because ties break by name, so the same file refuses the
+ * day its plugin is renamed to sort first.
+ */
+function undeclaredReads(plugins: readonly Plugin[], sources: readonly { plugin: string; from: string }[]): UndeclaredRead[]
+{
+    const sqlOf = new Map<string, string>();
+
+    for (const source of sources)
+    {
+        let sql = "";
+
+        for (const step of migrationSteps(source))
+        {
+            sql += `${step.sql}\n`;
+        }
+
+        sqlOf.set(source.plugin, sql);
+    }
+
+    // Owned by whoever creates it, not by whoever declared a table object: a
+    // migration is what actually makes one, and only what exists can be read.
+    const owner = new Map<string, string>();
+
+    for (const [plugin, sql] of sqlOf)
+    {
+        for (const found of sql.matchAll(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"?([A-Za-z0-9_]+)"?/gi))
+        {
+            owner.set((found[1] ?? "").toLowerCase(), plugin);
+        }
+    }
+
+    const declared = new Map(plugins.map((plugin) => [plugin.name, new Set(plugin.definition.dependsOn ?? [])]));
+    const crossings: UndeclaredRead[] = [];
+    const seen = new Set<string>();
+
+    for (const [plugin, sql] of sqlOf)
+    {
+        for (const found of sql.matchAll(/\b(?:FROM|JOIN|UPDATE|INTO|REFERENCES)\s+"?([A-Za-z0-9_]+)"?/gi))
+        {
+            const table = (found[1] ?? "").toLowerCase();
+            const owns = owner.get(table);
+
+            if (owns === undefined || owns === plugin || declared.get(plugin)?.has(owns) === true)
+            {
+                continue;
+            }
+
+            const key = `${plugin}/${table}`;
+
+            if (!seen.has(key))
+            {
+                seen.add(key);
+                crossings.push({ plugin, table, owner: owns });
+            }
+        }
+    }
+
+    return crossings;
 }
 
 // The order is the point: the database opens and migrates before any plugin
@@ -64,6 +195,27 @@ export async function start(starting: StartOptions): Promise<RunningApp>
         );
     }
 
+    // Read before migrating rather than from what migrating returned: a
+    // second boot applies nothing, and a check over an empty list would call
+    // every index missing.
+    const unmigrated = missingIndexes(starting.plugins, migrations);
+
+    if (unmigrated.length > 0)
+    {
+        throw new TypeError(
+            `${unmigrated.length} declared ${unmigrated.length === 1 ? "index is" : "indexes are"} in no migration, so ${unmigrated.length === 1 ? "it never reaches" : "they never reach"} the database:\n${unmigrated.map((one) => `  - ${one.plugin}: ${one.unique ? "uniqueIndex" : "index"} "${one.name}" on "${one.table}". A uniqueIndex nothing created accepts the duplicate it was declared to stop. Add CREATE ${one.unique ? "UNIQUE " : ""}INDEX ${one.name} to a migration, or drop the declaration.`).join("\n")}`,
+        );
+    }
+
+    const crossings = undeclaredReads(starting.plugins, migrations);
+
+    if (crossings.length > 0)
+    {
+        throw new TypeError(
+            `${crossings.length} ${crossings.length === 1 ? "migration reaches a table" : "migrations reach tables"} another plugin owns without depending on it:\n${crossings.map((one) => `  - ${one.plugin}: reads "${one.table}", which "${one.owner}" creates. It works only while names happen to sort that way, and refuses the day either is renamed. Add "${one.owner}" to dependsOn, or stop reading its table.`).join("\n")}`,
+        );
+    }
+
     const steps = store.migrate(migrations);
 
     if (steps.length > 0)
@@ -80,6 +232,29 @@ export async function start(starting: StartOptions): Promise<RunningApp>
         log?.warn("RATE LIMITS ARE NOT BEING COUNTED", {
             meaning: "every route's declared budget is ignored: nothing answers 429, however often it is called",
             turnOn: "remove limits: false, or leave it out entirely",
+        });
+    }
+
+    // Said rather than refused, because how much a stranger may ask for is
+    // the project's call and not the kit's: one behind a proxy that counts
+    // for it is right to declare nothing. What is never right is not
+    // knowing. A public route is the whole internet by declaration, and
+    // without a budget it is the whole internet as often as it likes.
+    //
+    // Here rather than in validate(), because a test builds its kernel with
+    // createKernel and declares no limits on purpose: this is the production
+    // path, and only the production path.
+    const unbounded = starting.plugins
+        .flatMap((plugin) => (plugin.definition.routes ?? []).map((route) => ({ plugin: plugin.name, route })))
+        .filter(({ route }) => route.public === true && route.limit === undefined)
+        .map(({ plugin, route }) => `${plugin}: ${route.method} ${route.path}`);
+
+    if (unbounded.length > 0)
+    {
+        log?.warn("PUBLIC ROUTES WITH NO LIMIT", {
+            meaning: "anyone on the internet may call these as often as they like, and nothing answers 429",
+            routes: unbounded,
+            turnOn: "declare limit: { requests, seconds } on each, or count them in front of this process",
         });
     }
 

@@ -97,4 +97,31 @@ describe("what a project checks about itself", () =>
         // packages/…/internal to check itself is the thing this replaces.
         expect(Project.checks({ root: at })).toEqual([]);
     });
+
+    test("a plugin leaving the process is reported, and named in \"leaving\" it is not", () =>
+    {
+        const at = createProject();
+
+        writeFileSync(join(at, "#docs", "procedures", "plugin", "contract.md"), procedure());
+        writeFileSync(join(at, "src", "plugins", "found", "Runs.ts"), 'import { spawn } from "node:child_process";\n');
+
+        const loud = Project.checks({ root: at });
+
+        expect(loud).toHaveLength(1);
+        expect(loud[0]?.message).toContain("node:child_process");
+        expect(loud[0]?.message).toContain("\"leaving\"");
+
+        expect(Project.checks({ root: at, leaving: ["found"] })).toEqual([]);
+    });
+
+    test("naming one plugin in \"leaving\" does not excuse another", () =>
+    {
+        const at = createProject();
+
+        writeFileSync(join(at, "#docs", "procedures", "plugin", "contract.md"), procedure());
+        writeFileSync(join(at, "src", "plugins", "found", "Runs.ts"), 'import { spawn } from "node:child_process";\n');
+
+        expect(Project.checks({ root: at, leaving: ["elsewhere"] })).toHaveLength(1);
+    });
+
 });

@@ -1,9 +1,11 @@
 export { answer, Reply, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, Refusal } from "./plugins/kernel/api";
 export type {
+    Abandoned,
     Announcement,
     Answer,
     Budget,
     Channel,
+    Answered,
     Identity,
     Command,
     Context,
@@ -58,5 +60,6 @@ export type { DialerOptions } from "./plugins/outbound/api";
 export { limiter, unlimited, equalsInConstantTime } from "./plugins/guard/api";
 export type { Limiter, Verdict, Window } from "./plugins/guard/api";
 
-export { discover, start } from "./plugins/mount/api";
+export { discover, discoverFrom, start } from "./plugins/mount/api";
+export type { Found, Skipped } from "./plugins/mount/api";
 export type { RunningApp, StartOptions } from "./plugins/mount/api";

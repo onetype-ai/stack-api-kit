@@ -81,6 +81,14 @@ describe("dependencies", () =>
         expect(failed?.message).toMatch(/"missing", which no plugin provides/);
     });
 
+    test("names every dependency that is absent at once, rather than one per boot", async () =>
+    {
+        const failed = await refusalFor([participant("billing", { dependsOn: ["one", "two", "three"] })]);
+
+        expect(failed?.message).toMatch(/"one", "two", "three"/);
+        expect(failed?.message).toMatch(/pass what they name too/);
+    });
+
     test("refuses a cycle, naming the loop", async () =>
     {
         const failed = await refusalFor([
@@ -398,6 +406,19 @@ describe("references", () =>
         ]);
 
         expect(failed?.code).toBe("UNDECLARED_EVENT");
+    });
+
+    test("and refuses a plugin listening to its own event, which delivery skips", async () =>
+    {
+        const failed = await refusalFor([
+            participant("logger", {
+                emits: { "logger.swept": { describe: "swept", schema: z.object({}) } },
+                listens: { "logger.swept": { describe: "hears itself", handle: () => {} } },
+            }),
+        ]);
+
+        expect(failed?.code).toBe("UNHEARD_EVENT");
+        expect(failed?.message).toContain("Call the service directly");
     });
 
     test("still refuses reaching a plugin it does not depend on", async () =>

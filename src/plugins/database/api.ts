@@ -5,6 +5,8 @@ import { noStore } from "./internal/none";
 import { outbox } from "./internal/outbox";
 import { schedule } from "./internal/schedule";
 
+import { tableName } from "../kernel/api";
+
 import type { ScopeFilter, Outbox, Schedule } from "../kernel/api";
 import { store, type Handle, type Tables } from "./internal/store";
 
@@ -54,6 +56,19 @@ export type { Handle, DatabaseOptions, Source, Step, Tables };
  * Built by the project rather than reached for: two stores can exist in one
  * process without seeing each other, which is what a test needs.
  */
+/**
+ * Every table name a plugin declared, as the database spells it.
+ *
+ * The key a table is declared under is not always its name, so it is read off
+ * the table the way the kernel reads it, and a store of a project's own that
+ * carries no name falls back to the key.
+ */
+function declaredTables(owned: Readonly<Record<string, Readonly<Record<string, unknown>>>>): string[]
+{
+    return Object.values(owned).flatMap((tables) =>
+        Object.entries(tables).map(([key, table]) => tableName(table) ?? key));
+}
+
 export function database(settings: StoreOptions): Store<Handle>
 {
     const connection = connect(settings);
@@ -69,7 +84,7 @@ export function database(settings: StoreOptions): Store<Handle>
         /** Runs every migration that has not run, in the order given. */
         migrate: (sources: readonly Source[]): Step[] =>
         {
-            return migrate(connection, sources);
+            return migrate(connection, sources, declaredTables(settings.tables));
         },
 
         /**

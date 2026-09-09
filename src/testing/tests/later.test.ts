@@ -99,3 +99,20 @@ test("and stops at the bound, so work asking for itself cannot spin", async () =
 
     expect(turns).toBe(4);
 });
+
+test("asking for later work without a schedule names the plugin that asked, not just the option", async () =>
+{
+    const sweeper = definePlugin("sweeper", {
+        version: "1.0.0",
+        describe: "Asks for later work while it starts.",
+        commands: { "sweeper.sweep": { describe: "Clears old rows.", schema: z.object({}), run: () => undefined } },
+        setup: (ctx) => { ctx.commands.later("sweeper.sweep", {}, 60); },
+    });
+
+    // A neighbour that wants nothing to do with schedules, and whose test this
+    // would be: a boot is shared, so it stops for them too.
+    const bystander = definePlugin("bystander", { version: "1.0.0", describe: "Keeps to itself." });
+
+    await expect(startTestKernel({ plugins: [bystander, sweeper] }))
+        .rejects.toThrow(/"sweeper" used ctx\.commands\.later/);
+});

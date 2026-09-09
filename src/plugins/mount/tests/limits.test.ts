@@ -103,6 +103,75 @@ describe("turning them off", () =>
     });
 });
 
+describe("a public route nothing bounds", () =>
+{
+    /** Open to the world, and no budget said how often. */
+    const open = definePlugin("open", {
+        version: "1.0.0",
+        describe: "Answers anyone, as often as they ask.",
+        routes: [
+            route({
+                method: "POST", path: "/open", describe: "Answers.", public: true,
+                input: z.object({}), output: z.object({ ok: z.boolean() }),
+                handle: () => ({ ok: true }),
+            }),
+        ],
+    });
+
+    async function warningsFrom(plugins: Parameters<typeof start>[0]["plugins"])
+    {
+        const said: { line: string; about: unknown }[] = [];
+
+        const api = await start({
+            plugins,
+            log: { debug: () => {}, info: () => {}, error: () => {}, warn: (line, about) => { said.push({ line, about }); } },
+        });
+
+        await api.stop();
+
+        return said;
+    }
+
+    test("is named at boot, because public and unbounded is the whole internet", async () =>
+    {
+        const said = await warningsFrom([open]);
+        const warned = said.find((one) => one.line === "PUBLIC ROUTES WITH NO LIMIT");
+
+        expect(warned).toBeDefined();
+        expect((warned?.about as { routes: string[] }).routes).toEqual(["open: POST /open"]);
+    });
+
+    test("says nothing about one that declares a limit", async () =>
+    {
+        const said = await warningsFrom([bounded]);
+
+        expect(said.map((one) => one.line)).not.toContain("PUBLIC ROUTES WITH NO LIMIT");
+    });
+
+    test("says nothing about a route that is not public", async () =>
+    {
+        // A guarded route with no limit is the ordinary case: whoever reached
+        // it was let through by name, and counting them is a separate choice.
+        const guarded = definePlugin("guarded", {
+            version: "1.0.0",
+            describe: "Answers whoever was let in.",
+            permissions: { "guarded.read": { describe: "Reads." } },
+            routes: [
+                route({
+                    method: "GET", path: "/guarded", describe: "Answers.",
+                    requires: ["guarded.read"],
+                    input: z.object({}), output: z.object({ ok: z.boolean() }),
+                    handle: () => ({ ok: true }),
+                }),
+            ],
+        });
+
+        const said = await warningsFrom([guarded]);
+
+        expect(said.map((one) => one.line)).not.toContain("PUBLIC ROUTES WITH NO LIMIT");
+    });
+});
+
 describe("a budget the project brought", () =>
 {
     test("is used even where limits are off, since it was asked for by name", async () =>

@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
+import { Refusal } from "./answer";
 import { context, type Wiring } from "./context";
 import type { Identity, Context, Method, Plugin, Reach, Route } from "./contract";
 import { events, type Failure, type Pending } from "./events";
@@ -8,7 +9,7 @@ import { hooks } from "./hooks";
 import { order } from "./order";
 import { createPermissions } from "./permissions";
 import { type Budget, type Incoming, type RouteOwner, notServing, type Outgoing, respond, unknownRoute } from "./request";
-import type { Dialer, ScopeFilter, Outbox, Schedule, Sockets, Storage } from "./store";
+import type { Abandoned, Dialer, ScopeFilter, Outbox, Schedule, Sockets, Storage } from "./store";
 import { validate } from "./validate";
 
 /** Where a line goes. The project decides; a plugin never writes directly. */
@@ -117,6 +118,9 @@ export type Registration = {
 
     /** The request headers this route declared it reads, lowercase. */
     reads: readonly string[];
+
+    /** Whether it also sees the body's bytes as they arrived. */
+    keepsRaw: boolean;
 };
 
 /** What a project holds after createKernel. */
@@ -143,6 +147,20 @@ export type Kernel = {
     identify: ((request: Request) => Promise<Identity | undefined>) | undefined;
 
     events: { failures: () => readonly Failure[] };
+
+    /**
+     * What the schedule did that nobody is waiting on.
+     *
+     * `abandoned` answers every scheduled command that ran out of attempts.
+     * Nothing else reports one: a caller gets no 500 because there is no
+     * caller, and a listener records nothing because no event was emitted.
+     *
+     * It matters most for work that asks for itself again as it ends, which
+     * is how the kit repeats: giving up once ends the repetition until the
+     * process restarts, and a deployment reading this is the only way to
+     * learn that the sweeping stopped.
+     */
+    work: { abandoned: () => readonly Abandoned[] };
 
     /**
      * Runs whatever the schedule says is due, once, and waits for it.
@@ -309,12 +327,41 @@ export function createKernel(options: Options): Kernel
     let beating: ReturnType<typeof setInterval> | undefined;
 
     /**
+     * Scheduled work that ran out of attempts.
+     *
+     * Bounded for the same reason listener failures are: each holds an Error,
+     * and an Error holds a stack, so a command failing forever would
+     * otherwise grow this for as long as the process lives.
+     */
+    const abandoned: Abandoned[] = [];
+    const REMEMBERED = 100;
+
+    /**
      * Runs what is due, one turn.
      *
      * Failures are the point rather than an afterthought: a command that
      * throws goes back with its attempt counted, so a partner that was down
      * for a minute costs a minute rather than the work.
      */
+    /**
+     * Whether a failure is the command's final answer.
+     *
+     * A refusal carries a status because it was written for a caller, and
+     * that status says as much to a schedule as it does to one: 404 and 409
+     * are about the work, and no amount of waiting turns them into 200. The
+     * two that do wait are the two HTTP already names, and anything 5xx is a
+     * claim about the moment rather than the work.
+     */
+    function settled(cause: unknown): boolean
+    {
+        if (!(cause instanceof Refusal))
+        {
+            return false;
+        }
+
+        return cause.status >= 400 && cause.status < 500 && cause.status !== 408 && cause.status !== 429;
+    }
+
     async function due(): Promise<number>
     {
         if (options.schedule === undefined || !running)
@@ -344,12 +391,37 @@ export function createKernel(options: Options): Kernel
                 // still broken does not spend the whole beat on itself. And
                 // giving up eventually: a job retried forever is a process
                 // spending itself on work nobody is waiting for any more.
-                if (job.attempts + 1 >= (options.attempts ?? 8))
+                //
+                // A refusal about the work itself skips the waiting: 404 is
+                // the same answer eight times, while 408, 429 and anything
+                // 5xx are claims about the moment rather than the work.
+                const final = settled(cause);
+
+                if (final || job.attempts + 1 >= (options.attempts ?? 8))
                 {
-                    log("error", job.plugin, "a scheduled command gave up", {
+                    log("error", job.plugin, final ? "a scheduled command was refused for good" : "a scheduled command gave up", {
                         command: job.command,
                         attempts: job.attempts + 1,
+                        ...(final && { meaning: "the command answered 4xx, which says the work itself is wrong, so it is not tried again. Throw instead of refusing if waiting would help." }),
                     });
+
+                    // Kept as well as logged. A line in stdout is read by
+                    // whatever the deployment happens to collect; this is
+                    // read by the deployment itself, and by a test, the same
+                    // way a listener failure is.
+                    abandoned.push({
+                        plugin: job.plugin,
+                        command: job.command,
+                        input: job.input,
+                        attempts: job.attempts + 1,
+                        error: cause,
+                        at: clock(),
+                    });
+
+                    if (abandoned.length > REMEMBERED)
+                    {
+                        abandoned.splice(0, abandoned.length - REMEMBERED);
+                    }
 
                     await options.schedule.abandon(job.id);
                 }
@@ -389,9 +461,9 @@ export function createKernel(options: Options): Kernel
         run: (command, input, identity) => run(command, input, identity),
     };
 
-    const seenBy = (plugin: string, identity?: Identity, headers?: Readonly<Record<string, string>>): Context =>
+    const seenBy = (plugin: string, identity?: Identity, headers?: Readonly<Record<string, string>>, sent?: Uint8Array): Context =>
     {
-        return context(wiring, plugin, identity, undefined, headers);
+        return context(wiring, plugin, identity, undefined, headers, undefined, sent);
     };
 
     /** Runs a command, after its permission and its schema. */
@@ -630,6 +702,7 @@ export function createKernel(options: Options): Kernel
                 limit: route.limit,
                 accepts: route.accepts ?? "json",
                 reads: route.reads ?? [],
+                keepsRaw: route.keepsRaw === true,
             })),
 
         channels: (): readonly Declared[] =>
@@ -699,6 +772,8 @@ export function createKernel(options: Options): Kernel
         },
 
         events: { failures: bus.failures },
+
+        work: { abandoned: () => [...abandoned] },
 
         due,
 

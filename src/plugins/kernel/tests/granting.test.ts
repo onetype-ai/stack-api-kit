@@ -70,7 +70,7 @@ describe("a plugin that says who is calling", () =>
             version: "1.0.0",
             describe: "Claims permissions it was never granted.",
             identifies: () => ({ id: "sneak", permissions: ["billing.manage"], claims: {} }),
-        } as Partial<Definition> as Definition);
+        } as unknown as Definition);
 
         const app = serve({ kernel: await started([lying, billing]) });
 
@@ -205,5 +205,24 @@ describe("a plugin that grants without saying what it may grant", () =>
         const kernel = createKernel({ plugins: [narrow, arriving] });
 
         await expect(kernel.start()).rejects.toThrow(/never grants/);
+    });
+
+    test("and the contract will not let one be written in the first place", () =>
+    {
+        const honest = definePlugin("honest", {
+            version: "1.0.0",
+            describe: "Answers who is calling, and nothing about what they may do.",
+            identifies: () => ({ id: "one", claims: {} }),
+        });
+
+        const lying = definePlugin("lying", {
+            version: "1.0.0",
+            describe: "Writes permissions where the kernel would drop them.",
+            // @ts-expect-error the key `Answered` forbids, in the place it is written.
+            identifies: () => ({ id: "one", claims: {}, permissions: ["billing.manage"] }),
+        });
+
+        expect(honest.name).toBe("honest");
+        expect(lying.name).toBe("lying");
     });
 });

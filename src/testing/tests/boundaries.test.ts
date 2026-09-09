@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { findImportViolations } from "../boundaries";
+import { findCopiedVocabulary, findImportViolations, findSharedNames, findSplitVocabulary } from "../boundaries";
 
 let root = "";
 
@@ -241,5 +241,266 @@ describe("what a test may reach", () =>
         expect(findImportViolations(at).map((wrong) => wrong.rule)).toEqual(["deep"]);
 
         rmSync(at, { recursive: true, force: true });
+    });
+});
+
+describe("an import that leaves the process", () =>
+{
+    test("is reported, because no key in the contract declares it", () =>
+    {
+        const problems = findImportViolations(
+            tree({
+                cli: {
+                    "plugin.ts": contractFor("cli"),
+                    "services/Ask.ts": 'import { spawn } from "node:child_process";',
+                },
+            }),
+        );
+
+        expect(problems).toHaveLength(1);
+        expect(problems[0]?.rule).toBe("escape");
+        expect(problems[0]?.message).toContain("node:child_process");
+        expect(problems[0]?.message).toContain("services/Ask.ts");
+    });
+
+    test("names a thread, a vm and a fork the same way, not only a spawn", () =>
+    {
+        const problems = findImportViolations(
+            tree({
+                many: {
+                    "plugin.ts": contractFor("many"),
+                    "a.ts": 'import { Worker } from "node:worker_threads";',
+                    "b.ts": 'import { runInNewContext } from "node:vm";',
+                    "c.ts": 'import cluster from "node:cluster";',
+                },
+            }),
+        );
+
+        expect(problems.map((one) => one.rule)).toEqual(["escape", "escape", "escape"]);
+    });
+
+    test("leaves every other builtin alone: reading a file is not leaving", () =>
+    {
+        const problems = findImportViolations(
+            tree({
+                plain: {
+                    "plugin.ts": contractFor("plain"),
+                    "a.ts": 'import { readFile } from "node:fs/promises";\nimport { createHash } from "node:crypto";\nimport { join } from "node:path";',
+                },
+            }),
+        );
+
+        expect(problems).toEqual([]);
+    });
+
+    test("a test that spawns is reported too: the file it sits in changes nothing it inherits", () =>
+    {
+        const problems = findImportViolations(
+            tree({
+                cli: {
+                    "plugin.ts": contractFor("cli"),
+                    "tests/runs.test.ts": 'import { execFile } from "node:child_process";',
+                },
+            }),
+        );
+
+        expect(problems).toHaveLength(1);
+        expect(problems[0]?.rule).toBe("escape");
+    });
+});
+
+describe("a util two plugins each wrote", () =>
+{
+    const util = (name: string, signature: string, body: string): string =>
+        `class ${name}\n{\n    ${signature}\n    {\n        ${body}\n    }\n}\n\nexport const ${name} = new ${name}();\n`;
+
+    test("is named when the signature is written in two plugins, however differently", () =>
+    {
+        const shared = findSharedNames(
+            tree({
+                one: { "plugin.ts": contractFor("one"), "utils/Text.ts": util("T", "searchable(raw: string): string", "return raw.toLowerCase();") },
+                two: { "plugin.ts": contractFor("two"), "utils/Words.ts": util("W", "searchable(raw: string): string", "return raw.normalize(\"NFD\");") },
+            }),
+        );
+
+        expect(shared).toHaveLength(1);
+        expect(shared[0]?.signature).toBe("searchable(raw: string): string");
+        expect(shared[0]?.plugins).toEqual(["one", "two"]);
+    });
+
+    test("a signature one plugin alone writes is nobody's business", () =>
+    {
+        const shared = findSharedNames(
+            tree({
+                one: { "plugin.ts": contractFor("one"), "utils/Text.ts": util("T", "searchable(raw: string): string", "return raw;") },
+                two: { "plugin.ts": contractFor("two"), "utils/Sums.ts": util("S", "total(of: readonly number[]): number", "return 0;") },
+            }),
+        );
+
+        expect(shared).toEqual([]);
+    });
+
+    test("two answering different questions are held apart by their own types, with nothing to declare", () =>
+    {
+        const shared = findSharedNames(
+            tree({
+                one: { "plugin.ts": contractFor("one"), "utils/A.ts": util("A", "rank(role: string): number", "return 0;") },
+                two: { "plugin.ts": contractFor("two"), "utils/B.ts": util("B", "rank(score: readonly number[]): number", "return 0;") },
+            }),
+        );
+
+        expect(shared).toEqual([]);
+    });
+
+    test("only utils are read: a service is meant to know its own domain", () =>
+    {
+        const shared = findSharedNames(
+            tree({
+                one: { "plugin.ts": contractFor("one"), "services/Items.ts": util("I", "listed(of: string): string", "return of;") },
+                two: { "plugin.ts": contractFor("two"), "services/Rows.ts": util("R", "listed(of: string): string", "return of;") },
+            }),
+        );
+
+        expect(shared).toEqual([]);
+    });
+
+    test("one plugin writing the same signature twice is its own affair", () =>
+    {
+        const shared = findSharedNames(
+            tree({
+                one: {
+                    "plugin.ts": contractFor("one"),
+                    "utils/A.ts": util("A", "of(raw: string): string", "return raw;"),
+                    "utils/B.ts": util("B", "of(raw: string): string", "return raw;"),
+                },
+            }),
+        );
+
+        expect(shared).toEqual([]);
+    });
+});
+
+describe("one word naming two closed sets", () =>
+{
+    const enumFor = (name: string, values: readonly string[]): string =>
+        `import { z } from "zod";\n\nexport const ${name} = z.enum([${values.map((one) => `"${one}"`).join(", ")}]);\n`;
+
+    test("is named when two plugins nearly, but not quite, agree on it", () =>
+    {
+        const split = findSplitVocabulary(
+            tree({
+                account: { "plugin.ts": contractFor("account"), "schemas/Role.ts": enumFor("Role", ["owner", "admin", "member", "staff"]) },
+                workspace: { "plugin.ts": contractFor("workspace", ["account"]), "schemas/Role.ts": enumFor("Role", ["owner", "admin", "member"]) },
+            }),
+        );
+
+        expect(split).toHaveLength(1);
+        expect(split[0]?.name).toBe("Role");
+        expect(split[0]?.shared).toEqual(["admin", "member", "owner"]);
+        expect(split[0]?.apart).toEqual(["staff"]);
+    });
+
+    test("and left alone when neither reaches the other, since a word may mean two things in two domains", () =>
+    {
+        const split = findSplitVocabulary(
+            tree({
+                account: { "plugin.ts": contractFor("account"), "schemas/Role.ts": enumFor("Role", ["owner", "admin", "member", "staff"]) },
+                workspace: { "plugin.ts": contractFor("workspace"), "schemas/Role.ts": enumFor("Role", ["owner", "admin", "member"]) },
+            }),
+        );
+
+        expect(split).toEqual([]);
+    });
+
+    test("and left alone when the two share nothing, since a word may mean two things", () =>
+    {
+        const split = findSplitVocabulary(
+            tree({
+                account: { "plugin.ts": contractFor("account"), "schemas/Role.ts": enumFor("Role", ["owner", "admin"]) },
+                conversation: { "plugin.ts": contractFor("conversation"), "schemas/Turn.ts": enumFor("Role", ["visitor", "bot"]) },
+            }),
+        );
+
+        expect(split).toEqual([]);
+    });
+
+    test("and left alone when the two agree exactly, which is one idea written twice and nothing worse", () =>
+    {
+        const split = findSplitVocabulary(
+            tree({
+                account: { "plugin.ts": contractFor("account"), "schemas/Role.ts": enumFor("Role", ["owner", "admin"]) },
+                workspace: { "plugin.ts": contractFor("workspace"), "schemas/Role.ts": enumFor("Role", ["admin", "owner"]) },
+            }),
+        );
+
+        expect(split).toEqual([]);
+    });
+
+    test("and says nothing about one plugin holding two of its own", () =>
+    {
+        const split = findSplitVocabulary(
+            tree({
+                account: {
+                    "plugin.ts": contractFor("account"),
+                    "schemas/Role.ts": enumFor("Role", ["owner", "admin", "staff"]),
+                    "schemas/Seat.ts": enumFor("Role", ["owner", "admin"]),
+                },
+            }),
+        );
+
+        expect(split).toEqual([]);
+    });
+});
+
+describe("a set one plugin wrote out where another names it", () =>
+{
+    const enumFor = (name: string, values: readonly string[]): string =>
+        `import { z } from "zod";\n\nexport const ${name} = z.enum([${values.map((one) => `"${one}"`).join(", ")}]);\n`;
+
+    test("is named, because a copy with no name is one nothing compares", () =>
+    {
+        const copied = findCopiedVocabulary(
+            tree({
+                workspace: { "plugin.ts": contractFor("workspace"), "schemas/Role.ts": enumFor("Role", ["owner", "admin", "member"]) },
+                mailer: {
+                    "plugin.ts": contractFor("mailer"),
+                    "schemas/Data.ts": 'import { z } from "zod";\n\nexport const Data = z.object({\n    role: z.enum(["owner", "admin", "member"]),\n});\n',
+                },
+            }),
+        );
+
+        expect(copied).toHaveLength(1);
+        expect(copied[0]?.name).toBe("Role");
+        expect(copied[0]?.owner).toBe("workspace");
+        expect(copied[0]?.copier).toBe("mailer");
+    });
+
+    test("and left alone when the set is one nobody else named", () =>
+    {
+        const copied = findCopiedVocabulary(
+            tree({
+                billing: {
+                    "plugin.ts": contractFor("billing"),
+                    "schemas/Config.ts": 'import { z } from "zod";\n\nexport const Config = z.object({\n    provider: z.enum(["stored", "stripe"]),\n});\n',
+                },
+            }),
+        );
+
+        expect(copied).toEqual([]);
+    });
+
+    test("and left alone when a plugin writes out a set it named itself", () =>
+    {
+        const copied = findCopiedVocabulary(
+            tree({
+                workspace: {
+                    "plugin.ts": contractFor("workspace"),
+                    "schemas/Role.ts": enumFor("Role", ["owner", "admin"]),
+                    "schemas/Seat.ts": 'import { z } from "zod";\n\nexport const Seat = z.object({\n    role: z.enum(["owner", "admin"]),\n});\n',
+                },
+            }),
+        );
+
+        expect(copied).toEqual([]);
     });
 });

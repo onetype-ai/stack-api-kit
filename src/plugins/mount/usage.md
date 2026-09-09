@@ -6,10 +6,9 @@ Brings an API up in one call: database, migrations, kernel, plugins, server.
 
 ## Purpose
 
-Every project otherwise writes the same sixty lines to start: open a database,
-collect what each plugin owns, migrate in dependency order, build a kernel,
-start it, then mount its routes. None of that differs between projects, and
-the order is easy to get subtly wrong.
+Every project otherwise writes the same sixty lines: open a database, migrate
+in dependency order, build a kernel, start it, mount its routes. None of that
+differs between projects, and the order is easy to get subtly wrong.
 
 ## Usage
 
@@ -34,13 +33,14 @@ export default { fetch: api.fetch, port: 3000 };
   here overrides it, and is given the started kernel.
 - The kernel starts **before** the server is built, so a refused contract
   stops everything with no route mounted.
-- `limits: false` allows every request and says so loudly at startup. The
-  numbers stay in the routes; what changes is whether anything counts them.
+- `limits: false` allows every request, and says so loudly at startup.
 - `stop` unwinds the plugins, then closes the database.
+- `discoverFrom("./src/plugins")` is discovery with no bundler to glob. It
+  answers `{ plugins, skipped }`: a folder it cannot load is one plugin fewer
+  with a reason, not a dead boot. Whoever `dependsOn` it is still refused.
 
 ## Refuses
 
-- A module under the glob with no default export, naming the path.
-- Whatever migrations refuse: a changed file, a bad name, a failing step.
-- Whatever the kernel refuses: `start` throws it unchanged, naming the plugin,
-  the key and the fix.
+- A module under the glob with no default export.
+- Whatever migrations refuse: a changed file, a bad name, a bad step.
+- Whatever the kernel refuses: `start` throws it unchanged.

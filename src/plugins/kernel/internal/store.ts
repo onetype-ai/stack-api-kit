@@ -71,6 +71,23 @@ export type Scheduled = {
 };
 
 /**
+ * One scheduled command that ran out of attempts, and why.
+ *
+ * A job that gave up is the one failure nothing is waiting on: no caller
+ * gets a 500 and no listener records it, so a deployment learns from here or
+ * not at all. It matters most for work that asks for itself again, where
+ * giving up once ends the repetition for as long as the process lives.
+ */
+export type Abandoned = {
+    plugin: string;
+    command: string;
+    input: unknown;
+    attempts: number;
+    error: unknown;
+    at: number;
+};
+
+/**
  * Where work waits until it is time.
  *
  * The kernel has no clock of its own and no timer: it asks `due` on a beat

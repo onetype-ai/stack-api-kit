@@ -43,6 +43,21 @@ export function limiter(now: () => number = Date.now)
             };
         },
 
+        // Gives one hit back, for a route that counts only the attempts it is
+        // guarding against. Never below zero: more refunds than spends would
+        // bank credit against the window, which is a caller earning attempts
+        // by succeeding. An expired bucket needs no guard of its own, since
+        // the next spend replaces it rather than adding to it.
+        refund: (key: string): void =>
+        {
+            const bucket = buckets.get(key);
+
+            if (bucket !== undefined && bucket.hits > 0)
+            {
+                bucket.hits -= 1;
+            }
+        },
+
         // Called on a timer by whoever holds the limiter: a map that only
         // grows is a slow leak on a public route.
         sweep: (): number =>

@@ -194,3 +194,77 @@ describe("what a filtering schema actually sends", () =>
         expect(answer.body).toEqual({ item: { id: "u1" } });
     });
 });
+
+function withSchemas(input: z.ZodType, output: z.ZodType): Plugin
+{
+    return definePlugin("probe", {
+        version: "1.0.0",
+        describe: "Takes a number and answers one.",
+        routes: [{
+            method: "POST",
+            path: "/settings",
+            describe: "Saves a setting.",
+            public: true,
+            input,
+            output,
+            handle: () => ({ share: 0.5 }),
+        }],
+    } as Definition);
+}
+
+async function refusalFrom(input: z.ZodType, output: z.ZodType): Promise<string | undefined>
+{
+    const kernel = createKernel({ plugins: [withSchemas(input, output)] });
+
+    try
+    {
+        await kernel.start();
+
+        return undefined;
+    }
+    catch (cause)
+    {
+        return (cause as Error).message;
+    }
+}
+
+describe("a number bounded on the way in and answered bare", () =>
+{
+    test("is refused, naming the route and the field", async () =>
+    {
+        const refused = await refusalFrom(
+            z.object({ share: z.number().min(0).max(1) }),
+            z.object({ share: z.number() }),
+        );
+
+        expect(refused).toContain("INVALID_OUTPUT");
+        expect(refused).toContain(`bounds "share"`);
+        expect(refused).toContain("POST");
+        expect(refused).toContain("/settings");
+    });
+
+    test("is found however deep the answer nests it", async () =>
+    {
+        const refused = await refusalFrom(
+            z.object({ share: z.number().min(0).max(1) }),
+            z.object({ bot: z.object({ look: z.object({ share: z.number() }) }) }),
+        );
+
+        expect(refused).toContain(`bounds "share"`);
+    });
+});
+
+describe("a number the route treats consistently", () =>
+{
+    const fine: [string, z.ZodType, z.ZodType][] = [
+        ["bare on both sides, as a timestamp is", z.object({ at: z.number() }), z.object({ at: z.number() })],
+        ["bounded on both sides", z.object({ at: z.number().min(1).max(5) }), z.object({ at: z.number().min(1).max(5) })],
+        ["bare in, bounded out: the answer narrows", z.object({ at: z.number() }), z.object({ at: z.number().min(0).max(1) })],
+        ["bounded from one side only", z.object({ at: z.number().min(0) }), z.object({ at: z.number().nonnegative() })],
+    ];
+
+    test.each(fine)("starts when it is %s", async (_named, input, output) =>
+    {
+        expect(await refusalFrom(input, output)).toBeUndefined();
+    });
+});

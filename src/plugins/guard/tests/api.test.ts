@@ -64,6 +64,40 @@ describe("limiting", () =>
     });
 });
 
+describe("giving a spend back", () =>
+{
+    test("frees one attempt, and no more than were taken", () =>
+    {
+        const limit = limiter();
+        const window = { requests: 2, seconds: 60 };
+
+        limit.spend("u1", window);
+
+        // One back for the one that was spent, so the window is as it was.
+        limit.refund("u1");
+
+        expect([limit.spend("u1", window).allowed, limit.spend("u1", window).allowed]).toEqual([true, true]);
+
+        // More refunds than spends would bank credit against the window,
+        // which is a caller earning attempts by succeeding.
+        for (let turn = 0; turn < 6; turn += 1)
+        {
+            limit.refund("u1");
+        }
+
+        expect([limit.spend("u1", window).allowed, limit.spend("u1", window).allowed, limit.spend("u1", window).allowed])
+            .toEqual([true, true, false]);
+    });
+
+    test("does nothing for a key nothing ever spent", () =>
+    {
+        const limit = limiter();
+
+        expect(() => { limit.refund("never-seen"); }).not.toThrow();
+        expect(limit.size()).toBe(0);
+    });
+});
+
 describe("comparing", () =>
 {
     test("answers true only for the equalsInConstantTime string", () =>

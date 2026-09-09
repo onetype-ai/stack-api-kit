@@ -3,7 +3,7 @@ import { z } from "zod";
 import Database from "better-sqlite3";
 
 import { schedule } from "../../database/api";
-import { createKernel, definePlugin } from "../api";
+import { Refusal, createKernel, definePlugin } from "../api";
 
 import type { Plugin } from "../api";
 
@@ -146,6 +146,67 @@ describe("work asked for later", () =>
         connection.close();
     });
 
+    test("stops trying when the command refuses for good, and keeps trying when it does not", async () =>
+    {
+        async function attemptsFor(status: number): Promise<number>
+        {
+            const connection = new Database(":memory:");
+            const jobs = schedule(connection);
+            const tried: number[] = [];
+
+            let clock = 1_000_000;
+
+            const kernel = createKernel({
+                plugins: [definePlugin("holds", {
+                    version: "1.0.0",
+                    describe: "Refuses every time.",
+                    commands: {
+                        "holds.release": {
+                            describe: "Refuses.",
+                            schema: z.object({}),
+                            run: () =>
+                            {
+                                tried.push(clock);
+
+                                throw new Refusal(status, "NO", "Not this one.");
+                            },
+                        },
+                    },
+                })],
+                schedule: jobs,
+                now: () => clock,
+                attempts: 4,
+            });
+
+            await kernel.start();
+
+            kernel.context("holds").commands.later("holds.release", {}, 0);
+
+            for (let turn = 0; turn < 8; turn += 1)
+            {
+                await kernel.due();
+
+                clock += 120_000;
+            }
+
+            await kernel.stop();
+            connection.close();
+
+            return tried.length;
+        }
+
+        // A 4xx is an answer about the work, so the same answer four times
+        // is four times the cost for one outcome.
+        expect(await attemptsFor(400)).toBe(1);
+        expect(await attemptsFor(404)).toBe(1);
+
+        // The two 4xx that HTTP already says are about the moment, and
+        // everything 5xx, which never claimed to be final.
+        expect(await attemptsFor(429)).toBe(4);
+        expect(await attemptsFor(408)).toBe(4);
+        expect(await attemptsFor(502)).toBe(4);
+    });
+
     test("says why a command with requires can never run on a schedule", async () =>
     {
         const connection = new Database(":memory:");
@@ -178,6 +239,29 @@ describe("work asked for later", () =>
         connection.close();
     });
 
+    test("names the plugin when nothing was given to schedule with", async () =>
+    {
+        // No schedule passed at all: the plugin reaches for one anyway.
+        const kernel = createKernel({ plugins: [createScheduled([])] });
+
+        await kernel.start();
+
+        try
+        {
+            kernel.context("holds").commands.later("holds.release", { id: "a" }, 10);
+            expect.unreachable();
+        }
+        catch (cause)
+        {
+            // The name is the point: this refusal stops every test that boots
+            // "holds" as a dependency, in files its author never opened.
+            expect((cause as Error).message).toMatch(/^"holds" used ctx\.commands\.later/);
+            expect((cause as { plugin?: string }).plugin).toBe("holds");
+        }
+
+        await kernel.stop();
+    });
+
     test("refuses a command the plugin does not declare", async () =>
     {
         const connection = new Database(":memory:");
@@ -187,6 +271,56 @@ describe("work asked for later", () =>
 
         expect(() => kernel.context("holds").commands.later("other.thing", {}, 10))
             .toThrow(/does not declare/);
+
+        await kernel.stop();
+        connection.close();
+    });
+
+    test("what gave up is readable, so a repetition that ended is not silent", async () =>
+    {
+        const connection = new Database(":memory:");
+        const jobs = schedule(connection);
+
+        let clock = 1_000_000;
+
+        const kernel = createKernel({
+            plugins: [definePlugin("holds", {
+                version: "1.0.0",
+                describe: "Asks for itself, and always fails.",
+                commands: {
+                    "holds.sweep": {
+                        describe: "Throws every time.",
+                        schema: z.object({ round: z.number() }),
+                        run: () => { throw new Error("the store was locked"); },
+                    },
+                },
+            })],
+            schedule: jobs,
+            now: () => clock,
+            attempts: 3,
+        });
+
+        await kernel.start();
+
+        expect(kernel.work.abandoned()).toEqual([]);
+
+        kernel.context("holds").commands.later("holds.sweep", { round: 4 }, 0);
+
+        for (let turn = 0; turn < 6; turn += 1)
+        {
+            await kernel.due();
+
+            clock += 120_000;
+        }
+
+        const dead = kernel.work.abandoned();
+
+        expect(dead).toHaveLength(1);
+        expect(dead[0]?.plugin).toBe("holds");
+        expect(dead[0]?.command).toBe("holds.sweep");
+        expect(dead[0]?.attempts).toBe(3);
+        expect(dead[0]?.input).toEqual({ round: 4 });
+        expect((dead[0]?.error as Error).message).toBe("the store was locked");
 
         await kernel.stop();
         connection.close();
