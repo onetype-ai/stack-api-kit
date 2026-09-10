@@ -1,14 +1,6 @@
 import type { Identity } from "./contract";
 
-/**
- * What the caller of this request may do.
- *
- * Read from the caller every time rather than kept: one kernel serves every
- * request, and a cached list would answer for whoever asked before.
- *
- * A project decides what fills this. The kernel only compares it against what
- * a route declared, and never grants anything of its own.
- */
+/** What the caller of this request may do. */
 export function createPermissions(identity: () => Identity | undefined)
 {
     const granted = (): ReadonlySet<string> =>
@@ -32,10 +24,6 @@ export function createPermissions(identity: () => Identity | undefined)
         /**
          * What the project attached to this identity: a tenant, a role, a
          * session. Read back as it was given, and never interpreted here.
-         *
-         * The kernel cannot know what a tenant means, so it carries the value
-         * and refuses to guess. A plugin scoping by tenant reads it and puts
-         * it in its own queries.
          */
         claims: (): Readonly<Record<string, unknown>> =>
         {

@@ -36,7 +36,7 @@ describe("connection", () =>
 
         store.migrate([{ plugin: "items", from: folder({ "0001-init.sql": `${CREATE}; CREATE TABLE notes (id TEXT PRIMARY KEY, item TEXT NOT NULL REFERENCES items(id))` }) }]);
 
-        const db = store.of("items");
+        const db = store.forPlugin("items");
 
         expect(() => (db as never as { $client: { exec: (sql: string) => void } }).$client
             .exec("INSERT INTO notes (id, item) VALUES ('n1', 'missing')")).toThrow(/FOREIGN KEY/);
@@ -62,7 +62,7 @@ describe("handles", () =>
 
     test("hands a plugin a handle over its own tables", async () =>
     {
-        const db = store.of("items");
+        const db = store.forPlugin("items");
 
         await db.insert(items).values({ id: "a", title: "One" });
 
@@ -71,14 +71,14 @@ describe("handles", () =>
 
     test("refuses a plugin that declared no tables, naming it", () =>
     {
-        expect(() => store.of("billing")).toThrow(/"billing" asked for a database handle but declares no tables/);
+        expect(() => store.forPlugin("billing")).toThrow(/"billing" asked for a database handle but declares no tables/);
     });
 
     test("refuses a handle after close", () =>
     {
         store.close();
 
-        expect(() => store.of("items")).toThrow(/after it was closed/);
+        expect(() => store.forPlugin("items")).toThrow(/after it was closed/);
 
         store = database({ file: ":memory:", tables: { items: { items } } });
     });
@@ -103,38 +103,38 @@ describe("transactions", () =>
     {
         await store.tx("items", async (db) =>
         {
-            const found = db as ReturnType<typeof store.of>;
+            const found = db as ReturnType<typeof store.forPlugin>;
 
             await found.insert(items).values({ id: "a", title: "One" });
             await found.insert(items).values({ id: "b", title: "Two" });
         });
 
-        await expect(store.of("items").select().from(items)).resolves.toHaveLength(2);
+        await expect(store.forPlugin("items").select().from(items)).resolves.toHaveLength(2);
     });
 
     test("undoes every write when the work throws", async () =>
     {
         await expect(store.tx("items", async (db) =>
         {
-            await (db as ReturnType<typeof store.of>).insert(items).values({ id: "a", title: "One" });
+            await (db as ReturnType<typeof store.forPlugin>).insert(items).values({ id: "a", title: "One" });
 
             throw new Error("changed my mind");
         })).rejects.toThrow("changed my mind");
 
-        await expect(store.of("items").select().from(items)).resolves.toEqual([]);
+        await expect(store.forPlugin("items").select().from(items)).resolves.toEqual([]);
     });
 
     test("undoes the first write when a later one breaks a constraint", async () =>
     {
         await expect(store.tx("items", async (db) =>
         {
-            const found = db as ReturnType<typeof store.of>;
+            const found = db as ReturnType<typeof store.forPlugin>;
 
             await found.insert(items).values({ id: "a", title: "One" });
             await found.insert(items).values({ id: "a", title: "Again" });
         })).rejects.toThrow();
 
-        await expect(store.of("items").select().from(items)).resolves.toEqual([]);
+        await expect(store.forPlugin("items").select().from(items)).resolves.toEqual([]);
     });
 });
 
@@ -202,7 +202,7 @@ describe("migrations", () =>
 
         // The database is as it was: 0001 is not applied, so its author can
         // still correct it. Recorded, the hash guard would refuse the edit.
-        expect(() => store.of("items").select().from(items).all()).toThrow(/no such table/);
+        expect(() => store.forPlugin("items").select().from(items).all()).toThrow(/no such table/);
 
         store.close();
     });
@@ -236,7 +236,7 @@ describe("migrations", () =>
 
         // Rolled back with it, so the author can correct the file: recorded,
         // the hash guard would refuse the edit.
-        expect(() => store.of("items").select().from(items).all()).toThrow(/no such table/);
+        expect(() => store.forPlugin("items").select().from(items).all()).toThrow(/no such table/);
 
         writeFileSync(join(from, "0001-init.sql"), CREATE);
 
@@ -270,7 +270,7 @@ describe("migrations", () =>
         const waiting = database({ file, busyMs: 50, tables: { items: { items } } });
 
         // What the other boot is doing: holding the write lock while it works.
-        (holder.of("items") as unknown as { $client: { exec: (sql: string) => void } }).$client.exec("BEGIN IMMEDIATE");
+        (holder.forPlugin("items") as unknown as { $client: { exec: (sql: string) => void } }).$client.exec("BEGIN IMMEDIATE");
 
         try
         {
@@ -286,7 +286,7 @@ describe("migrations", () =>
             expect((cause as MigrationFault).plugin).toBe("");
         }
 
-        (holder.of("items") as unknown as { $client: { exec: (sql: string) => void } }).$client.exec("ROLLBACK");
+        (holder.forPlugin("items") as unknown as { $client: { exec: (sql: string) => void } }).$client.exec("ROLLBACK");
         waiting.close();
         holder.close();
     });

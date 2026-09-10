@@ -1,7 +1,7 @@
 import { KernelFault } from "./faults";
 
 /** What a client is told: a status, a stable code, and one sentence. */
-export type Answer = {
+export type RefusalBody = {
     status: number;
     code: string;
     message: string;
@@ -10,16 +10,7 @@ export type Answer = {
     fields?: Readonly<Record<string, string>>;
 };
 
-/**
- * What a handler returns when the body alone is not the answer.
- *
- * A route returning a plain value gets 200, or 201 for a POST, which is what
- * almost every route wants. This is for the rest: a redirect, a created
- * resource naming where it went, a 304, a download with a filename.
- *
- * The body still passes the output schema. Status and headers are the only
- * things this adds, because they are the only things a schema cannot carry.
- */
+/** What a handler returns when the body alone is not the answer. */
 export class Reply
 {
     readonly status: number;
@@ -62,31 +53,15 @@ export class Refusal extends Error
     }
 }
 
-const SPOKEN: Readonly<Record<string, { status: number; message: string }>> = {
+const CLIENT_FAULTS: Readonly<Record<string, { status: number; message: string }>> = {
     UNAUTHENTICATED: { status: 401, message: "This request needs to be signed in." },
     PERMISSION_DENIED: { status: 403, message: "This request is not permitted." },
     RATE_LIMITED: { status: 429, message: "Too many requests. Try again shortly." },
     INVALID_PAYLOAD: { status: 400, message: "The request body is not valid." },
 };
 
-// WRONG_PAYLOAD is deliberately absent: an event or hook payload failing its
-// own schema is this API's mistake, not the caller's, and telling them their
-// body was wrong sends whoever debugs it looking at the wrong thing. It falls
-// through to the fixed 500, and the log line names the event and the issue.
-
-/**
- * What the caller is told about a failure.
- *
- * Nothing that was not written for a caller ever reaches one. A thrown thing
- * is either a Refusal, which a plugin wrote deliberately, or one of the few
- * kernel codes that mean something to a client. Everything else answers 500
- * with one fixed sentence, whatever it actually was.
- *
- * This is the whole point: a stack, a file path, a SQL fragment, a column
- * name, a driver message and a config value are all things an attacker learns
- * from, and none of them are things a caller needs.
- */
-export function answer(cause: unknown): Answer
+/** What the caller is told about a failure. */
+export function refusalBodyFor(cause: unknown): RefusalBody
 {
     if (cause instanceof Refusal)
     {
@@ -100,7 +75,7 @@ export function answer(cause: unknown): Answer
 
     if (cause instanceof KernelFault)
     {
-        const known = SPOKEN[cause.code];
+        const known = CLIENT_FAULTS[cause.code];
 
         if (known !== undefined)
         {
@@ -111,13 +86,8 @@ export function answer(cause: unknown): Answer
     return { status: 500, code: "INTERNAL", message: "The request could not be completed." };
 }
 
-/**
- * Whether a failure is the caller's doing or ours.
- *
- * Anything answering 500 is logged in full, because nobody saw it. A 4xx was
- * already explained to whoever caused it.
- */
-export function isServerFault(given: Answer): boolean
+/** Whether a failure is the caller's doing or ours. */
+export function isServerError(body: RefusalBody): boolean
 {
-    return given.status >= 500;
+    return body.status >= 500;
 }

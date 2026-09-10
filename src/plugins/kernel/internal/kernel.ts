@@ -1,19 +1,19 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
-import { Refusal } from "./answer";
-import { context, type Wiring } from "./context";
-import type { Identity, Context, Method, Plugin, Reach, Route } from "./contract";
-import { events, type Failure, type Pending } from "./events";
+import { Refusal } from "./refusal";
+import { context, type KernelWiring } from "./context";
+import type { Identity, Context, HttpMethod, Plugin, ChannelReach, Route } from "./contract";
+import { events, type ListenerFailure, type PendingDelivery } from "./events";
 import { KernelFault } from "./faults";
 import { hooks } from "./hooks";
 import { order } from "./order";
 import { createPermissions } from "./permissions";
-import { type Budget, type Incoming, type RouteOwner, notServing, type Outgoing, respond, unknownRoute } from "./request";
-import type { Abandoned, Dialer, ScopeFilter, Outbox, Schedule, Sockets, Storage } from "./store";
+import { type RateLimiter, type KernelRequest, type RouteOwner, notServing, type KernelResponse, respond, unknownRoute } from "./request";
+import type { FailedJob, HttpClient, ScopeFilter, Outbox, Schedule, Sockets, KernelStore } from "./store";
 import { validate } from "./validate";
 
 /** Where a line goes. The project decides; a plugin never writes directly. */
-export type Log = (
+export type LogFn = (
     level: "debug" | "info" | "warn" | "error",
     plugin: string,
     line: string,
@@ -21,92 +21,60 @@ export type Log = (
 ) => void;
 
 /** What a project gives the kernel. */
-export type Options = {
+export type KernelOptions = {
     plugins: readonly Plugin[];
     config?: Readonly<Record<string, unknown>>;
-    db?: Storage;
+    db?: KernelStore;
 
     /** What holds the open sockets. Without one, ctx.push throws. */
     sockets?: Sockets;
-    dial?: Dialer;
-    log?: Log;
+    httpClient?: HttpClient;
+    log?: LogFn;
 
-    /**
-     * What counts requests against a route's declared budget.
-     *
-     * Omit it and a `limit` is inert, which is why `start` says so rather
-     * than letting a declared budget quietly enforce nothing.
-     */
-    budget?: Budget;
+    /** What counts requests against a route's declared budget. */
+    rateLimiter?: RateLimiter;
 
-    /**
-     * Where events wait between the transaction that emitted them and the
-     * listener that hears them.
-     *
-     * Without one, an event that is emitted lives only in memory: the work
-     * commits, the process stops, and nothing ever calls the listener. With
-     * one, delivery is at least once, so a listener that writes must survive
-     * being called twice.
-     */
+    /** Where events wait between the transaction that emitted them and the listener that hears them. */
     outbox?: Outbox;
 
-    /**
-     * What the current time is, in milliseconds.
-     *
-     * A test pins it to make tomorrow reachable without moving the machine's
-     * clock, which every other test in the process would then share.
-     */
+    /** What the current time is, in milliseconds. */
     now?: () => number;
 
-    /**
-     * Where work waits until it is time, and how often to look.
-     *
-     * Without one, `ctx.commands.later` refuses: a plugin that can ask for
-     * later work in a deployment that cannot run it would be told nothing.
-     */
+    /** Where work waits until it is time, and how often to look. */
     schedule?: Schedule;
 
     /** How often to ask the schedule what is due, in milliseconds. */
-    beat?: number;
+    beatMs?: number;
 
-    /**
-     * How many times a scheduled command may throw before it is abandoned.
-     *
-     * Eight by default, which is roughly four minutes of backing off. A job
-     * that has failed that often is failing on something a retry will not
-     * fix, and the line saying it gave up is worth more than the ninth try.
-     */
-    attempts?: number;
+    /** How many times a scheduled command may throw before it is abandoned. */
+    mostAttempts?: number;
 
-    /**
-     * How a declared scope becomes a condition the store understands.
-     *
-     * The kernel imports no driver, so a project that declares a scope also
-     * says how to narrow by it.
-     */
-    narrow?: ScopeFilter;
+    /** How a declared scope becomes a condition the store understands. */
+    scopeFilter?: ScopeFilter;
 
-    /**
-     * How long a hook participant has to answer, in milliseconds.
-     *
-     * A participant that never answers holds the request open, and a throw is
-     * already a refusal, so silence is treated as one too.
-     */
-    patience?: number;
+    /** How long a hook participant has to answer, in milliseconds. */
+    hookTimeoutMs?: number;
 };
 
 /** A route, and the plugin it came from. */
 /** One channel a plugin declared, as a reader of the api sees it. */
-export type Declared = {
+export type RegisteredChannel = {
     plugin: string;
     channel: string;
-    reach: Reach;
+    reach: ChannelReach;
     requires: readonly string[];
 };
 
-export type Registration = {
+/** One permission a plugin declared, and what holding it means. */
+export type PermissionEntry = {
     plugin: string;
-    method: Method;
+    permission: string;
+    describe: string;
+};
+
+export type RegisteredRoute = {
+    plugin: string;
+    method: HttpMethod;
     path: string;
     describe: string;
     requires: readonly string[];
@@ -129,64 +97,34 @@ export type Kernel = {
     stop: () => Promise<void>;
     started: () => boolean;
 
-    routes: () => readonly Registration[];
+    routes: () => readonly RegisteredRoute[];
 
     /** Every channel a plugin declared, and what it takes to hear one. */
-    channels: () => readonly Declared[];
-    handle: (incoming: Incoming) => Promise<Outgoing>;
+    channels: () => readonly RegisteredChannel[];
+
+    /** Every permission any plugin declared. */
+    permissions: () => readonly PermissionEntry[];
+    handle: (incoming: KernelRequest) => Promise<KernelResponse>;
 
     context: (plugin: string, identity?: Identity) => Context;
 
-    /**
-     * Who is calling, asked of the plugin that knows.
-     *
-     * Undefined when no plugin declares `identifies`, which is an api where
-     * nobody signs in: every closed route then answers 401, and that is it
-     * working rather than a mistake.
-     */
+    /** Who is calling, asked of the plugin that knows. */
     identify: ((request: Request) => Promise<Identity | undefined>) | undefined;
 
-    events: { failures: () => readonly Failure[] };
+    events: { failures: () => readonly ListenerFailure[] };
 
-    /**
-     * What the schedule did that nobody is waiting on.
-     *
-     * `abandoned` answers every scheduled command that ran out of attempts.
-     * Nothing else reports one: a caller gets no 500 because there is no
-     * caller, and a listener records nothing because no event was emitted.
-     *
-     * It matters most for work that asks for itself again as it ends, which
-     * is how the kit repeats: giving up once ends the repetition until the
-     * process restarts, and a deployment reading this is the only way to
-     * learn that the sweeping stopped.
-     */
-    work: { abandoned: () => readonly Abandoned[] };
+    /** What the schedule did that nobody is waiting on. */
+    work: { failed: () => readonly FailedJob[] };
 
-    /**
-     * Runs whatever the schedule says is due, once, and waits for it.
-     *
-     * Answers how many it took, so a caller draining a chain knows when
-     * nothing is left rather than guessing at a count of turns.
-     *
-     * What the beat does on a timer, asked for. A test moves its clock and
-     * calls this instead of waiting a real second for an interval it does not
-     * control.
-     */
+    /** Runs whatever the schedule says is due, once, and waits for it. */
     due: () => Promise<number>;
     run: (command: string, input: unknown, identity?: Identity) => Promise<void>;
 };
 
-const quiet: Log = () => {};
+const quiet: LogFn = () => {};
 
 /** The route a request lands on, and what its path segments named. */
-/**
- * One path segment, decoded, or undefined when it cannot be.
- *
- * A malformed escape makes decodeURIComponent throw, and this runs before
- * respond()'s try/catch: over HTTP the server normalises first, but a project
- * calling handle() directly would get an unhandled rejection where it asked
- * for an answer. A segment that cannot be read matches nothing.
- */
+/** One path segment, decoded, or undefined when it cannot be. */
 function decodeSegment(given: string): string | undefined
 {
     try
@@ -201,7 +139,7 @@ function decodeSegment(given: string): string | undefined
 
 function routeFor(
     routes: ReadonlyMap<string, RouteOwner>,
-    method: Method,
+    method: HttpMethod,
     path: string,
 ): { mounted: RouteOwner; params: Readonly<Record<string, string>> } | undefined
 {
@@ -214,8 +152,6 @@ function routeFor(
 
     const segments = path.split("/");
 
-    // A static route the caller wrote encoded: found here rather than left to
-    // the parameter routes below, which would answer for it.
     const plain = routes.get(`${method} ${segments.map((segment) => decodeSegment(segment) ?? segment).join("/")}`);
 
     if (plain !== undefined)
@@ -246,8 +182,6 @@ function routeFor(
 
             if (!part.startsWith(":"))
             {
-                // Decoded before comparing, or "/users/%6de" misses the route
-                // "/users/me" declares and lands on "/users/:id" instead.
                 return part === decodeSegment(segment);
             }
 
@@ -284,36 +218,26 @@ function withPathParams(input: unknown, params: Readonly<Record<string, string>>
         ? { ...(input as Record<string, unknown>) }
         : {};
 
-    // The path wins, as it does over HTTP: a router already matched it, so a
-    // body claiming otherwise is confused or deliberate.
     return { ...body, ...params };
 }
 
-/**
- * Builds a kernel from what the plugins declared.
- *
- * Nothing runs here: `start` validates first, and either brings up every
- * plugin or throws. A half-started kernel behaves according to where it
- * stopped, which is not a state anyone can reason about.
- */
-export function createKernel(options: Options): Kernel
+/** Builds a kernel from what the plugins declared. */
+export function createKernel(options: KernelOptions): Kernel
 {
     const config = options.config ?? {};
     const log = options.log ?? quiet;
 
     const known = new Map(options.plugins.map((plugin) => [plugin.name, plugin]));
 
-    // At most one of each, refused at startup, so finding the first is
-    // finding the only.
     const identifying = options.plugins.find((plugin) => plugin.definition.identifies !== undefined);
     const granting = options.plugins.find((plugin) => plugin.definition.grants !== undefined);
     const bus = events<Context>(Date.now, (plugin, line, about) =>
     {
         log("error", plugin, line, about);
     });
-    const points = hooks<Context>(options.patience);
+    const points = hooks<Context>(options.hookTimeoutMs);
     const settings = new Map<string, unknown>();
-    const pending = new Map<object, Pending[]>();
+    const pending = new Map<object, PendingDelivery[]>();
 
     const routes = new Map<string, RouteOwner>();
     const commands = new Map<string, {
@@ -326,33 +250,12 @@ export function createKernel(options: Options): Kernel
     let running = false;
     let beating: ReturnType<typeof setInterval> | undefined;
 
-    /**
-     * Scheduled work that ran out of attempts.
-     *
-     * Bounded for the same reason listener failures are: each holds an Error,
-     * and an Error holds a stack, so a command failing forever would
-     * otherwise grow this for as long as the process lives.
-     */
-    const abandoned: Abandoned[] = [];
-    const REMEMBERED = 100;
+    /** Queued work that ran out of attempts. */
+    const failedJobs: FailedJob[] = [];
+    const MOST_REMEMBERED = 100;
 
-    /**
-     * Runs what is due, one turn.
-     *
-     * Failures are the point rather than an afterthought: a command that
-     * throws goes back with its attempt counted, so a partner that was down
-     * for a minute costs a minute rather than the work.
-     */
-    /**
-     * Whether a failure is the command's final answer.
-     *
-     * A refusal carries a status because it was written for a caller, and
-     * that status says as much to a schedule as it does to one: 404 and 409
-     * are about the work, and no amount of waiting turns them into 200. The
-     * two that do wait are the two HTTP already names, and anything 5xx is a
-     * claim about the moment rather than the work.
-     */
-    function settled(cause: unknown): boolean
+    /** Whether a failure is the command's final answer. */
+    function isFinalRefusal(cause: unknown): boolean
     {
         if (!(cause instanceof Refusal))
         {
@@ -362,6 +265,7 @@ export function createKernel(options: Options): Kernel
         return cause.status >= 400 && cause.status < 500 && cause.status !== 408 && cause.status !== 429;
     }
 
+    /** Runs what is due, one turn. */
     async function due(): Promise<number>
     {
         if (options.schedule === undefined || !running)
@@ -370,14 +274,14 @@ export function createKernel(options: Options): Kernel
         }
 
         const clock = options.now ?? Date.now;
-        const taken = await options.schedule.take(clock(), 20);
+        const taken = await options.schedule.claim(clock(), 20);
 
         for (const job of taken)
         {
             try
             {
                 await run(job.command, job.input);
-                await options.schedule.done(job.id);
+                await options.schedule.markDone(job.id);
             }
             catch (cause)
             {
@@ -387,17 +291,9 @@ export function createKernel(options: Options): Kernel
                     error: cause instanceof Error ? cause.message : String(cause),
                 });
 
-                // Backing off, so a command failing on something that is
-                // still broken does not spend the whole beat on itself. And
-                // giving up eventually: a job retried forever is a process
-                // spending itself on work nobody is waiting for any more.
-                //
-                // A refusal about the work itself skips the waiting: 404 is
-                // the same answer eight times, while 408, 429 and anything
-                // 5xx are claims about the moment rather than the work.
-                const final = settled(cause);
+                const final = isFinalRefusal(cause);
 
-                if (final || job.attempts + 1 >= (options.attempts ?? 8))
+                if (final || job.attempts + 1 >= (options.mostAttempts ?? 8))
                 {
                     log("error", job.plugin, final ? "a scheduled command was refused for good" : "a scheduled command gave up", {
                         command: job.command,
@@ -405,11 +301,7 @@ export function createKernel(options: Options): Kernel
                         ...(final && { meaning: "the command answered 4xx, which says the work itself is wrong, so it is not tried again. Throw instead of refusing if waiting would help." }),
                     });
 
-                    // Kept as well as logged. A line in stdout is read by
-                    // whatever the deployment happens to collect; this is
-                    // read by the deployment itself, and by a test, the same
-                    // way a listener failure is.
-                    abandoned.push({
+                    failedJobs.push({
                         plugin: job.plugin,
                         command: job.command,
                         input: job.input,
@@ -418,16 +310,16 @@ export function createKernel(options: Options): Kernel
                         at: clock(),
                     });
 
-                    if (abandoned.length > REMEMBERED)
+                    if (failedJobs.length > MOST_REMEMBERED)
                     {
-                        abandoned.splice(0, abandoned.length - REMEMBERED);
+                        failedJobs.splice(0, failedJobs.length - MOST_REMEMBERED);
                     }
 
-                    await options.schedule.abandon(job.id);
+                    await options.schedule.giveUp(job.id);
                 }
                 else
                 {
-                    await options.schedule.failed(job.id, clock() + Math.min(2 ** job.attempts, 60) * 1000);
+                    await options.schedule.markFailed(job.id, clock() + Math.min(2 ** job.attempts, 60) * 1000);
                 }
             }
         }
@@ -435,13 +327,10 @@ export function createKernel(options: Options): Kernel
         return taken.length;
     }
 
-    // What is still being answered. A shutdown waits for these: a request
-    // that has already been accepted was promised an answer, and tearing the
-    // plugins down underneath it turns that promise into a 500.
     const inFlight = new Set<Promise<unknown>>();
     let inOrder: Plugin[] = [];
 
-    const wiring: Wiring = {
+    const wiring: KernelWiring = {
         known,
         settings,
         open: new AsyncLocalStorage<object>(),
@@ -452,16 +341,16 @@ export function createKernel(options: Options): Kernel
         outbox: options.outbox,
         now: options.now ?? Date.now,
         schedule: options.schedule,
-        narrow: options.narrow,
+        scopeFilter: options.scopeFilter,
         owned: new Map<string, unknown>(),
         db: options.db,
         sockets: options.sockets,
-        dial: options.dial,
+        httpClient: options.httpClient,
         log,
         run: (command, input, identity) => run(command, input, identity),
     };
 
-    const seenBy = (plugin: string, identity?: Identity, headers?: Readonly<Record<string, string>>, sent?: Uint8Array): Context =>
+    const contextFor = (plugin: string, identity?: Identity, headers?: Readonly<Record<string, string>>, sent?: Uint8Array): Context =>
     {
         return context(wiring, plugin, identity, undefined, headers, undefined, sent);
     };
@@ -489,11 +378,6 @@ export function createKernel(options: Options): Kernel
 
         if (lacking.length > 0)
         {
-            // A scheduled run has no identity at all, which is not the same
-            // problem as one who is short a permission: no permission can be
-            // granted to nobody, so a command the schedule asks for declares
-            // none. Saying only "the caller does not have" sends its author
-            // looking for a permission to hand out.
             const scheduled = identity === undefined
                 ? " A scheduled run has no identity, so a command asked for by commands.later declares no requires."
                 : "";
@@ -516,7 +400,7 @@ export function createKernel(options: Options): Kernel
             );
         }
 
-        await entry.run(parsed.data as never, seenBy(entry.plugin, identity));
+        await entry.run(parsed.data as never, contextFor(entry.plugin, identity));
     }
 
     return {
@@ -532,16 +416,16 @@ export function createKernel(options: Options): Kernel
                 return;
             }
 
-            const wrong = validate(options.plugins, config);
+            const problems = validate(options.plugins, config);
 
-            if (wrong.length > 0)
+            if (problems.length > 0)
             {
-                const lines = wrong.map((problem) => `  - [${problem.code}] ${problem.plugin}: ${problem.message}`);
+                const lines = problems.map((problem) => `  - [${problem.code}] ${problem.plugin}: ${problem.message}`);
 
                 throw new KernelFault(
-                    wrong[0]?.code ?? "INVALID_CONFIG",
-                    `${wrong.length} ${wrong.length === 1 ? "problem" : "problems"} stopped the kernel from starting:\n${lines.join("\n")}`,
-                    { plugin: wrong[0]?.plugin ?? "", detail: { wrong } },
+                    problems[0]?.code ?? "INVALID_CONFIG",
+                    `${problems.length} ${problems.length === 1 ? "problem" : "problems"} stopped the kernel from starting:\n${lines.join("\n")}`,
+                    { plugin: problems[0]?.plugin ?? "", detail: { problems } },
                 );
             }
 
@@ -557,8 +441,6 @@ export function createKernel(options: Options): Kernel
                 }
             }
 
-            // Declared before anything is wired: a listener may name an event
-            // owned by a plugin that comes later in the order.
             for (const plugin of inOrder)
             {
                 for (const [name, event] of Object.entries(plugin.definition.emits ?? {}))
@@ -600,19 +482,17 @@ export function createKernel(options: Options): Kernel
                 }
             }
 
-            // A declared budget nothing enforces is worse than none: the
-            // contract says the route is protected and it is not.
-            if (options.budget === undefined)
+            if (options.rateLimiter === undefined)
             {
                 const bounded = [...routes.values()].filter(({ route }) => route.limit !== undefined);
 
                 if (bounded.length > 0)
                 {
-                    const named = bounded.map(({ plugin, route }) => `${plugin}: ${route.method} ${route.path}`);
+                    const described = bounded.map(({ plugin, route }) => `${plugin}: ${route.method} ${route.path}`);
 
                     throw new KernelFault(
                         "INVALID_ROUTE",
-                        `${bounded.length} ${bounded.length === 1 ? "route declares a limit" : "routes declare limits"} and no budget was given to createKernel, so nothing would enforce them:\n${named.map((route) => `  - ${route}`).join("\n")}\nPass \`budget\`, or remove the limits.`,
+                        `${bounded.length} ${bounded.length === 1 ? "route declares a limit" : "routes declare limits"} and no budget was given to createKernel, so nothing would enforce them:\n${described.map((route) => `  - ${route}`).join("\n")}\nPass \`budget\`, or remove the limits.`,
                         { plugin: bounded[0]?.plugin ?? "" },
                     );
                 }
@@ -620,23 +500,19 @@ export function createKernel(options: Options): Kernel
 
             for (const plugin of inOrder)
             {
-                await plugin.definition.setup?.(seenBy(plugin.name));
+                await plugin.definition.setup?.(contextFor(plugin.name));
             }
 
             running = true;
 
             if (options.schedule !== undefined)
             {
-                beating = setInterval(() => void due(), options.beat ?? 1000);
+                beating = setInterval(() => void due(), options.beatMs ?? 1000);
 
-                // So a beat never holds a process open that is otherwise done.
                 beating.unref?.();
             }
 
-            // Anything still waiting was interrupted between its commit and
-            // its delivery: the work happened, the listener never heard. It
-            // is delivered now, before this kernel answers anything new.
-            const interrupted = await options.outbox?.unsent() ?? [];
+            const interrupted = await options.outbox?.pending() ?? [];
 
             for (const announcement of interrupted)
             {
@@ -644,25 +520,22 @@ export function createKernel(options: Options): Kernel
                     event: announcement.name,
                 });
 
-                const heard = await bus.deliver(
+                const delivered = await bus.deliver(
                     announcement.plugin,
                     announcement.name,
                     announcement.payload,
-                    (to) => seenBy(to),
+                    (to) => contextFor(to),
                 );
 
-                if (heard)
+                if (delivered)
                 {
-                    await options.outbox?.sent(announcement.id);
+                    await options.outbox?.markSent(announcement.id);
                 }
             }
         },
 
         async stop(): Promise<void>
         {
-            // Stop accepting first, then wait: a request accepted after this
-            // point would be one more thing to wait for, and draining would
-            // never end under load.
             running = false;
 
             if (beating !== undefined)
@@ -682,7 +555,7 @@ export function createKernel(options: Options): Kernel
             {
                 try
                 {
-                    await plugin.definition.teardown?.(seenBy(plugin.name));
+                    await plugin.definition.teardown?.(contextFor(plugin.name));
                 }
                 catch (cause)
                 {
@@ -691,7 +564,7 @@ export function createKernel(options: Options): Kernel
             }
         },
 
-        routes: (): readonly Registration[] =>
+        routes: (): readonly RegisteredRoute[] =>
             [...routes.values()].map(({ plugin, route }) => ({
                 plugin,
                 method: route.method,
@@ -705,7 +578,7 @@ export function createKernel(options: Options): Kernel
                 keepsRaw: route.keepsRaw === true,
             })),
 
-        channels: (): readonly Declared[] =>
+        channels: (): readonly RegisteredChannel[] =>
             [...known.values()].flatMap((plugin) =>
                 Object.entries(plugin.definition.channels ?? {}).map(([channel, declared]) => ({
                     plugin: plugin.name,
@@ -714,10 +587,16 @@ export function createKernel(options: Options): Kernel
                     requires: declared.requires ?? [],
                 }))),
 
-        handle: (incoming: Incoming): Promise<Outgoing> =>
+        permissions: (): readonly PermissionEntry[] =>
+            [...known.values()].flatMap((plugin) =>
+                Object.entries(plugin.definition.permissions ?? {}).map(([permission, declared]) => ({
+                    plugin: plugin.name,
+                    permission,
+                    describe: declared.describe,
+                }))),
+
+        handle: (incoming: KernelRequest): Promise<KernelResponse> =>
         {
-            // A kernel that has stopped has torn its plugins down, so an
-            // answer from here would be one they never agreed to give.
             if (!running)
             {
                 return Promise.resolve(notServing);
@@ -730,16 +609,12 @@ export function createKernel(options: Options): Kernel
                 return Promise.resolve(unknownRoute);
             }
 
-            // A caller may pass the declared path with its parameters in
-            // `input`, as the server does, or the real one with the values in
-            // it. Taking both means a test reads like the request it stands
-            // for rather than like the routing table.
             const answer = respond(
                 match.mounted,
                 { ...incoming, input: withPathParams(incoming.input, match.params) },
-                seenBy,
+                contextFor,
                 log,
-                options.budget,
+                options.rateLimiter,
             );
 
             inFlight.add(answer);
@@ -750,30 +625,30 @@ export function createKernel(options: Options): Kernel
             });
         },
 
-        context: seenBy,
+        context: contextFor,
 
         identify: identifying === undefined ? undefined : async (request: Request) =>
         {
-            const ctx = seenBy(identifying.name);
-            const who = await identifying.definition.identifies?.(ctx as never, request);
+            const ctx = contextFor(identifying.name);
+
+            const asked = new Request(request.url, { method: request.method, headers: request.headers });
+            const who = await identifying.definition.identifies?.(ctx as never, asked);
 
             if (who === undefined)
             {
                 return undefined;
             }
 
-            // Filled here rather than by whoever answered: a plugin that
-            // named its own permissions could grant itself any of them.
             const permissions = granting === undefined
                 ? []
-                : await granting.definition.grants?.(seenBy(granting.name) as never, who) ?? [];
+                : await granting.definition.grants?.(contextFor(granting.name) as never, who) ?? [];
 
             return { ...who, permissions };
         },
 
         events: { failures: bus.failures },
 
-        work: { abandoned: () => [...abandoned] },
+        work: { failed: () => [...failedJobs] },
 
         due,
 

@@ -1,16 +1,8 @@
 import type Database from "better-sqlite3";
 
-import type { Schedule, Scheduled } from "../../kernel/api";
+import type { Schedule, QueuedJob } from "../../kernel/api";
 
-/**
- * Where later work waits, in the same database as the work that asked for it.
- *
- * A job claimed by one process is not claimed by another: `take` marks and
- * reads in one statement, so two processes beating at the same moment split
- * the work rather than doubling it.
- *
- * Its table is the kit's, not a plugin's, so no contract declares it.
- */
+/** Where later work waits, in the same database as the work that asked for it. */
 export function schedule(connection: Database.Database): Schedule
 {
     connection.exec(`
@@ -31,8 +23,6 @@ export function schedule(connection: Database.Database): Schedule
         "INSERT INTO kit_schedule (id, plugin, command, input, runAt, attempts) VALUES (?, ?, ?, ?, ?, ?)",
     );
 
-    // One statement, so the claim and the read cannot come apart: a second
-    // process reaching the same row finds it already taken.
     const claim = connection.prepare(`
         UPDATE kit_schedule SET takenAt = ?
         WHERE id IN (
@@ -50,12 +40,12 @@ export function schedule(connection: Database.Database): Schedule
     );
 
     return {
-        keep: (_db: unknown, job: Scheduled) =>
+        save: (_db: unknown, job: QueuedJob) =>
         {
             insert.run(job.id, job.plugin, job.command, JSON.stringify(job.input), job.at, job.attempts);
         },
 
-        take: (now: number, limit: number) =>
+        claim: (now: number, limit: number) =>
         {
             const rows = claim.all(now, now, limit) as {
                 id: string;
@@ -66,7 +56,7 @@ export function schedule(connection: Database.Database): Schedule
                 attempts: number;
             }[];
 
-            return Promise.resolve(rows.map((row): Scheduled => ({
+            return Promise.resolve(rows.map((row): QueuedJob => ({
                 id: row.id,
                 plugin: row.plugin,
                 command: row.command,
@@ -76,21 +66,21 @@ export function schedule(connection: Database.Database): Schedule
             })));
         },
 
-        done: (id: string) =>
+        markDone: (id: string) =>
         {
             remove.run(id);
 
             return Promise.resolve();
         },
 
-        failed: (id: string, at: number) =>
+        markFailed: (id: string, at: number) =>
         {
             again.run(at, id);
 
             return Promise.resolve();
         },
 
-        abandon: (id: string) =>
+        giveUp: (id: string) =>
         {
             remove.run(id);
 

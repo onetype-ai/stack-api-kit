@@ -7,7 +7,7 @@ import { startTestKernel } from "../startTestKernel";
 const crawler = definePlugin("crawler", {
     version: "1.0.0",
     describe: "Reads a page at an address a customer chose.",
-    outbound: "anywhere",
+    allowedHosts: "anywhere",
     services: (ctx) => ({
         read: (url: string) => ctx.fetch({ method: "GET", url, accepts: "text" }),
     }),
@@ -15,7 +15,7 @@ const crawler = definePlugin("crawler", {
 
 async function reading(): Promise<{ read: (url: string) => Promise<unknown>; stop: () => Promise<void> }>
 {
-    const api = await startTestKernel({ plugins: [crawler], answers: () => "<html></html>" });
+    const api = await startTestKernel({ plugins: [crawler], respondWith: () => "<html></html>" });
     const services = api.kernel.context("crawler").services as { read: (url: string) => Promise<unknown> };
 
     return { read: services.read, stop: api.stop };

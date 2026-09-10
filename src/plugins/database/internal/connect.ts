@@ -15,30 +15,11 @@ export type DatabaseOptions = {
     wal?: boolean;
 };
 
-/**
- * Opens one connection, configured the way a server needs it.
- *
- * SQLite defaults suit a single-process script, not a server, and every one
- * of these was chosen rather than inherited:
- *
- * - WAL lets readers work while one writer writes. Without it a read blocks
- *   every write, and a busy server spends its afternoon waiting.
- * - foreign_keys is OFF by default, which means a schema declaring them gets
- *   no enforcement at all and nobody is told.
- * - busy_timeout turns "database is locked", thrown instantly, into a wait.
- *   SQLite has one writer; the question is only whether the second one waits
- *   or fails.
- * - NORMAL synchronous is the pairing WAL is designed for: durable across a
- *   process crash, and only at risk in an OS-level power loss.
- */
+/** Opens one connection, configured the way a server needs it. */
 export function connect(opening: DatabaseOptions): Database.Database
 {
     const memory = opening.file === ":memory:";
 
-    // Made rather than demanded: better-sqlite3 answers an absent directory
-    // with "Cannot open database because the directory does not exist",
-    // naming neither the path nor the setting, so the first run of a fresh
-    // checkout fails on something nobody chose.
     if (!memory)
     {
         mkdirSync(dirname(opening.file), { recursive: true });

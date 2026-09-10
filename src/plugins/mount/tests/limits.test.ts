@@ -5,7 +5,7 @@ import { definePlugin, defineRoute } from "../../kernel/api";
 import { start } from "../api";
 
 import type { Context } from "../../kernel/api";
-import type { Budget } from "../../kernel/api";
+import type { RateLimiter } from "../../kernel/api";
 
 const route = defineRoute<Context>();
 
@@ -25,14 +25,14 @@ const bounded = definePlugin("bounded", {
 
 async function ask(api: { fetch: (request: Request) => Response | Promise<Response> }, times: number)
 {
-    const answers: number[] = [];
+    const statuses: number[] = [];
 
-    for (let at = 0; at < times; at += 1)
+    for (let turn = 0; turn < times; turn += 1)
     {
-        answers.push((await api.fetch(new Request("http://localhost/twice"))).status);
+        statuses.push((await api.fetch(new Request("http://localhost/twice"))).status);
     }
 
-    return answers;
+    return statuses;
 }
 
 describe("what a route's declared limit does", () =>
@@ -105,7 +105,7 @@ describe("turning them off", () =>
 
 describe("a public route nothing bounds", () =>
 {
-    /** Open to the world, and no budget said how often. */
+    /** Open to the world, and no rateLimiter said how often. */
     const open = definePlugin("open", {
         version: "1.0.0",
         describe: "Answers anyone, as often as they ask.",
@@ -172,13 +172,13 @@ describe("a public route nothing bounds", () =>
     });
 });
 
-describe("a budget the project brought", () =>
+describe("a rateLimiter the project brought", () =>
 {
     test("is used even where limits are off, since it was asked for by name", async () =>
     {
         const asked: string[] = [];
 
-        const budget: Budget = {
+        const rateLimiter: RateLimiter = {
             spend: (key) =>
             {
                 asked.push(key);
@@ -187,7 +187,7 @@ describe("a budget the project brought", () =>
             },
         };
 
-        const api = await start({ plugins: [bounded], budget, limits: false });
+        const api = await start({ plugins: [bounded], rateLimiter, limits: false });
 
         const answer = await api.fetch(new Request("http://localhost/twice"));
 

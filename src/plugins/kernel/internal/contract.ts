@@ -1,20 +1,25 @@
 import type { z } from "zod";
 
 /** Anything declared carries a sentence saying what it is for. */
-export type Description = {
+export type Describable = {
     describe: string;
 };
 
 /** A declaration whose payload is checked before it reaches anyone. */
-export type Schematic = Description & {
+export type DescribableWithSchema = Describable & {
     schema: z.ZodType;
 };
 
 /** What a plugin may do, named so a project can grant it. */
-export type Permission = Description;
+export type Permission = {
+    describe: string;
+};
 
 /** An event a plugin publishes. Delivered after the work it announces. */
-export type Event = Schematic;
+export type Event = {
+    describe: string;
+    schema: z.ZodType;
+};
 
 /**
  * How far a pushed message travels.
@@ -24,11 +29,11 @@ export type Event = Schematic;
  * is what it says: written out, like `public` on a route, because a channel
  * the world may hear is a decision rather than an oversight.
  */
-export type Reach = "connection" | "viewer" | "scope" | "everyone";
+export type ChannelReach = "connection" | "viewer" | "scope" | "everyone";
 
 /** A channel a plugin pushes on, and how far what it pushes goes. */
-export type Channel = Schematic & {
-    reach: Reach;
+export type Channel = DescribableWithSchema & {
+    reach: ChannelReach;
 
     /** What a listener must hold, beyond being within reach. */
     requires?: readonly string[];
@@ -41,27 +46,30 @@ export type Channel = Schematic & {
  * accepts any annotation its author writes, because of contravariance, so the
  * compiler endorses a claim about a completely different schema.
  */
-export type Listener<Context, Payload = unknown> = Description & {
+export type Listener<Context, Payload = unknown> = Describable & {
     handle: (payload: Payload, ctx: Context) => void | Promise<void>;
 };
 
 /** A point where a plugin may refuse what is about to happen. */
-export type Hook = Schematic;
+export type Hook = {
+    describe: string;
+    schema: z.ZodType;
+};
 
 /** What a participant answers: nothing to allow, a reason to refuse. */
-export type Participant<Context, Payload = unknown> = Description & {
+export type Participant<Context, Payload = unknown> = Describable & {
     handle: (payload: Payload, ctx: Context) => string | undefined | Promise<string | undefined>;
 };
 
 /** Something a plugin can be asked to do, behind the permissions it names. */
-export type Command<Context, Input extends z.ZodType = z.ZodType> = Schematic & {
+export type Command<Context, Input extends z.ZodType = z.ZodType> = Describable & {
     schema: Input;
     requires?: readonly string[];
     run: (input: z.infer<Input>, ctx: Context) => void | Promise<void>;
 };
 
 /** The verbs a route may answer. */
-export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 /**
  * One endpoint.
@@ -71,8 +79,8 @@ export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
  * not reach it. `output` is a whitelist of what may leave, so a column added
  * to a table tomorrow does not appear in a response by itself.
  */
-export type Route<Context, Input extends z.ZodType = z.ZodType> = Description & {
-    method: Method;
+export type Route<Context, Input extends z.ZodType = z.ZodType> = Describable & {
+    method: HttpMethod;
     path: string;
     input: Input;
     output: z.ZodType;
@@ -101,7 +109,7 @@ export type Route<Context, Input extends z.ZodType = z.ZodType> = Description & 
      * What kind of body this takes. JSON unless it says otherwise.
      *
      * `"form"` reads `multipart/form-data`: text parts reach `input` as
-     * fields, file parts as `Upload`s under their own names. Declared rather
+     * fields, file parts as `UploadedFile`s under their own names. RegisteredChannel rather
      * than sniffed, so a route expecting JSON can never be handed a file.
      */
     accepts?: "json" | "form";
@@ -127,7 +135,7 @@ export type Route<Context, Input extends z.ZodType = z.ZodType> = Description & 
      * canonical form recovers the original: a sender is free to send
      * `{\n  "id": "a"\n}` and sign that.
      *
-     * Declared rather than always present, because bytes nobody asked for are
+     * RegisteredChannel rather than always present, because bytes nobody asked for are
      * bytes a log can carry: what is not named does not arrive, as with
      * `reads`.
      */
@@ -151,15 +159,15 @@ export type Route<Context, Input extends z.ZodType = z.ZodType> = Description & 
  * written against different ones, so a list holds "some listener" rather than
  * one shape. Sound because the kernel parses before it calls.
  */
-export type EmittedEvent<Context> = Description & {
+export type EmittedEvent<Context> = Describable & {
     handle: (payload: never, ctx: Context) => void | Promise<void>;
 };
 
-export type Participation<Context> = Description & {
+export type Participation<Context> = Describable & {
     handle: (payload: never, ctx: Context) => string | undefined | Promise<string | undefined>;
 };
 
-export type Run<Context> = Schematic & {
+export type AnyCommand<Context> = DescribableWithSchema & {
     requires?: readonly string[];
     run: (input: never, ctx: Context) => void | Promise<void>;
 };
@@ -171,7 +179,7 @@ export type Run<Context> = Schematic & {
  * against others, so what a list holds is "some route", not one shape. This
  * says that without reaching for `any`.
  */
-export type Endpoint<Context> = Omit<Route<Context, z.ZodType>, "input" | "handle"> & {
+export type AnyRoute<Context> = Omit<Route<Context, z.ZodType>, "input" | "handle"> & {
     input: z.ZodType;
     handle: (input: never, ctx: Context) => unknown | Promise<unknown>;
 };
@@ -202,16 +210,16 @@ export type Identity = {
  * in, TypeScript allows it through the union a return type is, and the kernel
  * drops them without a word: `grants` fills them, so nobody grants themselves.
  */
-export type Answered = Omit<Identity, "permissions"> & { permissions?: never };
+export type IdentifiedCaller = Omit<Identity, "permissions"> & { permissions?: never };
 
 /** One outbound call, to a host the plugin declared. */
-export type Outbound = {
-    method: Method;
+export type HttpRequest = {
+    method: HttpMethod;
     url: string;
     body?: unknown;
 
     /**
-     * What the answer is read as. Declared, never sniffed: a page that
+     * What the answer is read as. RegisteredChannel, never sniffed: a page that
      * answers html one day and json the next changes nothing here, and a
      * caller always knows which of the two it holds. Left out, json.
      */
@@ -286,8 +294,8 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
      */
     tx: <Result>(run: (ctx: Context<Config, Services, Db>) => Promise<Result>) => Promise<Result>;
 
-    /** Calls a host this plugin declared in `outbound`. */
-    fetch: (call: Outbound) => Promise<unknown>;
+    /** Calls a host this plugin declared in `allowedHosts`. */
+    fetch: (call: HttpRequest) => Promise<unknown>;
 
     events: {
         /**
@@ -344,10 +352,10 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
      * `teardown`. This is where it lives, one per plugin, and no plugin
      * reaches another's.
      */
-    owns: <Owned>(owned: Owned) => Owned;
+    owns: <Kept>(kept: Kept) => Kept;
 
     /** What this plugin took ownership of, or undefined before `setup` did. */
-    owned: <Owned>() => Owned | undefined;
+    owned: <Kept>() => Kept | undefined;
 
     /**
      * What narrows every read of a table this plugin declared a `scope` for.
@@ -396,7 +404,7 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
     forScope: (claim: string) => Context<Config, Services, Db>;
 
     /** Another plugin's services, by name. Only what `dependsOn` names. */
-    use: <Reached>(plugin: string) => Reached;
+    use: <Api>(plugin: string) => Api;
 };
 
 /**
@@ -406,14 +414,14 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
  * callback taking a context would otherwise be a second inference site, and
  * two candidates for one parameter resolve to unknown.
  */
-type Exactly<Result> = NoInfer<Result>;
+type NoExtraKeys<Given> = NoInfer<Given>;
 
 /** Everything a plugin declares about itself. */
 export type Definition<
     Schema extends z.ZodType = z.ZodType,
     Services = unknown,
     Db = unknown,
-> = Description & {
+> = Describable & {
     version: string;
     dependsOn?: readonly string[];
     config?: Schema;
@@ -456,7 +464,7 @@ export type Definition<
      * served on and a credential in the url stay refused, and the address a
      * name resolves to is checked rather than the name.
      */
-    outbound?: readonly string[] | "anywhere";
+    allowedHosts?: readonly string[] | "anywhere";
 
     services?: (ctx: Context<z.infer<Schema>, never, Db>) => Services;
 
@@ -468,18 +476,18 @@ export type Definition<
      * is sound here precisely because the kernel parses before it calls: what
      * failed the schema never arrives.
      */
-    routes?: readonly Endpoint<Context<z.infer<Schema>, Exactly<Services>, Db>>[];
+    routes?: readonly AnyRoute<Context<z.infer<Schema>, NoExtraKeys<Services>, Db>>[];
 
     emits?: Readonly<Record<string, Event>>;
 
     /** Channels it pushes on. What it pushes is checked against the schema. */
     channels?: Readonly<Record<string, Channel>>;
-    listens?: Readonly<Record<string, EmittedEvent<Context<z.infer<Schema>, Exactly<Services>, Db>>>>;
+    listens?: Readonly<Record<string, EmittedEvent<Context<z.infer<Schema>, NoExtraKeys<Services>, Db>>>>;
 
     hooks?: Readonly<Record<string, Hook>>;
-    participates?: Readonly<Record<string, Participation<Context<z.infer<Schema>, Exactly<Services>, Db>>>>;
+    participates?: Readonly<Record<string, Participation<Context<z.infer<Schema>, NoExtraKeys<Services>, Db>>>>;
 
-    commands?: Readonly<Record<string, Run<Context<z.infer<Schema>, Exactly<Services>, Db>>>>;
+    commands?: Readonly<Record<string, AnyCommand<Context<z.infer<Schema>, NoExtraKeys<Services>, Db>>>>;
 
     /**
      * Who is calling, read from the request this plugin knows how to read.
@@ -492,9 +500,9 @@ export type Definition<
      * 500. `permissions` is filled from `grants`, so this never names one.
      */
     identifies?: (
-        ctx: Context<z.infer<Schema>, Exactly<Services>, Db>,
+        ctx: Context<z.infer<Schema>, NoExtraKeys<Services>, Db>,
         request: Request,
-    ) => Promise<Answered | undefined> | Answered | undefined;
+    ) => Promise<IdentifiedCaller | undefined> | IdentifiedCaller | undefined;
 
     /**
      * What being signed in means here.
@@ -507,7 +515,7 @@ export type Definition<
      * grants: a route nobody can reach is the error this exists to catch.
      */
     grants?: (
-        ctx: Context<z.infer<Schema>, Exactly<Services>, Db>,
+        ctx: Context<z.infer<Schema>, NoExtraKeys<Services>, Db>,
         identity: Omit<Identity, "permissions">,
     ) => Promise<readonly string[]> | readonly string[];
 
@@ -519,8 +527,8 @@ export type Definition<
      */
     mayGrant?: readonly string[];
 
-    setup?: (ctx: Context<z.infer<Schema>, Exactly<Services>, Db>) => void | Promise<void>;
-    teardown?: (ctx: Context<z.infer<Schema>, Exactly<Services>, Db>) => void | Promise<void>;
+    setup?: (ctx: Context<z.infer<Schema>, NoExtraKeys<Services>, Db>) => void | Promise<void>;
+    teardown?: (ctx: Context<z.infer<Schema>, NoExtraKeys<Services>, Db>) => void | Promise<void>;
 };
 
 /** A plugin: its name, and what it declared. */

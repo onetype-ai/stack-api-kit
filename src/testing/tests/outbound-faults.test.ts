@@ -1,14 +1,14 @@
 import { expect, test } from "vitest";
 
-import { definePlugin, OutboundFault } from "../../index";
+import { definePlugin, HttpRequestError } from "../../index";
 import { startTestKernel } from "../startTestKernel";
 
-test("answers may throw an OutboundFault, so a bad status is testable", async () =>
+test("answers may throw an HttpRequestError, so a bad status is testable", async () =>
 {
     const plugin = definePlugin("partner", {
         version: "1.0.0",
         describe: "Calls a partner.",
-        outbound: ["https://partner.test"],
+        allowedHosts: ["https://partner.test"],
         services: (ctx) => ({
             ask: () => ctx.fetch({ method: "GET", url: "https://partner.test/thing" }),
         }),
@@ -16,18 +16,18 @@ test("answers may throw an OutboundFault, so a bad status is testable", async ()
 
     const api = await startTestKernel({
         plugins: [plugin],
-        answers: () =>
+        respondWith: () =>
         {
-            throw new OutboundFault("STATUS", "The call was refused with status 503.", 503);
+            throw new HttpRequestError("STATUS", "The call was refused with status 503.", 503);
         },
     });
 
     const fault = await (api.kernel.context("partner").services as { ask: () => Promise<unknown> })
         .ask()
-        .catch((cause: unknown) => cause) as OutboundFault;
+        .catch((cause: unknown) => cause) as HttpRequestError;
 
     await api.stop();
 
-    expect(fault).toBeInstanceOf(OutboundFault);
+    expect(fault).toBeInstanceOf(HttpRequestError);
     expect(fault.status).toBe(503);
 });

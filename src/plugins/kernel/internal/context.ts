@@ -1,35 +1,28 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
-import type { Identity, Context, Outbound, Plugin } from "./contract";
-import type { events, Pending } from "./events";
-import { Refusal } from "./answer";
+import type { Identity, Context, HttpRequest, Plugin } from "./contract";
+import type { events, PendingDelivery } from "./events";
+import { Refusal } from "./refusal";
 import { KernelFault } from "./faults";
-import { whyUnfetchable } from "./reachable";
+import { blockedUrlReason } from "./privateAddress";
 import type { hooks } from "./hooks";
 import { createPermissions } from "./permissions";
-import type { Dialer, ScopeFilter, Outbox, Schedule, Sockets, Storage } from "./store";
+import type { HttpClient, ScopeFilter, Outbox, Schedule, Sockets, KernelStore } from "./store";
 
 /** Everything a context is built from. One object, so the shape is one line. */
-export type Wiring = {
+export type KernelWiring = {
     known: ReadonlyMap<string, Plugin>;
     settings: ReadonlyMap<string, unknown>;
-    /**
-     * Which transaction the running code is inside, if any.
-     *
-     * Per call stack rather than per process: a field would say a transaction
-     * is open somewhere, never that *this* identity is the one inside it, so a
-     * request emitting outside any transaction would have its event held
-     * against a stranger's, and lost when that stranger rolled back.
-     */
+    /** Which transaction the running code is inside, if any. */
     open: AsyncLocalStorage<object>;
     config: Readonly<Record<string, unknown>>;
     bus: ReturnType<typeof events<Context>>;
     points: ReturnType<typeof hooks<Context>>;
-    pending: Map<object, Pending[]>;
+    pending: Map<object, PendingDelivery[]>;
 
     /** What each plugin owns: one thing, living as long as the kernel does. */
     owned: Map<string, unknown>;
-    db: Storage | undefined;
+    db: KernelStore | undefined;
 
     /** What holds the open sockets, when the project started a server. */
     sockets: Sockets | undefined;
@@ -37,7 +30,7 @@ export type Wiring = {
     /** Where events wait for delivery, when the project gave one. */
     outbox: Outbox | undefined;
 
-    dial: Dialer | undefined;
+    httpClient: HttpClient | undefined;
 
     /** What the project calls the current time. */
     now: () => number;
@@ -46,31 +39,19 @@ export type Wiring = {
     schedule: Schedule | undefined;
 
     /** How a declared scope becomes a condition. */
-    narrow: ScopeFilter | undefined;
+    scopeFilter: ScopeFilter | undefined;
     log: (level: "debug" | "info" | "warn" | "error", plugin: string, line: string, about?: Readonly<Record<string, unknown>>) => void;
     run: (command: string, input: unknown, identity?: Identity) => Promise<void>;
 };
 
 /** Where in a transaction a context sits, if it is in one at all. */
-type OpenTx = {
+type OpenTransaction = {
     mark: object;
     db: unknown;
 };
 
-/**
- * What an absent dependency answers: a refusal naming who and what to pass.
- *
- * `used` is what the plugin called; `pass` is the option that supplies it.
- * They are rarely the same word, and saying only the first sends a reader
- * looking for an option that does not exist.
- *
- * The plugin is named because this refusal is rarely read by whoever caused
- * it: one plugin reaching for something the project did not pass stops every
- * test that boots it as a dependency, in files its author never opened. "A
- * plugin" leaves them a stack trace to read; the name leaves them nothing to
- * read at all.
- */
-function absent(plugin: string, what: string, used: string, pass: string): never
+/** What an absent dependency answers: a refusal naming who and what to pass. */
+function absentWiring(plugin: string, what: string, used: string, pass: string): never
 {
     throw new KernelFault(
         "NOT_STARTED",
@@ -80,17 +61,12 @@ function absent(plugin: string, what: string, used: string, pass: string): never
 }
 
 /** The origin of a url, whatever its scheme, or undefined when it is not one. */
-function origin(url: string): string | undefined
+function originOf(url: string): string | undefined
 {
     try
     {
         const parsed = new URL(url);
 
-        // `origin` is "null" for schemes the URL standard calls opaque, which
-        // is most of them once past http: build it back from the parts, so a
-        // declared redis:// host is comparable to the one being dialled.
-        // A url with no host names nobody: "htps:/example.com" parses, and
-        // its host is empty, so it is a typo rather than a host to declare.
         if (parsed.host === "")
         {
             return undefined;
@@ -107,37 +83,29 @@ function origin(url: string): string | undefined
 }
 
 /** Whether ctx.fetch can carry a call to this url at all. */
-function dialable(url: string): boolean
+function isHttps(url: string): boolean
 {
     return url.toLowerCase().startsWith("https://");
 }
 
-/**
- * Builds what one plugin sees, for one identity.
- *
- * Built per request rather than kept: one kernel answers every request, and a
- * context holding a caller would hand the next request the previous one.
- */
-export function context(wiring: Wiring, plugin: string, identity?: Identity, within?: OpenTx, headers: Readonly<Record<string, string>> = {}, acting?: string, sent?: Uint8Array): Context
+/** Builds what one plugin sees, for one identity. */
+export function context(wiring: KernelWiring, plugin: string, identity?: Identity, openTransaction?: OpenTransaction, headers: Readonly<Record<string, string>> = {}, acting?: string, sent?: Uint8Array): Context
 {
     const permissions = createPermissions(() => identity);
-    const seenBy = (plugin: string, inside = within): Context =>
+    const contextFor = (plugin: string, inside = openTransaction): Context =>
     {
         return context(wiring, plugin, identity, inside, headers, acting, sent);
     };
 
     /** What a listener is handed: this plugin, and nobody calling. */
-    const heard = (plugin: string): Context =>
+    const listenerContext = (plugin: string): Context =>
     {
         return context(wiring, plugin, undefined, undefined, {});
     };
 
-    // Built lazily and once per context: a service reads ctx.identity, so one
-    // made at startup would answer every request as nobody. A plugin whose
-    // services are never touched builds none.
     const built = new Map<string, unknown>();
 
-    const of = (name: string): unknown =>
+    const servicesOf = (name: string): unknown =>
     {
         if (built.has(name))
         {
@@ -147,7 +115,7 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
         built.set(name, undefined);
 
         const services = wiring.known.get(name)?.definition.services?.(
-            (name === plugin ? ctx : seenBy(name)) as never,
+            (name === plugin ? ctx : contextFor(name)) as never,
         );
 
         built.set(name, services);
@@ -155,12 +123,7 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
         return services;
     };
 
-    /**
-     * What a declared scope resolves to for this identity.
-     *
-     * Shared by `scoped` and `stamped`, because a read and a write must agree
-     * about whose rows these are: two lookups is two chances to disagree.
-     */
+    /** What a declared scope resolves to for this identity. */
     const scopeFor = (table: string): { column: string; tenant: string } =>
     {
         const scope = wiring.known.get(plugin)?.definition.scope;
@@ -174,8 +137,6 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
             );
         }
 
-        // hasOwn, not an index: "toString" would answer with a function, and
-        // a column nobody declared would be spread into a write.
         const column = Object.hasOwn(scope.tables, table) ? scope.tables[table] : undefined;
 
         if (column === undefined)
@@ -187,10 +148,6 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
             );
         }
 
-        // Nobody calling and no scope acted for: a listener, a scheduled
-        // command or a public route reached a scoped table with no way to
-        // say whose. That is the code's mistake, not the caller's, and 403
-        // sends it to whoever cannot fix it.
         if (identity === undefined && acting === undefined)
         {
             throw new KernelFault(
@@ -200,17 +157,12 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
             );
         }
 
-        // Refused, never defaulted: a default tenant is everybody's.
         const tenant = identity === undefined ? acting : identity.claims[scope.claim];
 
-        // A signed-in caller whose claim is missing, or there but not a
-        // string, is a contract that never met: whoever identifies always
-        // answers the same shape, so every session hits it. A fault, not one
-        // caller being turned away. An empty string is the caller's, below.
         if (identity !== undefined && typeof identity.claims[scope.claim] !== "string")
         {
-            const held = identity.claims[scope.claim];
-            const carried = held === undefined ? "carries no such claim" : `carries it as ${typeof held}, and a scope narrows by a string`;
+            const claimed = identity.claims[scope.claim];
+            const carried = claimed === undefined ? "carries no such claim" : `carries it as ${typeof claimed}, and a scope narrows by a string`;
 
             throw new KernelFault(
                 "UNCLAIMED_SCOPE",
@@ -237,7 +189,7 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
 
         get services(): unknown
         {
-            return of(plugin);
+            return servicesOf(plugin);
         },
 
         identity,
@@ -267,20 +219,17 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
 
         get db(): unknown
         {
-            if (within !== undefined)
+            if (openTransaction !== undefined)
             {
-                return within.db;
+                return openTransaction.db;
             }
 
-            return wiring.db === undefined ? absent(plugin, "store", "db", "db") : wiring.db.of(plugin);
+            return wiring.db === undefined ? absentWiring(plugin, "store", "db", "db") : wiring.db.forPlugin(plugin);
         },
 
         write: <Returned,>(run: () => Promise<Returned>): Promise<Returned> =>
         {
-            // Inside a transaction the ordering is already settled: the work
-            // belongs to that transaction, and queueing it would wait on a
-            // turn that cannot come until the transaction it is inside ends.
-            if (within !== undefined || wiring.db?.write === undefined)
+            if (openTransaction !== undefined || wiring.db?.write === undefined)
             {
                 return run();
             }
@@ -294,33 +243,27 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
 
             if (store === undefined)
             {
-                return absent(plugin, "store", "db", "db");
+                return absentWiring(plugin, "store", "db", "db");
             }
 
             const mark = {};
             const outer = wiring.open.getStore();
-            const nested = within !== undefined;
+            const nested = openTransaction !== undefined;
 
             wiring.pending.set(mark, []);
 
             try
             {
-                // An inner tx becomes a savepoint rather than a second
-                // transaction, but keeps its own buffer: work it rolled back
-                // must not be announced when the outer commits.
                 const returned = await wiring.open.run(mark, () =>
                     store.tx(plugin, async (db) =>
                     {
-                        const answer = await run(seenBy(plugin, { mark, db }));
+                        const answer = await run(contextFor(plugin, { mark, db }));
 
-                        // Written with the work, not after it: an event kept
-                        // once the transaction has closed is one the process
-                        // can still die without.
                         const queued = wiring.pending.get(mark) ?? [];
 
                         if (wiring.outbox !== undefined && queued.length > 0 && !(nested && outer !== undefined))
                         {
-                            wiring.outbox.keep(db, queued.map((event) => ({
+                            wiring.outbox.save(db, queued.map((event) => ({
                                 id: event.id,
                                 plugin: event.plugin,
                                 name: event.name,
@@ -335,27 +278,20 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
 
                 if (nested && outer !== undefined)
                 {
-                    // An inner transaction is a savepoint: the outer one may
-                    // still roll back, so what this announced waits on that.
                     wiring.pending.get(outer)?.push(...announced);
 
                     return returned;
                 }
 
-                // Only now: an event about work that rolled back is a lie,
-                // and a listener acting on one cannot be undone.
                 for (const announcement of announced)
                 {
-                    const delivered = wiring.bus.deliver(announcement.plugin, announcement.name, announcement.payload, (to) => heard(to));
+                    const delivered = wiring.bus.deliver(announcement.plugin, announcement.name, announcement.payload, (to) => listenerContext(to));
 
-                    // Forgotten only once something has heard it. Marking it
-                    // sent before that would lose exactly what the outbox
-                    // exists to keep.
-                    void delivered.then((heard) =>
+                    void delivered.then((listenerContext) =>
                     {
-                        if (heard)
+                        if (listenerContext)
                         {
-                            void wiring.outbox?.sent(announcement.id);
+                            void wiring.outbox?.markSent(announcement.id);
                         }
                     });
                 }
@@ -368,33 +304,23 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
             }
         },
 
-        // Async throughout, refusal included: a caller writing `.catch()`
-        // around a call would otherwise get an uncaught error for the one
-        // case it was guarding against.
-        fetch: async (call: Outbound): Promise<unknown> =>
+        fetch: async (call: HttpRequest): Promise<unknown> =>
         {
-            const allowed = wiring.known.get(plugin)?.definition.outbound ?? [];
-            const host = origin(call.url);
+            const allowed = wiring.known.get(plugin)?.definition.allowedHosts ?? [];
+            const host = originOf(call.url);
 
-            // A plugin whose hosts are rows rather than constants asks for
-            // every address instead of naming each. What it gets is not a
-            // list that permits everything but a different question: the
-            // public internet, and not the machine this runs on.
             if (allowed === "anywhere")
             {
-                const wrong = whyUnfetchable(call.url);
+                const blocked = blockedUrlReason(call.url);
 
-                if (wrong !== undefined)
+                if (blocked !== undefined)
                 {
-                    throw new KernelFault("UNDECLARED_HOST", `"${plugin}" called an address it may not reach. ${wrong}`, { plugin });
+                    throw new KernelFault("UNDECLARED_HOST", `"${plugin}" called an address it may not reach. ${blocked}`, { plugin });
                 }
 
-                return wiring.dial === undefined ? absent(plugin, "dialer", "dial", "dial") : wiring.dial(call);
+                return wiring.httpClient === undefined ? absentWiring(plugin, "httpClient", "fetch", "httpClient") : wiring.httpClient(call);
             }
 
-            // Told apart, because "add it to outbound" cannot fix a url that
-            // is not one: the reader goes looking at a declaration that is
-            // already right.
             if (host === undefined)
             {
                 throw new KernelFault(
@@ -413,34 +339,24 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
                 );
             }
 
-            // Declared, but not something this can carry. Said plainly,
-            // because "add it to outbound" for a host already in outbound
-            // sends the reader looking for a problem that is not there.
-            if (!dialable(call.url))
+            if (!isHttps(call.url))
             {
                 throw new KernelFault(
                     "UNDECLARED_HOST",
-                    `"${plugin}" declares ${host}, but ctx.fetch speaks https and nothing else. Reach it with its own client, opened in setup and closed in teardown.`,
+                    `"${plugin}" declares ${host}, but ctx.fetch speaks https and nothing else. ChannelReach it with its own client, opened in setup and closed in teardown.`,
                     { plugin },
                 );
             }
 
-            return wiring.dial === undefined ? absent(plugin, "dialer", "dial", "dial") : wiring.dial(call);
+            return wiring.httpClient === undefined ? absentWiring(plugin, "httpClient", "fetch", "httpClient") : wiring.httpClient(call);
         },
 
         events: {
             emit: (event, payload) =>
             {
-                // Checked here even when it is deferred: a payload rejected after
-                // a commit, from a stack with no identity in it, is one nobody
-                // can trace back to what emitted it.
                 const payloadChecked = wiring.bus.checkDeclared(plugin, event, payload);
 
-                // Kept against whatever transaction is open, not against the
-                // context this was called on. Emitting from the outer `ctx`
-                // inside a `tx` is the easy mistake, and it announced work
-                // that had not committed and might never.
-                const mark = within?.mark ?? wiring.open.getStore();
+                const mark = openTransaction?.mark ?? wiring.open.getStore();
                 const queued = mark === undefined ? undefined : wiring.pending.get(mark);
 
                 if (queued !== undefined)
@@ -450,12 +366,7 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
                     return;
                 }
 
-                // On nobody's behalf, always. A listener that inherited the
-                // emitter's identity would work in one process and answer as
-                // nobody after a restart, because an outbox keeps a payload
-                // and not a request. Whose work this was travels in the
-                // payload or not at all.
-                wiring.bus.deliver(plugin, event, payloadChecked, (to) => heard(to));
+                wiring.bus.deliver(plugin, event, payloadChecked, (to) => listenerContext(to));
             },
         },
 
@@ -474,16 +385,13 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
 
             if (wiring.sockets === undefined)
             {
-                absent(plugin, "socket server", "push", "sockets");
+                absentWiring(plugin, "socket server", "push", "sockets");
             }
 
             const scope = wiring.known.get(plugin)?.definition.scope;
-            const within = identity === undefined ? acting : identity.claims[scope?.claim ?? ""];
+            const pushScope = identity === undefined ? acting : identity.claims[scope?.claim ?? ""];
 
-            // Refused rather than sent everywhere: a scoped message with no
-            // scope to stay inside is the one mistake this reach exists to
-            // stop, and sending it wider is how a tenant reads another's.
-            if (declared.reach === "scope" && typeof within !== "string")
+            if (declared.reach === "scope" && typeof pushScope !== "string")
             {
                 throw new Refusal(403, "OUT_OF_SCOPE", "This request carries nothing to say whose rows it may reach.");
             }
@@ -493,7 +401,7 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
                 message: declared.schema.parse(message),
                 reach: declared.reach,
                 requires: declared.requires ?? [],
-                within: declared.reach === "scope" ? (within as string) : undefined,
+                scope: declared.reach === "scope" ? (pushScope as string) : undefined,
                 from: identity,
             });
         },
@@ -501,7 +409,7 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
         hooks: {
             run: (hook, payload) =>
             {
-                return wiring.points.run(plugin, hook, payload, (to) => seenBy(to));
+                return wiring.points.run(plugin, hook, payload, (to) => contextFor(to));
             },
         },
 
@@ -517,13 +425,11 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
             {
                 if (wiring.schedule === undefined)
                 {
-                    absent(plugin, "schedule", "commands.later", "schedule");
+                    absentWiring(plugin, "schedule", "commands.later", "schedule");
                 }
 
                 const owns = wiring.known.get(plugin)?.definition.commands ?? {};
 
-                // hasOwn, not `in`: "constructor" and "toString" walk the
-                // prototype and would be scheduled as if they were declared.
                 if (!Object.hasOwn(owns, command))
                 {
                     throw new KernelFault(
@@ -533,10 +439,7 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
                     );
                 }
 
-                // Written by the transaction that asked, when there is one:
-                // work scheduled by something that rolled back is work about
-                // nothing, and it would run anyway.
-                wiring.schedule.keep(within?.db, {
+                wiring.schedule.save(openTransaction?.db, {
                     id: crypto.randomUUID(),
                     plugin,
                     command,
@@ -547,23 +450,20 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
             },
         },
 
-        owns: <Owned,>(owned: Owned): Owned =>
+        owns: <Kept,>(kept: Kept): Kept =>
         {
-            wiring.owned.set(plugin, owned);
+            wiring.owned.set(plugin, kept);
 
-            return owned;
+            return kept;
         },
 
-        owned: <Owned,>(): Owned | undefined =>
+        owned: <Kept,>(): Kept | undefined =>
         {
-            return wiring.owned.get(plugin) as Owned | undefined;
+            return wiring.owned.get(plugin) as Kept | undefined;
         },
 
         forScope: (claim: string): Context =>
         {
-            // Only where nobody is calling. Inside a request the scope is
-            // decided by who is asking, and letting a handler name another
-            // is how a caller reaches rows that are not theirs.
             if (identity !== undefined)
             {
                 throw new KernelFault(
@@ -582,7 +482,7 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
                 );
             }
 
-            return context(wiring, plugin, undefined, within, headers, claim, sent);
+            return context(wiring, plugin, undefined, openTransaction, headers, claim, sent);
         },
 
         stamped: (table: string): Readonly<Record<string, string>> =>
@@ -596,12 +496,12 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
         {
             const { column, tenant } = scopeFor(table);
 
-            return (wiring.narrow === undefined
-                ? absent(plugin, "createScopeFilter", "scoped", "narrow")
-                : wiring.narrow(table, column, tenant)) as Condition;
+            return (wiring.scopeFilter === undefined
+                ? absentWiring(plugin, "createScopeFilter", "scoped", "scopeFilter")
+                : wiring.scopeFilter(table, column, tenant)) as Condition;
         },
 
-        use: <Reached,>(name: string): Reached =>
+        use: <Api,>(name: string): Api =>
         {
             const dependsOn = wiring.known.get(plugin)?.definition.dependsOn ?? [];
 
@@ -614,9 +514,7 @@ export function context(wiring: Wiring, plugin: string, identity?: Identity, wit
                 );
             }
 
-            // The other plugin's services, against this same identity. One
-            // built at startup would answer as whoever asked first.
-            return of(name) as Reached;
+            return servicesOf(name) as Api;
         },
     };
 

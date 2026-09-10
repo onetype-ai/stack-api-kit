@@ -14,7 +14,7 @@ test("a write carries the caller's scope, not the one it asked for", async () =>
 {
     const store = database({ file: ":memory:", tables: { billing: { notes } } });
 
-    store.of("billing").$client.exec(
+    store.forPlugin("billing").$client.exec(
         "CREATE TABLE billing_notes (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, body TEXT NOT NULL)",
     );
 
@@ -36,7 +36,7 @@ test("a write carries the caller's scope, not the one it asked for", async () =>
             }),
         })],
         db: store,
-        ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
+        ...(store.createScopeFilter !== undefined && { scopeFilter: store.createScopeFilter() }),
     });
 
     await kernel.start();
@@ -45,7 +45,7 @@ test("a write carries the caller's scope, not the one it asked for", async () =>
 
     await (mine.services as { plant: () => Promise<void> }).plant();
 
-    const rows = store.of("billing").$client.prepare("SELECT tenant_id FROM billing_notes").all();
+    const rows = store.forPlugin("billing").$client.prepare("SELECT tenant_id FROM billing_notes").all();
 
         await kernel.stop();
     store.close();

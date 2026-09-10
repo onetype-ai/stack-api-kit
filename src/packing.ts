@@ -1,6 +1,3 @@
-//
-// Folders as one readable file, and back again.
-//
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
@@ -22,26 +19,11 @@ export type Packing = {
     /** The file a project runs, named in the usage line. */
     tool: string;
 
-    /**
-     * The most characters one packed file may hold, or 0 for no limit.
-     *
-     * A document past it is refused at the pack rather than at a test: a
-     * limit that has to be measured is one nobody was watching anyway.
-     *
-     * A function answers per file, because a reference is searched where a
-     * procedure is read, and the two do not fit one number.
-     */
+    /** The most characters one packed file may hold, or 0 for no limit. */
     limit?: number | ((path: string) => number);
 };
 
-/**
- * One folder, folded into one file and back.
- *
- * Packing writes the file beside what it read and removes the originals, so
- * there is one copy rather than two that drift apart. Reading that file is
- * meant to replace walking the tree: every path and every line, in the order
- * somebody would read them.
- */
+/** One folder, folded into one file and back. */
 export class Packer
 {
     readonly mark = "==> ";
@@ -79,9 +61,9 @@ export class Packer
         this.limit = limit ?? 0;
     }
 
-    pack(asked: readonly string[]): void
+    pack(wanted: readonly string[]): void
     {
-        const names = asked.length > 0 ? [...asked] : [...this.demo];
+        const names = wanted.length > 0 ? [...wanted] : [...this.demo];
 
         for (const name of names)
         {
@@ -117,8 +99,6 @@ export class Packer
                 throw new Error(`${path} holds a line starting with "${this.mark}", which would unpack wrongly.`);
             }
 
-            // Refused here rather than counted later: the writer is the one
-            // holding it, and a limit found at a test is one found too late.
             const most = typeof this.limit === "function" ? this.limit(path) : this.limit;
 
             if (most > 0 && body.length > most)
@@ -141,9 +121,9 @@ export class Packer
 
         this.clear(this.whole ? undefined : names, (name) => this.pathFor(name));
 
-        const said = this.whole ? this.at : names.join(", ");
+        const describing = this.whole ? this.at : names.join(", ");
 
-        console.log(`packed ${said} (${String(losing)} files) into ${relative(this.root, this.file)}`);
+        console.log(`packed ${describing} (${String(losing)} files) into ${relative(this.root, this.file)}`);
         console.log(`those ${String(losing)} files are now gone from disk. \`unpack\` writes them back.`);
     }
 
@@ -176,15 +156,15 @@ export class Packer
 
         for (const [named, body] of files)
         {
-            const full = join(this.root, named);
+            const path = join(this.root, named);
 
-            mkdirSync(dirname(full), { recursive: true });
-            writeFileSync(full, body.endsWith("\n") ? body : `${body}\n`);
+            mkdirSync(dirname(path), { recursive: true });
+            writeFileSync(path, body.endsWith("\n") ? body : `${body}\n`);
         }
 
-        const told = this.whole ? this.at : names.join(", ");
+        const describing = this.whole ? this.at : names.join(", ");
 
-        console.log(`unpacked ${told} (${String(files.length)} files) into ${relative(this.root, this.folder)}`);
+        console.log(`unpacked ${describing} (${String(files.length)} files) into ${relative(this.root, this.folder)}`);
     }
 
     /** What a packed file names, in the order it named them. */
@@ -242,12 +222,7 @@ export class Packer
         return existsSync(folder) && statSync(folder).isDirectory() ? folder : `${folder}.ts`;
     }
 
-    /**
-     * Removes what was folded away, keeping the file it was folded into.
-     *
-     * A pack knows whether a name is a folder or a file beside it, so it
-     * resolves one; an unpack has only the name the packed file carried.
-     */
+    /** Removes what was folded away, keeping the file it was folded into. */
     clear(names: readonly string[] | undefined, resolve?: (name: string) => string): void
     {
         if (names !== undefined)
@@ -260,8 +235,6 @@ export class Packer
             return;
         }
 
-        // The packed file may live inside the folder it packs, so the folder
-        // is emptied around it rather than removed under it.
         if (!this.file.startsWith(`${this.folder}${sep}`))
         {
             rmSync(this.folder, { recursive: true, force: true });
@@ -280,32 +253,32 @@ export class Packer
         }
     }
 
-    walk(at: string): string[]
+    walk(folder: string): string[]
     {
-        if (!statSync(at).isDirectory())
+        if (!statSync(folder).isDirectory())
         {
-            return at === this.file ? [] : [at];
+            return folder === this.file ? [] : [folder];
         }
 
-        const found: string[] = [];
+        const paths: string[] = [];
 
-        for (const entry of readdirSync(at))
+        for (const entry of readdirSync(folder))
         {
-            const full = join(at, entry);
+            const path = join(folder, entry);
 
-            if (statSync(full).isDirectory())
+            if (statSync(path).isDirectory())
             {
-                found.push(...this.walk(full));
+                paths.push(...this.walk(path));
                 continue;
             }
 
-            if (full !== this.file)
+            if (path !== this.file)
             {
-                found.push(full);
+                paths.push(path);
             }
         }
 
-        return found;
+        return paths;
     }
 
     /** What a reader opens first comes first. */
@@ -371,16 +344,16 @@ the next pack throws away.
 
     run(argv: readonly string[]): void
     {
-        const [asked, ...names] = argv;
+        const [verb, ...names] = argv;
 
-        if (asked === "pack")
+        if (verb === "pack")
         {
             this.pack(names);
 
             return;
         }
 
-        if (asked === "unpack")
+        if (verb === "unpack")
         {
             this.unpack();
 

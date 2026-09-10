@@ -1,7 +1,5 @@
-import { dial, type DialerOptions, OutboundFault } from "./internal/dial";
+import { httpClient, type HttpClientOptions, HttpRequestError } from "./internal/httpClient";
 
-export type Dialer = ReturnType<typeof dial>;
-
-export { dial, OutboundFault };
-export type { DialerOptions };
+export { httpClient, HttpRequestError };
+export type { HttpClientOptions };
 

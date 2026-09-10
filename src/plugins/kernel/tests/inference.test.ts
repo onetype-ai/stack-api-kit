@@ -43,7 +43,7 @@ describe("what a plugin gets without writing a cast", () =>
 
         const kernel = createKernel({
             plugins: [plugin],
-            db: { of: () => ({}), tx: (_plugin, run) => run({}) },
+            db: { forPlugin: () => ({}), tx: (_plugin, run) => run({}) },
             config: { probe: { size: 42 } },
         });
 

@@ -1,14 +1,14 @@
 import type { Event, EmittedEvent } from "./contract";
 import { KernelFault } from "./faults";
 
-export type Failure = {
+export type ListenerFailure = {
     event: string;
     plugin: string;
     error: unknown;
     at: number;
 };
 
-export type Pending = {
+export type PendingDelivery = {
     /** Its own, so an outbox can mark exactly this one delivered. */
     id: string;
 
@@ -22,49 +22,33 @@ type EventOwner = {
     event: Event;
 };
 
-/**
- * How many listener failures are remembered.
- *
- * Enough to see a pattern in what just broke, few enough that a listener
- * throwing on every event cannot exhaust the process.
- */
-const REMEMBERED = 100;
+/** How many listener failures are remembered. */
+const MOST_REMEMBERED = 100;
 
-type Subscriber<Context> = {
+type EventHandler<Context> = {
     plugin: string;
     listener: EmittedEvent<Context>;
 };
 
-type Report = (plugin: string, line: string, about: Readonly<Record<string, unknown>>) => void;
+type EventReport = (plugin: string, line: string, about: Readonly<Record<string, unknown>>) => void;
 
-export function events<Context>(now: () => number = Date.now, told: Report = () => {})
+export function events<Context>(now: () => number = Date.now, report: EventReport = () => {})
 {
     const published = new Map<string, EventOwner>();
-    const subscribers = new Map<string, Subscriber<Context>[]>();
-    const failures: Failure[] = [];
+    const subscribers = new Map<string, EventHandler<Context>[]>();
+    const failures: ListenerFailure[] = [];
 
-    /**
-     * Records a listener that failed, and says so.
-     *
-     * Kept for a project to read, and logged as well: a failure only in a
-     * list nobody polls is a failure nobody sees, and an event is the one
-     * path where nothing is waiting to be told.
-     *
-     * Only the last few are kept. Each holds an Error, and an Error holds the
-     * stack it was thrown from, so a listener failing on every event would
-     * otherwise grow this list for as long as the process lives. The newest
-     * are what a project reads; the oldest are what it has already seen.
-     */
+    /** Records a listener that failed, and says so. */
     function record(event: string, plugin: string, error: unknown): void
     {
         failures.push({ event, plugin, error, at: now() });
 
-        if (failures.length > REMEMBERED)
+        if (failures.length > MOST_REMEMBERED)
         {
-            failures.splice(0, failures.length - REMEMBERED);
+            failures.splice(0, failures.length - MOST_REMEMBERED);
         }
 
-        told(plugin, `listening to "${event}" failed`, {
+        report(plugin, `listening to "${event}" failed`, {
             event,
             error: error instanceof Error ? error.message : String(error),
             ...(error instanceof Error && error.stack !== undefined && { stack: error.stack }),
@@ -108,19 +92,7 @@ export function events<Context>(now: () => number = Date.now, told: Report = () 
             subscribers.set(name, [...(subscribers.get(name) ?? []), { plugin, listener }]);
         },
 
-        // A listener that throws is recorded and reaches neither the emitter
-        // nor the ones behind it: one plugin's bug is not another's failure.
-        /**
-         * Calls every listener, and answers when they have all settled.
-         *
-         * The emitter never waits on this: it returns void from `emit`, and
-         * one plugin's slow listener is not another's slow request. What does
-         * wait is an outbox, which cannot forget an event until something has
-         * actually heard it.
-         */
-        // Answers whether every listener delivered it. An outbox may only forget an
-        // event once one did, and a failure recorded but not reported would let
-        // it forget one nobody delivered at all.
+        /** Calls every listener, and answers when they have all settled. */
         deliver: (plugin: string, name: string, payload: unknown, ctx: (plugin: string) => Context): Promise<boolean> =>
         {
             const deliveries: Promise<boolean>[] = [];
@@ -154,7 +126,7 @@ export function events<Context>(now: () => number = Date.now, told: Report = () 
             return Promise.all(deliveries).then((all) => all.every(Boolean));
         },
 
-        failures: (): readonly Failure[] =>
+        failures: (): readonly ListenerFailure[] =>
         {
             return [...failures];
         },

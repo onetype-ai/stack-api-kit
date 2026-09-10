@@ -1,9 +1,4 @@
-/**
- * What the kernel refuses.
- *
- * A closed union rather than a string: a caller branches on it, and a new
- * member is a compile error everywhere it is handled exhaustively.
- */
+/** What the kernel refuses. */
 export type FaultCode =
     | "DUPLICATE_PLUGIN"
     | "UNKNOWN_DEPENDENCY"
@@ -46,15 +41,7 @@ type FaultDetail = {
     cause?: unknown;
 };
 
-/**
- * A refusal, naming the plugin it came from.
- *
- * What makes a message worth the line is the plugin, the key, the owner, and
- * what to do about it. A code alone costs an hour.
- *
- * This is what the kernel says to whoever wrote the plugin. It is never what
- * a client is told: `internal/answer.ts` decides that, and it says less.
- */
+/** A refusal, naming the plugin it came from. */
 export class KernelFault extends Error
 {
     readonly code: FaultCode;

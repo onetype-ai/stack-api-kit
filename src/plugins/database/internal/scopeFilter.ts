@@ -4,20 +4,12 @@ import type { ScopeFilter } from "../../kernel/api";
 
 type Column = Readonly<Record<string, unknown>>;
 
-/**
- * Turns a declared scope into a condition.
- *
- * The kernel knows which table and which column, and nothing about how a
- * query is built. This knows Drizzle and nothing about tenants, so neither
- * half has to learn the other's business.
- */
-export function createScopeFilter(owned: Readonly<Record<string, Readonly<Record<string, unknown>>>>): ScopeFilter
+/** Turns a declared scope into a condition. */
+export function createScopeFilter(tablesByPlugin: Readonly<Record<string, Readonly<Record<string, unknown>>>>): ScopeFilter
 {
     return (table: string, column: string, value: string): unknown =>
     {
-        // Table names are unique across the store, because a plugin's tables
-        // live in its own namespace and the kernel checked that at startup.
-        const columns = Object.values(owned)
+        const columns = Object.values(tablesByPlugin)
             .map((tables) => tables[table])
             .find((held) => held !== undefined) as Column | undefined;
 

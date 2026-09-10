@@ -1,7 +1,7 @@
 import { database, migrationSteps, noStore } from "../../database/api";
 import { limiter, unlimited } from "../../guard/api";
 import { createKernel, order, tableIndexes } from "../../kernel/api";
-import { dial } from "../../outbound/api";
+import { httpClient } from "../../outbound/api";
 import { serve, sockets } from "../../http/api";
 import type { DatabaseOptions, Store } from "../../database/api";
 import type { Plugin } from "../../kernel/api";
@@ -37,17 +37,7 @@ type UnmigratedIndex = {
     unique: boolean;
 };
 
-/**
- * Declared indexes no migration creates.
- *
- * Two places hold the same truth here: the table says an index exists, the
- * migration is what actually makes one. A uniqueIndex declared and never
- * created reads as a guarantee and accepts the duplicate it was there to
- * refuse, with nothing failing.
- *
- * Read from the migration files rather than from what a boot applied: the
- * second boot applies nothing.
- */
+/** RegisteredChannel indexes no migration creates. */
 function missingIndexes(plugins: readonly Plugin[], sources: readonly { plugin: string; from: string }[]): UnmigratedIndex[]
 {
     const declared: UnmigratedIndex[] = [];
@@ -87,6 +77,63 @@ function missingIndexes(plugins: readonly Plugin[], sources: readonly { plugin: 
 }
 
 
+/** The name a drizzle table carries into SQL, or "" where it cannot be read. */
+function tableName(table: unknown): string
+{
+    if (table === null || typeof table !== "object")
+    {
+        return "";
+    }
+
+    const key = Object.getOwnPropertySymbols(table).find((one) => one.description === "drizzle:Name");
+    const name = key === undefined ? undefined : (table as Record<symbol, unknown>)[key];
+
+    return typeof name === "string" ? name : "";
+}
+
+
+/** RegisteredChannel tables no migration creates. */
+function missingTables(plugins: readonly Plugin[], sources: readonly { plugin: string; from: string }[]): { plugin: string; table: string; name: string }[]
+{
+    const declared: { plugin: string; table: string; name: string }[] = [];
+
+    for (const plugin of plugins)
+    {
+        for (const [key, table] of Object.entries(plugin.definition.tables ?? {}))
+        {
+            const inDatabase = tableName(table);
+
+            if (inDatabase !== "")
+            {
+                declared.push({ plugin: plugin.name, table: key, name: inDatabase });
+            }
+        }
+    }
+
+    if (declared.length === 0)
+    {
+        return [];
+    }
+
+    let sql = "";
+
+    for (const source of sources)
+    {
+        for (const step of migrationSteps(source))
+        {
+            sql += `${step.sql}\n`;
+        }
+    }
+
+    const created = new Set(
+        [...sql.matchAll(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"?([A-Za-z0-9_]+)"?/gi)]
+            .map((found) => found[1] ?? ""),
+    );
+
+    return declared.filter((one) => !created.has(one.name));
+}
+
+
 /** One migration reaching a table another plugin owns, undeclared. */
 type UndeclaredRead = {
     plugin: string;
@@ -94,14 +141,7 @@ type UndeclaredRead = {
     owner: string;
 };
 
-/**
- * Migrations reading a table another plugin owns without depending on it.
- *
- * A cross-plugin import is checked against `dependsOn`, and SQL is the one
- * place that rule was never enforced: a migration naming another plugin's
- * table works only because ties break by name, so the same file refuses the
- * day its plugin is renamed to sort first.
- */
+/** Migrations reading a table another plugin owns without depending on it. */
 function undeclaredReads(plugins: readonly Plugin[], sources: readonly { plugin: string; from: string }[]): UndeclaredRead[]
 {
     const sqlOf = new Map<string, string>();
@@ -118,8 +158,6 @@ function undeclaredReads(plugins: readonly Plugin[], sources: readonly { plugin:
         sqlOf.set(source.plugin, sql);
     }
 
-    // Owned by whoever creates it, not by whoever declared a table object: a
-    // migration is what actually makes one, and only what exists can be read.
     const owner = new Map<string, string>();
 
     for (const [plugin, sql] of sqlOf)
@@ -159,32 +197,22 @@ function undeclaredReads(plugins: readonly Plugin[], sources: readonly { plugin:
     return crossings;
 }
 
-// The order is the point: the database opens and migrates before any plugin
-// runs, the kernel validates before any plugin acts, and the server is built
-// last, from routes that are already known to be sound.
-export async function start(starting: StartOptions): Promise<RunningApp>
+export async function start(options: StartOptions): Promise<RunningApp>
 {
-    const log = starting.log;
+    const log = options.log;
 
-    const withTables = starting.plugins.filter((plugin) => plugin.definition.tables !== undefined);
+    const withTables = options.plugins.filter((plugin) => plugin.definition.tables !== undefined);
 
-    // Named rather than counted: an api that will not start says which plugin
-    // wants the database, so nobody goes looking for it.
-    if (starting.database === undefined && withTables.length > 0)
+    if (options.database === undefined && withTables.length > 0)
     {
         throw new TypeError(
             `${withTables.map((plugin) => `"${plugin.name}"`).join(", ")} declare tables, and start() was given no database. Pass one: database: { file: "./data/app.db" }, or a store of your own.`,
         );
     }
 
-    // A store the project built, or one opened here from a path. Told apart
-    // by what it answers to, not by a flag: a Store has methods, a
-    // DatabaseOptions has a file.
-    const store = storeFor(starting.database, withTables);
+    const store = storeFor(options.database, withTables);
 
-    // In dependency order, so a plugin's tables exist before one depending on
-    // it references them. The same order the kernel starts them in.
-    const migrations = order(new Map(starting.plugins.map((plugin) => [plugin.name, plugin])))
+    const migrations = order(new Map(options.plugins.map((plugin) => [plugin.name, plugin])))
         .filter((plugin) => plugin.definition.migrations !== undefined)
         .map((plugin) => ({ plugin: plugin.name, from: plugin.definition.migrations as string }));
 
@@ -195,10 +223,16 @@ export async function start(starting: StartOptions): Promise<RunningApp>
         );
     }
 
-    // Read before migrating rather than from what migrating returned: a
-    // second boot applies nothing, and a check over an empty list would call
-    // every index missing.
-    const unmigrated = missingIndexes(starting.plugins, migrations);
+    const uncreated = missingTables(options.plugins, migrations);
+
+    if (uncreated.length > 0)
+    {
+        throw new TypeError(
+            `${uncreated.length} declared ${uncreated.length === 1 ? "table is" : "tables are"} in no migration, so ${uncreated.length === 1 ? "it never reaches" : "they never reach"} the database:\n${uncreated.map((one) => `  - ${one.plugin}: "${one.table}" is declared as "${one.name}" and nothing creates it. The first query answers a table that is not there. Add CREATE TABLE ${one.name} to a migration, or drop the declaration.`).join("\n")}`,
+        );
+    }
+
+    const unmigrated = missingIndexes(options.plugins, migrations);
 
     if (unmigrated.length > 0)
     {
@@ -207,7 +241,7 @@ export async function start(starting: StartOptions): Promise<RunningApp>
         );
     }
 
-    const crossings = undeclaredReads(starting.plugins, migrations);
+    const crossings = undeclaredReads(options.plugins, migrations);
 
     if (crossings.length > 0)
     {
@@ -223,28 +257,15 @@ export async function start(starting: StartOptions): Promise<RunningApp>
         log?.info("migrations applied", { count: steps.length, steps: steps.map((step) => `${step.plugin}/${step.name}`) });
     }
 
-    // Every route's declared limit is enforced by this one, so a plugin cannot
-    // turn off its own: it never holds it. A budget the project passed counts
-    // wherever it likes, which is what more than one process needs; the kit's
-    // own counts here, and only what it counted can it sweep.
-    if (starting.limits === false)
+    if (options.limits === false)
     {
         log?.warn("RATE LIMITS ARE NOT BEING COUNTED", {
-            meaning: "every route's declared budget is ignored: nothing answers 429, however often it is called",
+            meaning: "every route's declared rateLimiter is ignored: nothing answers 429, however often it is called",
             turnOn: "remove limits: false, or leave it out entirely",
         });
     }
 
-    // Said rather than refused, because how much a stranger may ask for is
-    // the project's call and not the kit's: one behind a proxy that counts
-    // for it is right to declare nothing. What is never right is not
-    // knowing. A public route is the whole internet by declaration, and
-    // without a budget it is the whole internet as often as it likes.
-    //
-    // Here rather than in validate(), because a test builds its kernel with
-    // createKernel and declares no limits on purpose: this is the production
-    // path, and only the production path.
-    const unbounded = starting.plugins
+    const unbounded = options.plugins
         .flatMap((plugin) => (plugin.definition.routes ?? []).map((route) => ({ plugin: plugin.name, route })))
         .filter(({ route }) => route.public === true && route.limit === undefined)
         .map(({ plugin, route }) => `${plugin}: ${route.method} ${route.path}`);
@@ -258,39 +279,32 @@ export async function start(starting: StartOptions): Promise<RunningApp>
         });
     }
 
-    const ourLimiter = starting.budget === undefined && starting.limits !== false ? limiter() : undefined;
-    const budget = starting.budget ?? ourLimiter ?? unlimited();
+    const ourLimiter = options.rateLimiter === undefined && options.limits !== false ? limiter() : undefined;
+    const rateLimiter = options.rateLimiter ?? ourLimiter ?? unlimited();
 
     const sweep = ourLimiter === undefined ? undefined : setInterval(() => void ourLimiter.sweep(), 60_000);
 
     sweep?.unref?.();
 
-    // Reached through the store's own connection, so a kept event and the
-    // work it announces are written by one transaction.
-    const outbox = starting.outbox === true ? store.outbox?.() : undefined;
-    const later = starting.schedule === true ? store.schedule?.() : undefined;
+    const outbox = options.outbox === true ? store.outbox?.() : undefined;
+    const later = options.schedule === true ? store.schedule?.() : undefined;
 
-    // Given whenever any plugin declares a scope: the kernel refuses to
-    // narrow without it, and a plugin declaring one and finding nothing to
-    // narrow by would be a scope that does not scope.
-    const scoping = starting.plugins.some((plugin) => plugin.definition.scope !== undefined);
+    const scoping = options.plugins.some((plugin) => plugin.definition.scope !== undefined);
 
-    // Built before the kernel it reads from, and handed a way back to it: a
-    // kernel holds this, so it cannot be given one already made.
-    const wires = starting.sockets === false
+    const wires = options.sockets === false
         ? undefined
-        : sockets({ channels: () => kernel.channels() }, typeof starting.sockets === "object" ? starting.sockets.claim : undefined);
+        : sockets({ channels: () => kernel.channels() }, typeof options.sockets === "object" ? options.sockets.claim : undefined);
 
     const kernel = createKernel({
-        plugins: starting.plugins,
+        plugins: options.plugins,
         db: store,
         ...(wires !== undefined && { sockets: wires }),
         ...(outbox !== undefined && { outbox }),
         ...(later !== undefined && { schedule: later }),
-        ...(scoping && store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
-        budget,
-        dial: typeof starting.outbound === "function" ? starting.outbound : dial(starting.outbound ?? {}),
-        ...(starting.config !== undefined && { config: starting.config }),
+        ...(scoping && store.createScopeFilter !== undefined && { scopeFilter: store.createScopeFilter() }),
+        rateLimiter,
+        httpClient: typeof options.httpClient === "function" ? options.httpClient : httpClient(options.httpClient ?? {}),
+        ...(options.config !== undefined && { config: options.config }),
         ...(log !== undefined && {
             log: (level, plugin, line, about) =>
             {
@@ -301,16 +315,14 @@ export async function start(starting: StartOptions): Promise<RunningApp>
 
     await kernel.start();
 
-    log?.info("kernel started", { plugins: starting.plugins.length, routes: kernel.routes().length });
+    log?.info("kernel started", { plugins: options.plugins.length, routes: kernel.routes().length });
 
-    // Built after the kernel started, so what identifies a caller can reach
-    // the plugin holding the sessions.
-    const identify = starting.identify?.(kernel);
+    const identify = options.identify?.(kernel);
 
     const app = serve({
         kernel,
         ...(identify !== undefined && { identify }),
-        ...(starting.http ?? {}),
+        ...(options.http ?? {}),
         ...(log !== undefined && {
             log: (level, line, about) =>
             {
@@ -324,7 +336,7 @@ export async function start(starting: StartOptions): Promise<RunningApp>
         store,
         app,
         fetch: app.fetch,
-        sockets: wires === undefined ? undefined : { joined: wires.joined },
+        sockets: wires === undefined ? undefined : { subscribe: wires.subscribe },
 
         stop: async (): Promise<void> =>
         {

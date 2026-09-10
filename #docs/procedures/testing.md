@@ -19,7 +19,7 @@ assertion: a reader sees what is claimed without opening another file.
 ## The database is real
 
 `startTestKernel({ plugins })` opens an in-memory SQLite, reads the tables and
-migrations off the contracts, and starts a kernel with a budget and a dialer
+migrations off the contracts, and starts a kernel with a rate limiter and an http client
 the test reads. Never a stub: a fake accepting what SQLite rejects is where
 bugs hide.
 

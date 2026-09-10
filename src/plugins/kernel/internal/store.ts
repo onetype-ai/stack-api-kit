@@ -1,16 +1,9 @@
-import type { Identity, Outbound, Reach } from "./contract";
+import type { Identity, HttpRequest, ChannelReach } from "./contract";
 
-/**
- * What the kernel needs to reach storage.
- *
- * A shape rather than a driver: the kernel never imports a database, so a
- * project chooses one and a test passes its own. Narrower than what
- * `database()` returns, which also opens, migrates and closes: the kernel
- * needs none of that and should not be able to do it.
- */
-export type Storage = {
+/** What the kernel needs to reach storage. */
+export type KernelStore = {
     /** One plugin's own handle. What it holds is the project's business. */
-    of: (plugin: string) => unknown;
+    forPlugin: (plugin: string) => unknown;
 
     /** Runs work in one transaction, rolled back if it throws. */
     tx: <Result>(plugin: string, run: (db: unknown) => Promise<Result>) => Promise<Result>;
@@ -27,41 +20,27 @@ export type Storage = {
 };
 
 /** One event, as it waits to be delivered. */
-export type Announcement = {
+export type OutboxMessage = {
     id: string;
     plugin: string;
     name: string;
     payload: unknown;
 };
 
-/**
- * Where events wait, so one is never lost between a commit and its delivery.
- *
- * Without this, an event lives only in memory: the work commits, the process
- * dies, and the listener is never called by anything. Nobody is told, because
- * the emitter was told nothing to begin with.
- *
- * `keep` runs inside the emitting transaction, so an event is written exactly
- * when the work it announces is, and rolled back with it. `sent` runs after
- * delivery. Anything still kept at startup was interrupted, and `waiting`
- * hands it back to be delivered again.
- *
- * Delivery is therefore at least once, never exactly once: a listener that
- * writes must be able to run twice on one event without doubling anything.
- */
+/** Where events wait, so one is never lost between a commit and its delivery. */
 export type Outbox = {
     /** Writes events inside the transaction that emitted them. */
-    keep: (db: unknown, announcements: readonly Announcement[]) => void;
+    save: (db: unknown, messages: readonly OutboxMessage[]) => void;
 
     /** Marks one delivered. */
-    sent: (id: string) => Promise<void>;
+    markSent: (id: string) => Promise<void>;
 
     /** What was kept but never marked sent. Read once, at startup. */
-    unsent: () => Promise<readonly Announcement[]>;
+    pending: () => Promise<readonly OutboxMessage[]>;
 };
 
 /** One command waiting for its moment. */
-export type Scheduled = {
+export type QueuedJob = {
     id: string;
     plugin: string;
     command: string;
@@ -70,15 +49,8 @@ export type Scheduled = {
     attempts: number;
 };
 
-/**
- * One scheduled command that ran out of attempts, and why.
- *
- * A job that gave up is the one failure nothing is waiting on: no caller
- * gets a 500 and no listener records it, so a deployment learns from here or
- * not at all. It matters most for work that asks for itself again, where
- * giving up once ends the repetition for as long as the process lives.
- */
-export type Abandoned = {
+/** One scheduled command that ran out of attempts, and why. */
+export type FailedJob = {
     plugin: string;
     command: string;
     input: unknown;
@@ -87,54 +59,39 @@ export type Abandoned = {
     at: number;
 };
 
-/**
- * Where work waits until it is time.
- *
- * The kernel has no clock of its own and no timer: it asks `due` on a beat
- * the project set, runs what it is handed, and says how it went. Everything
- * that has to survive a restart lives in the database, so a process that
- * stops between taking a job and finishing it leaves the job takeable again.
- *
- * `take` is what makes one process pick up a job and not another: it must
- * claim and return in one step, or two processes run the same work.
- */
+/** Where work waits until it is time. */
 export type Schedule = {
     /** Writes one, inside the transaction that asked for it when there is one. */
-    keep: (db: unknown, job: Scheduled) => void;
+    save: (db: unknown, job: QueuedJob) => void;
 
     /** Claims what is due, at most `limit`, marking each taken. */
-    take: (now: number, limit: number) => Promise<readonly Scheduled[]>;
+    claim: (now: number, limit: number) => Promise<readonly QueuedJob[]>;
 
     /** It ran. Forget it. */
-    done: (id: string) => Promise<void>;
+    markDone: (id: string) => Promise<void>;
 
     /** It threw. Put it back for `at`, having counted the attempt. */
-    failed: (id: string, at: number) => Promise<void>;
+    markFailed: (id: string, at: number) => Promise<void>;
 
     /** It threw too many times. Stop trying. */
-    abandon: (id: string) => Promise<void>;
+    giveUp: (id: string) => Promise<void>;
 };
 
-/**
- * How a scope becomes a condition the database understands.
- *
- * The kernel imports no driver, so it cannot build one: it knows which table
- * and which value, and the project turns that into whatever its store speaks.
- */
+/** How a scope becomes a condition the database understands. */
 export type ScopeFilter = (table: string, column: string, value: string) => unknown;
 
 /** What the kernel needs to call another server. */
-export type Dialer = (call: Outbound) => Promise<unknown>;
+export type HttpClient = (call: HttpRequest) => Promise<unknown>;
 
 /** One message on its way out, and how far it goes. */
-export type Pushed = {
+export type ChannelMessage = {
     channel: string;
     message: unknown;
-    reach: Reach;
+    reach: ChannelReach;
     requires: readonly string[];
 
     /** The scope it stays inside, when its reach is one. */
-    within: string | undefined;
+    scope: string | undefined;
 
     /** Whose request pushed it, for a reach of "connection" or "viewer". */
     from: Identity | undefined;
@@ -142,5 +99,5 @@ export type Pushed = {
 
 /** What holds the open sockets, when anything does. */
 export type Sockets = {
-    push: (sending: Pushed) => void;
+    push: (sending: ChannelMessage) => void;
 };

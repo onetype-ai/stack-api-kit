@@ -2,16 +2,16 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 
 import { createKernel, definePlugin } from "../../kernel/api";
-import { serve, isUpload } from "../api";
+import { serve, isUploadedFile } from "../api";
 import { claimedName } from "../internal/upload";
 
 import type { Definition } from "../../kernel/api";
-import type { Upload } from "../api";
+import type { UploadedFile } from "../api";
 
 /** What a route sees, heard by the last request to reach one. */
 let seen: unknown;
 
-const file = z.custom<Upload>(isUpload, { message: "Expected a file." });
+const file = z.custom<UploadedFile>(isUploadedFile, { message: "Expected a file." });
 
 async function startServer(found: Partial<Definition>)
 {
@@ -34,7 +34,7 @@ const takesForm = {
         accepts: "form" as const,
         input: z.object({ note: z.string().optional(), photo: file }),
         output: z.object({ name: z.string(), type: z.string(), bytes: z.number() }),
-        handle: (given: { note?: string; photo: Upload }) =>
+        handle: (given: { note?: string; photo: UploadedFile }) =>
         {
             seen = given;
 
@@ -188,5 +188,22 @@ describe("a form larger than the body limit", () =>
         ]));
 
         expect(answer.status).toBe(413);
+    });
+});
+
+describe("a form body nothing can parse", () =>
+{
+    test("is the caller's mistake, not the server's", async () =>
+    {
+        const app = await startServer(takesForm);
+
+        const answer = await app.fetch(new Request("http://localhost/upload", {
+            method: "POST",
+            headers: { "content-type": "multipart/form-data; boundary=----kit" },
+            body: "--nothing-like-the-boundary\r\ntorn",
+        }));
+
+        expect(answer.status).toBe(400);
+        expect(await answer.json()).toMatchObject({ code: "INVALID_FORM" });
     });
 });

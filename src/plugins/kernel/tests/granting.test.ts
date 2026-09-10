@@ -194,7 +194,7 @@ describe("a plugin that grants without saying what it may grant", () =>
 
     test("while a plugin naming mayGrant is still held to exactly that list", async () =>
     {
-        const narrow = definePlugin("auth", {
+        const auth = definePlugin("auth", {
             version: "1.0.0",
             describe: "Grants only its own.",
             permissions: { "auth.self": { describe: "Read your own account." } },
@@ -202,7 +202,7 @@ describe("a plugin that grants without saying what it may grant", () =>
             mayGrant: ["auth.self"],
         } as Partial<Definition> as Definition);
 
-        const kernel = createKernel({ plugins: [narrow, arriving] });
+        const kernel = createKernel({ plugins: [auth, arriving] });
 
         await expect(kernel.start()).rejects.toThrow(/never grants/);
     });
@@ -218,11 +218,38 @@ describe("a plugin that grants without saying what it may grant", () =>
         const lying = definePlugin("lying", {
             version: "1.0.0",
             describe: "Writes permissions where the kernel would drop them.",
-            // @ts-expect-error the key `Answered` forbids, in the place it is written.
+            // @ts-expect-error the key `IdentifiedCaller` forbids, in the place it is written.
             identifies: () => ({ id: "one", claims: {}, permissions: ["billing.manage"] }),
         });
 
         expect(honest.name).toBe("honest");
         expect(lying.name).toBe("lying");
+    });
+});
+
+describe("what the api may grant at all", () =>
+{
+    test("is read from the kernel rather than kept beside it", async () =>
+    {
+        const billing = definePlugin("billing", {
+            version: "1.0.0",
+            describe: "Bills.",
+            permissions: {
+                "billing.manage": { describe: "Change what is billed." },
+                "billing.read": { describe: "See what is billed." },
+            },
+        } as Definition);
+
+        const kernel = createKernel({ plugins: [auth, billing] });
+
+        await kernel.start();
+
+        expect(kernel.permissions()).toEqual([
+            { plugin: "auth", permission: "auth.self", describe: "Read your own account." },
+            { plugin: "billing", permission: "billing.manage", describe: "Change what is billed." },
+            { plugin: "billing", permission: "billing.read", describe: "See what is billed." },
+        ]);
+
+        await kernel.stop();
     });
 });

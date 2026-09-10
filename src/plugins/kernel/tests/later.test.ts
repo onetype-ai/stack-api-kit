@@ -48,7 +48,7 @@ describe("work asked for later", () =>
             plugins: [createScheduled(ran)],
             schedule: jobs,
             now: () => clock,
-            beat: 5,
+            beatMs: 5,
         });
 
         await kernel.start();
@@ -81,7 +81,7 @@ describe("work asked for later", () =>
             plugins: [createScheduled(ran, true)],
             schedule: jobs,
             now: () => clock,
-            beat: 5,
+            beatMs: 5,
         });
 
         await kernel.start();
@@ -125,7 +125,7 @@ describe("work asked for later", () =>
             })],
             schedule: jobs,
             now: () => clock,
-            attempts: 3,
+            mostAttempts: 3,
         });
 
         await kernel.start();
@@ -140,7 +140,7 @@ describe("work asked for later", () =>
         }
 
         expect(tried).toHaveLength(3);
-        expect(await jobs.take(clock, 10)).toEqual([]);
+        expect(await jobs.claim(clock, 10)).toEqual([]);
 
         await kernel.stop();
         connection.close();
@@ -175,7 +175,7 @@ describe("work asked for later", () =>
                 })],
                 schedule: jobs,
                 now: () => clock,
-                attempts: 4,
+                mostAttempts: 4,
             });
 
             await kernel.start();
@@ -297,12 +297,12 @@ describe("work asked for later", () =>
             })],
             schedule: jobs,
             now: () => clock,
-            attempts: 3,
+            mostAttempts: 3,
         });
 
         await kernel.start();
 
-        expect(kernel.work.abandoned()).toEqual([]);
+        expect(kernel.work.failed()).toEqual([]);
 
         kernel.context("holds").commands.later("holds.sweep", { round: 4 }, 0);
 
@@ -313,7 +313,7 @@ describe("work asked for later", () =>
             clock += 120_000;
         }
 
-        const dead = kernel.work.abandoned();
+        const dead = kernel.work.failed();
 
         expect(dead).toHaveLength(1);
         expect(dead[0]?.plugin).toBe("holds");

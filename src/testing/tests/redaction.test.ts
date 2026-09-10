@@ -6,7 +6,7 @@ import type { Definition } from "../../plugins/kernel/api";
 
 const partner = definePlugin("partner", {
     version: "1.0.0", describe: "Talks to a paid service.",
-    outbound: ["https://api.stripe.com"],
+    allowedHosts: ["https://api.stripe.com"],
     routes: [{
         method: "POST", path: "/charge", describe: "Charges.",
         public: true,
@@ -26,11 +26,11 @@ const partner = definePlugin("partner", {
 
 test("a recorded call keeps the credential out of what a failing test prints", async () =>
 {
-    const api = await startTestKernel({ plugins: [partner], answers: () => ({}) });
+    const api = await startTestKernel({ plugins: [partner], respondWith: () => ({}) });
 
     await api.kernel.handle({ method: "POST", path: "/charge", input: {} });
 
-    const [call] = api.outboundCalls();
+    const [call] = api.sentRequests();
 
     await api.stop();
 
@@ -48,11 +48,11 @@ test("a recorded call keeps the credential out of what a failing test prints", a
 
 test("and a header that carries nothing secret is left readable", async () =>
 {
-    const api = await startTestKernel({ plugins: [partner], answers: () => ({}) });
+    const api = await startTestKernel({ plugins: [partner], respondWith: () => ({}) });
 
     await api.kernel.handle({ method: "POST", path: "/charge", input: {} });
 
-    const [call] = api.outboundCalls();
+    const [call] = api.sentRequests();
 
     await api.stop();
 

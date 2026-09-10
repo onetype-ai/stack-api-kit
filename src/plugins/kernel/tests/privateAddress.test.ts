@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { whyUnfetchable } from "../internal/reachable";
+import { blockedUrlReason } from "../internal/privateAddress";
 
 describe("an address anywhere may not reach", () =>
 {
@@ -17,20 +17,20 @@ describe("an address anywhere may not reach", () =>
             "https://[::1]/",
         ])
         {
-            expect(whyUnfetchable(host), host).toBeDefined();
+            expect(blockedUrlReason(host), host).toBeDefined();
         }
     });
 
     test("a loopback address mapped into IPv6", () =>
     {
-        expect(whyUnfetchable("https://[::ffff:127.0.0.1]/")).toBeDefined();
-        expect(whyUnfetchable("https://[::ffff:10.0.0.1]/")).toBeDefined();
+        expect(blockedUrlReason("https://[::ffff:127.0.0.1]/")).toBeDefined();
+        expect(blockedUrlReason("https://[::ffff:10.0.0.1]/")).toBeDefined();
     });
 
     test("the cloud metadata endpoint and everything link-local", () =>
     {
-        expect(whyUnfetchable("https://169.254.169.254/latest/meta-data/")).toBeDefined();
-        expect(whyUnfetchable("https://[fe80::1]/")).toBeDefined();
+        expect(blockedUrlReason("https://169.254.169.254/latest/meta-data/")).toBeDefined();
+        expect(blockedUrlReason("https://[fe80::1]/")).toBeDefined();
     });
 
     test("every private range", () =>
@@ -44,7 +44,7 @@ describe("an address anywhere may not reach", () =>
             "https://[fd00::1]/",
         ])
         {
-            expect(whyUnfetchable(host), host).toBeDefined();
+            expect(blockedUrlReason(host), host).toBeDefined();
         }
     });
 
@@ -52,7 +52,7 @@ describe("an address anywhere may not reach", () =>
     {
         for (const host of ["http://example.com/", "file:///etc/passwd", "ftp://example.com/"])
         {
-            expect(whyUnfetchable(host), host).toBeDefined();
+            expect(blockedUrlReason(host), host).toBeDefined();
         }
     });
 
@@ -60,19 +60,19 @@ describe("an address anywhere may not reach", () =>
     {
         for (const host of ["https://example.com:22/", "https://example.com:6379/", "https://example.com:5432/"])
         {
-            expect(whyUnfetchable(host), host).toBeDefined();
+            expect(blockedUrlReason(host), host).toBeDefined();
         }
     });
 
     test("a credential smuggled into the address", () =>
     {
-        expect(whyUnfetchable("https://user:secret@example.com/")).toBeDefined();
+        expect(blockedUrlReason("https://user:secret@example.com/")).toBeDefined();
     });
 
     test("something that is not an address at all", () =>
     {
-        expect(whyUnfetchable("not a url")).toBeDefined();
-        expect(whyUnfetchable("")).toBeDefined();
+        expect(blockedUrlReason("not a url")).toBeDefined();
+        expect(blockedUrlReason("")).toBeDefined();
     });
 });
 
@@ -87,7 +87,7 @@ describe("an address anywhere may reach", () =>
             "https://93.184.216.34/",
         ])
         {
-            expect(whyUnfetchable(host), host).toBeUndefined();
+            expect(blockedUrlReason(host), host).toBeUndefined();
         }
     });
 
@@ -101,7 +101,7 @@ describe("an address anywhere may reach", () =>
             "https://100.63.0.1/",
         ])
         {
-            expect(whyUnfetchable(host), host).toBeUndefined();
+            expect(blockedUrlReason(host), host).toBeUndefined();
         }
     });
 });

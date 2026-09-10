@@ -203,3 +203,42 @@ describe("an expiry that makes no sense", () =>
         expect(answer.cookie).toContain("Max-Age=0");
     });
 });
+
+describe("a plugin that reads the request while identifying", () =>
+{
+    test("leaves the body a closed route still has to parse", async () =>
+    {
+        const app = await startServer({
+            permissions: { "auth.write": { describe: "Write while signed in." } },
+
+            identifies: async (_ctx, request: Request) =>
+            {
+                await request.text();
+
+                return request.headers.get("x-key") === null ? undefined : { id: "someone", claims: {} };
+            },
+
+            grants: () => ["auth.write"],
+            mayGrant: ["auth.write"],
+
+            routes: [{
+                method: "POST" as const,
+                path: "/write",
+                describe: "Takes a body behind a permission.",
+                requires: ["auth.write"],
+                input: z.object({ text: z.string() }),
+                output: z.object({ echoed: z.string() }),
+                handle: (input: { text: string }) => ({ echoed: input.text }),
+            }],
+        } as Partial<Definition>);
+
+        const answer = await app.fetch(new Request("http://api.test/write", {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-key": "abc" },
+            body: JSON.stringify({ text: "hello" }),
+        }));
+
+        expect(answer.status).toBe(201);
+        expect(await answer.json()).toEqual({ echoed: "hello" });
+    });
+});

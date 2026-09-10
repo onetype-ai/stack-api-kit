@@ -53,3 +53,26 @@ describe("an index a table declares", () =>
             .rejects.toThrow(/CREATE UNIQUE INDEX chairs_email/);
     });
 });
+
+/** Declares a table no migration creates, so the first query finds nothing. */
+const stools = sqliteTable("stools", { id: text("id").primaryKey() });
+
+const stooling = definePlugin("stooling", {
+    version: "1.0.0",
+    describe: "Declares a table nothing creates.",
+    tables: { stools },
+    migrations: `${from}/nothing`,
+});
+
+describe("a table a plugin declares", () =>
+{
+    test("refuses the boot when no migration creates it", async () =>
+    {
+        const failed = await start({ plugins: [stooling], database: { file: ":memory:" } })
+            .catch((cause: unknown) => cause);
+
+        expect(failed).toBeInstanceOf(TypeError);
+        expect((failed as Error).message).toContain('"stools"');
+        expect((failed as Error).message).toContain("CREATE TABLE stools");
+    });
+});

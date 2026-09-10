@@ -11,7 +11,7 @@ function participant(name: string, found: Partial<Definition> = {}): Plugin
     return definePlugin(name, { version: "1.0.0", describe: `The ${name} plugin.`, ...found });
 }
 
-test("a request in flight is answer before the plugins are torn down", async () =>
+test("a request in flight is answered before the plugins are torn down", async () =>
 {
     const order: string[] = [];
     const store = database({ file: ":memory:", tables: { a: {} } });

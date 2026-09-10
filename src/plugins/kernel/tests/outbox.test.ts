@@ -40,16 +40,16 @@ describe("an event kept in an outbox", () =>
 
         // A process that committed the work and stopped before delivering:
         // the row is what it left behind.
-        unsent.keep({}, [{ id: "a1", plugin: "orders", name: "orders.placed", payload: { id: "order-1" } }]);
+        unsent.save({}, [{ id: "a1", plugin: "orders", name: "orders.placed", payload: { id: "order-1" } }]);
 
-        expect(await unsent.unsent()).toHaveLength(1);
+        expect(await unsent.pending()).toHaveLength(1);
 
         const restarted = createKernel({ plugins: [emitter(), recorder(heard)], outbox: unsent });
 
         await restarted.start();
 
         expect(heard).toEqual(["order-1"]);
-        expect(await unsent.unsent()).toHaveLength(0);
+        expect(await unsent.pending()).toHaveLength(0);
 
         await restarted.stop();
         connection.close();
@@ -87,12 +87,12 @@ describe("an event kept in an outbox", () =>
         });
 
         // The listener has not finished, so the event is still owed.
-        expect(await unsent.unsent()).toHaveLength(1);
+        expect(await unsent.pending()).toHaveLength(1);
 
         released?.();
         await new Promise((done) => setImmediate(done));
 
-        expect(await unsent.unsent()).toHaveLength(0);
+        expect(await unsent.pending()).toHaveLength(0);
 
         await kernel.stop();
         store.close();
@@ -116,7 +116,7 @@ describe("an event kept in an outbox", () =>
             throw new Error("the order was refused");
         }).catch(() => undefined);
 
-        expect(await unsent.unsent()).toHaveLength(0);
+        expect(await unsent.pending()).toHaveLength(0);
 
         await kernel.stop();
         store.close();
@@ -149,9 +149,9 @@ describe("an event kept in an outbox", () =>
             inside.events.emit("orders.placed", { id: "order-3" });
         });
 
-        await new Promise((settle) => setTimeout(settle, 10));
+        await new Promise((flush) => setTimeout(flush, 10));
 
-        expect(await unsent.unsent()).toHaveLength(1);
+        expect(await unsent.pending()).toHaveLength(1);
 
         await kernel.stop();
 

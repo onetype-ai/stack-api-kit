@@ -1,28 +1,28 @@
 import { KernelFault } from "./faults";
 
-const PLUGIN = /^[a-z][a-z0-9-]{0,63}$/;
+const PLUGIN_NAME = /^[a-z][a-z0-9-]{0,63}$/;
 
-const NAMESPACED = /^[a-z][a-z0-9-]{0,63}(\.[a-z][a-z0-9-]{0,63})+$/;
+const NAMESPACED_NAME = /^[a-z][a-z0-9-]{0,63}(\.[a-z][a-z0-9-]{0,63})+$/;
 
 /**
  * Names the character that broke a name, so an author sees the typo rather
  * than a regular expression.
  */
-function describe(value: string): string
+function whereItBroke(value: string): string
 {
-    const at = [...value].findIndex((character) => !/[a-z0-9.-]/.test(character));
+    const badAt = [...value].findIndex((character) => !/[a-z0-9.-]/.test(character));
 
-    return at === -1 ? `"${value}"` : `"${value}" (unsupported character at position ${at + 1}: "${value[at]}")`;
+    return badAt === -1 ? `"${value}"` : `"${value}" (unsupported character at position ${badAt + 1}: "${value[badAt]}")`;
 }
 
 /** A plugin name: lowercase, digits and hyphens, starting with a letter. */
-export function plugin(value: string): string
+export function pluginName(value: string): string
 {
-    if (!PLUGIN.test(value))
+    if (!PLUGIN_NAME.test(value))
     {
         throw new KernelFault(
             "INVALID_NAME",
-            `A plugin name is lowercase letters, digits and hyphens, starting with a letter, up to 64 characters. Received ${describe(value)}.`,
+            `A plugin name is lowercase letters, digits and hyphens, starting with a letter, up to 64 characters. Received ${whereItBroke(value)}.`,
             { detail: { received: value } },
         );
     }
@@ -30,19 +30,14 @@ export function plugin(value: string): string
     return value;
 }
 
-/**
- * A namespaced name, owned by the plugin its first segment names.
- *
- * The prefix is what makes a name enough: a listener on "auth.signed-out"
- * knows who owns it without a lookup, and two plugins cannot claim one name.
- */
-export function namespaced(value: string, kind: string, owner: string): string
+/** A namespaced name, owned by the plugin its first segment names. */
+export function namespacedName(value: string, kind: string, owner: string): string
 {
-    if (!NAMESPACED.test(value))
+    if (!NAMESPACED_NAME.test(value))
     {
         throw new KernelFault(
             "INVALID_NAME",
-            `A ${kind} name is dot-separated lowercase segments, such as "${owner}.thing". Received ${describe(value)}.`,
+            `A ${kind} name is dot-separated lowercase segments, such as "${owner}.thing". Received ${whereItBroke(value)}.`,
             { plugin: owner, detail: { received: value, kind } },
         );
     }
@@ -60,7 +55,7 @@ export function namespaced(value: string, kind: string, owner: string): string
 }
 
 /** Who owns a namespaced name. */
-export function owner(value: string): string
+export function ownerOf(value: string): string
 {
     return value.split(".")[0] ?? "";
 }

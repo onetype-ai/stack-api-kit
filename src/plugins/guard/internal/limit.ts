@@ -1,35 +1,32 @@
-export type Window = {
+export type RateLimitWindow = {
     requests: number;
     seconds: number;
 };
 
-export type Verdict = {
+export type RateLimitResult = {
     allowed: boolean;
     remaining: number;
     resetsIn: number;
 };
 
-type Bucket = {
+type WindowCount = {
     hits: number;
     until: number;
 };
 
-// A fixed window rather than a sliding log: one counter per identity instead of
-// one timestamp per request, which is what keeps a flood from costing memory
-// in proportion to itself.
 export function limiter(now: () => number = Date.now)
 {
-    const buckets = new Map<string, Bucket>();
+    const counts = new Map<string, WindowCount>();
 
     return {
-        spend: (key: string, window: Window): Verdict =>
+        spend: (key: string, window: RateLimitWindow): RateLimitResult =>
         {
-            const at = now();
-            const bucket = buckets.get(key);
+            const moment = now();
+            const bucket = counts.get(key);
 
-            if (bucket === undefined || bucket.until <= at)
+            if (bucket === undefined || bucket.until <= moment)
             {
-                buckets.set(key, { hits: 1, until: at + window.seconds * 1_000 });
+                counts.set(key, { hits: 1, until: moment + window.seconds * 1_000 });
 
                 return { allowed: true, remaining: window.requests - 1, resetsIn: window.seconds };
             }
@@ -39,18 +36,13 @@ export function limiter(now: () => number = Date.now)
             return {
                 allowed: bucket.hits <= window.requests,
                 remaining: Math.max(0, window.requests - bucket.hits),
-                resetsIn: Math.ceil((bucket.until - at) / 1_000),
+                resetsIn: Math.ceil((bucket.until - moment) / 1_000),
             };
         },
 
-        // Gives one hit back, for a route that counts only the attempts it is
-        // guarding against. Never below zero: more refunds than spends would
-        // bank credit against the window, which is a caller earning attempts
-        // by succeeding. An expired bucket needs no guard of its own, since
-        // the next spend replaces it rather than adding to it.
         refund: (key: string): void =>
         {
-            const bucket = buckets.get(key);
+            const bucket = counts.get(key);
 
             if (bucket !== undefined && bucket.hits > 0)
             {
@@ -58,19 +50,17 @@ export function limiter(now: () => number = Date.now)
             }
         },
 
-        // Called on a timer by whoever holds the limiter: a map that only
-        // grows is a slow leak on a public route.
         sweep: (): number =>
         {
-            const at = now();
+            const moment = now();
 
             let dropped = 0;
 
-            for (const [key, bucket] of buckets)
+            for (const [key, bucket] of counts)
             {
-                if (bucket.until <= at)
+                if (bucket.until <= moment)
                 {
-                    buckets.delete(key);
+                    counts.delete(key);
                     dropped += 1;
                 }
             }
@@ -80,7 +70,7 @@ export function limiter(now: () => number = Date.now)
 
         size: (): number =>
         {
-            return buckets.size;
+            return counts.size;
         },
     };
 }

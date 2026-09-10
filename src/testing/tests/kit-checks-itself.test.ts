@@ -33,7 +33,7 @@ test("the structural checks run on a project whose documents are packed away", (
     mkdirSync(join(root, "src", "plugins", "ghost"), { recursive: true });
     writeFileSync(join(root, "src", "plugins", "ghost", "thing.ts"), "export const thing = 1;\n");
 
-    const problems = Project.checks({ root });
+    const problems = Project.findAll({ root });
 
     expect(problems.map((problem) => problem.check)).toContain("boundaries");
 });

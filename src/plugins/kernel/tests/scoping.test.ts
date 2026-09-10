@@ -54,7 +54,7 @@ function startServer()
 {
     const store = database({ file: ":memory:", tables: { billing: { notes } } });
 
-    store.of("billing").$client.exec(
+    store.forPlugin("billing").$client.exec(
         "CREATE TABLE billing_notes (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, body TEXT NOT NULL)",
     );
 
@@ -72,14 +72,14 @@ describe("a table a plugin scoped", () =>
     {
         const store = startServer();
 
-        store.of("billing").$client.exec(
+        store.forPlugin("billing").$client.exec(
             "INSERT INTO billing_notes VALUES ('a', 'acme', 'ours'), ('b', 'other', 'theirs')",
         );
 
         const kernel = createKernel({
             plugins: [createBilling()],
             db: store,
-            ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
+            ...(store.createScopeFilter !== undefined && { scopeFilter: store.createScopeFilter() }),
         });
 
         await kernel.start();
@@ -105,7 +105,7 @@ describe("a table a plugin scoped", () =>
         const kernel = createKernel({
             plugins: [createBilling()],
             db: store,
-            ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
+            ...(store.createScopeFilter !== undefined && { scopeFilter: store.createScopeFilter() }),
         });
 
         await kernel.start();
@@ -128,7 +128,7 @@ describe("a table a plugin scoped", () =>
         const kernel = createKernel({
             plugins: [createBilling()],
             db: store,
-            ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
+            ...(store.createScopeFilter !== undefined && { scopeFilter: store.createScopeFilter() }),
         });
 
         await kernel.start();
@@ -152,7 +152,7 @@ describe("a table a plugin scoped", () =>
         const kernel = createKernel({
             plugins: [createBilling()],
             db: store,
-            ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
+            ...(store.createScopeFilter !== undefined && { scopeFilter: store.createScopeFilter() }),
         });
 
         await kernel.start();
@@ -172,7 +172,7 @@ describe("a table a plugin scoped", () =>
         const kernel = createKernel({
             plugins: [createBilling()],
             db: store,
-            ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
+            ...(store.createScopeFilter !== undefined && { scopeFilter: store.createScopeFilter() }),
         });
 
         await kernel.start();

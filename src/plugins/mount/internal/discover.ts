@@ -4,14 +4,11 @@ import { pathToFileURL } from "node:url";
 
 import type { Plugin } from "../../kernel/api";
 
-export type Modules = Readonly<Record<string, { default?: Plugin }>>;
+export type PluginModules = Readonly<Record<string, { default?: Plugin }>>;
 
-// Discovery from the filesystem with no list to maintain: adding a plugin is
-// a folder, and forgetting to register it is not a failure mode. Sorted so
-// one set is always one order, whatever the loader walked first.
-export function discover(found: Modules): Plugin[]
+export function discover(modules: PluginModules): Plugin[]
 {
-    return Object.entries(found)
+    return Object.entries(modules)
         .map(([path, module]) =>
         {
             if (module.default === undefined)
@@ -26,35 +23,23 @@ export function discover(found: Modules): Plugin[]
 
 
 /** What discoverFrom leaves behind: a folder it could not take. */
-export type Skipped = {
+export type SkippedFolder = {
     folder: string;
     why: string;
 };
 
-/** What discoverFrom answers: what it found, and what it stepped over. */
-export type Found = {
+/** What discoverFrom answers: what it modules, and what it stepped over. */
+export type DiscoveryResult = {
     plugins: Plugin[];
-    skipped: Skipped[];
+    skipped: SkippedFolder[];
 };
 
-/**
- * The same discovery for a project with no bundler to glob for it.
- *
- * A folder that cannot be loaded is one plugin fewer, named, rather than a
- * dead boot. Six finished plugins and one half-written folder is a working
- * api missing one region: refusing the lot means an author cannot see their
- * own screen until everybody else has finished, and the only way out is to
- * move somebody else's folder aside.
- *
- * Nothing hides behind this. A plugin that is skipped is a plugin no other
- * one can name: whoever declares `dependsOn` on it is refused at startup by
- * name, so a missing region is loud wherever it actually matters.
- */
-export async function discoverFrom(folder: string): Promise<Found>
+/** The same discovery for a project with no bundler to glob for it. */
+export async function discoverFrom(folder: string): Promise<DiscoveryResult>
 {
     const entries = await readdir(folder, { withFileTypes: true });
     const plugins: Plugin[] = [];
-    const skipped: Skipped[] = [];
+    const skipped: SkippedFolder[] = [];
 
     for (const entry of entries)
     {

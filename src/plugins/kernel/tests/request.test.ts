@@ -375,7 +375,7 @@ describe("bytes carried beside the parsed body", () =>
         const kernel = await startServer(both);
 
         // Handed in deliberately: the kernel is the second lock, so a caller
-        // building an Incoming itself cannot hand bytes to a route that never
+        // building a KernelRequest itself cannot hand bytes to a route that never
         // declared it wanted them.
         const answer = await kernel.handle({ method: "POST", path: "/plain", input: { id: "a" }, sent: bytes });
 

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { z } from "zod";
 
 import { definePlugin } from "../../plugins/kernel/api";
-import { startTestKernel, TestTables, createIdentity } from "../startTestKernel";
+import { startTestKernel, testTables, createIdentity } from "../startTestKernel";
 
 import type { Plugin } from "../../plugins/kernel/api";
 
@@ -34,7 +34,7 @@ function createScheduled(): Plugin
         describe: "Holds items.",
         tables: { items },
         migrations: at,
-        outbound: ["https://partner.test"],
+        allowedHosts: ["https://partner.test"],
         routes: [{
             method: "GET",
             path: "/found",
@@ -58,7 +58,7 @@ describe("what startTestKernel gives a test", () =>
     {
         const api = await startTestKernel({ plugins: [createScheduled()] });
 
-        await expect(api.store.of("found").select().from(items)).resolves.toEqual([]);
+        await expect(api.store.forPlugin("found").select().from(items)).resolves.toEqual([]);
 
         await api.stop();
     });
@@ -67,9 +67,9 @@ describe("what startTestKernel gives a test", () =>
     {
         const api = await startTestKernel({ plugins: [createScheduled()] });
 
-        await api.store.of("found").insert(items).values({ id: "a" });
+        await api.store.forPlugin("found").insert(items).values({ id: "a" });
 
-        await expect(api.store.of("found").select().from(items)).resolves.toHaveLength(1);
+        await expect(api.store.forPlugin("found").select().from(items)).resolves.toHaveLength(1);
 
         await api.stop();
     });
@@ -101,11 +101,11 @@ describe("what startTestKernel gives a test", () =>
 
     test("records what a plugin called out to", async () =>
     {
-        const api = await startTestKernel({ plugins: [createScheduled()], answers: () => ({ ok: true }) });
+        const api = await startTestKernel({ plugins: [createScheduled()], respondWith: () => ({ ok: true }) });
 
         await api.kernel.context("found").fetch({ method: "GET", url: "https://partner.test/x" });
 
-        expect(api.outboundCalls()).toEqual([{
+        expect(api.sentRequests()).toEqual([{
             method: "GET",
             url: "https://partner.test/x",
             body: undefined,
@@ -117,13 +117,13 @@ describe("what startTestKernel gives a test", () =>
 
     test("records the verb, so a test can tell a delete from a write", async () =>
     {
-        const api = await startTestKernel({ plugins: [createScheduled()], answers: () => ({ ok: true }) });
+        const api = await startTestKernel({ plugins: [createScheduled()], respondWith: () => ({ ok: true }) });
         const ctx = api.kernel.context("found");
 
         await ctx.fetch({ method: "POST", url: "https://partner.test/things", body: { name: "one" } });
         await ctx.fetch({ method: "DELETE", url: "https://partner.test/things/1" });
 
-        expect(api.outboundCalls().map((call) => `${call.method} ${call.url}`)).toEqual([
+        expect(api.sentRequests().map((call) => `${call.method} ${call.url}`)).toEqual([
             "POST https://partner.test/things",
             "DELETE https://partner.test/things/1",
         ]);
@@ -133,7 +133,7 @@ describe("what startTestKernel gives a test", () =>
 
     test("records the headers a plugin sent", async () =>
     {
-        const api = await startTestKernel({ plugins: [createScheduled()], answers: () => ({ ok: true }) });
+        const api = await startTestKernel({ plugins: [createScheduled()], respondWith: () => ({ ok: true }) });
 
         await api.kernel.context("found").fetch({
             method: "POST",
@@ -141,7 +141,7 @@ describe("what startTestKernel gives a test", () =>
             headers: { "idempotency-key": "abc" },
         });
 
-        expect(api.outboundCalls()[0]?.headers).toEqual({ "idempotency-key": "abc" });
+        expect(api.sentRequests()[0]?.headers).toEqual({ "idempotency-key": "abc" });
 
         await api.stop();
     });
@@ -192,7 +192,7 @@ describe("what startTestKernel gives a test", () =>
 
         await api.stop();
 
-        expect(() => api.store.of("found")).toThrow(/after it was closed/);
+        expect(() => api.store.forPlugin("found")).toThrow(/after it was closed/);
     });
 });
 
@@ -202,16 +202,16 @@ describe("reading a contract", () =>
     {
         const plugin = createScheduled();
 
-        expect(Object.keys(TestTables.tables([plugin]))).toEqual(["found"]);
-        expect(TestTables.migrations([plugin])).toEqual([{ plugin: "found", from: at }]);
+        expect(Object.keys(testTables.tables([plugin]))).toEqual(["found"]);
+        expect(testTables.migrations([plugin])).toEqual([{ plugin: "found", from: at }]);
     });
 
     test("leaves out a plugin that declares no migrations", () =>
     {
         const quiet = definePlugin("quiet", { version: "1.0.0", describe: "Holds nothing." });
 
-        expect(TestTables.migrations([quiet])).toEqual([]);
-        expect(TestTables.tables([quiet])).toEqual({ quiet: {} });
+        expect(testTables.migrations([quiet])).toEqual([]);
+        expect(testTables.tables([quiet])).toEqual({ quiet: {} });
     });
 });
 

@@ -1,36 +1,23 @@
 import { connect, type DatabaseOptions } from "./internal/connect";
-import { migrate, MigrationFault, type Source, type Step, migrationSteps } from "./internal/migrate";
-import { createScopeFilter } from "./internal/narrow";
-import { noStore } from "./internal/none";
+import { migrate, MigrationFault, type MigrationSource, type MigrationStep, migrationSteps } from "./internal/migrate";
+import { createScopeFilter } from "./internal/scopeFilter";
+import { noStore } from "./internal/noStore";
 import { outbox } from "./internal/outbox";
 import { schedule } from "./internal/schedule";
 
 import { tableName } from "../kernel/api";
 
 import type { ScopeFilter, Outbox, Schedule } from "../kernel/api";
-import { store, type Handle, type Tables } from "./internal/store";
+import { store, type DrizzleDb, type TablesByName } from "./internal/store";
 
 /** What building a store needs: where the file is, and who owns what. */
 export type StoreOptions = DatabaseOptions & {
-    tables: Readonly<Record<string, Tables>>;
+    tables: Readonly<Record<string, TablesByName>>;
 };
 
-/**
- * What a project holds after opening a database.
- *
- * Wider than the kernel's `Storage`: this one also migrates and closes, which
- * a plugin has no business doing and the kernel never asks for.
- */
-/**
- * What `start` needs of a database, whichever one it is.
- *
- * Wider than the kernel's `Storage`: this one also migrates and closes, which
- * a plugin has no business doing and the kernel never asks for. `of` answers
- * `unknown` because the kit does not know what database it was given; a
- * plugin names the shape it expects through `definePlugin.over`.
- */
-export type Store<Handle = unknown> = {
-    of: (plugin: string) => Handle;
+/** What a project holds after opening a database. */
+export type Store<Db = unknown> = {
+    forPlugin: (plugin: string) => Db;
 
     /** An outbox in this same database, when the store can hold one. */
     outbox?: () => Outbox;
@@ -43,58 +30,40 @@ export type Store<Handle = unknown> = {
     tx: <Result>(plugin: string, run: (db: unknown) => Promise<Result>) => Promise<Result>;
     write: <Result>(run: () => Promise<Result>) => Promise<Result>;
     inTransaction: () => boolean;
-    migrate: (sources: readonly Source[]) => Step[];
+    migrate: (sources: readonly MigrationSource[]) => MigrationStep[];
     close: () => void;
 };
 
 export { MigrationFault, createScopeFilter, noStore, outbox, schedule, migrationSteps };
-export type { Handle, DatabaseOptions, Source, Step, Tables };
+export type { DrizzleDb, DatabaseOptions, MigrationSource, MigrationStep, TablesByName };
 
-/**
- * Opens a database and holds one handle per plugin over it.
- *
- * Built by the project rather than reached for: two stores can exist in one
- * process without seeing each other, which is what a test needs.
- */
-/**
- * Every table name a plugin declared, as the database spells it.
- *
- * The key a table is declared under is not always its name, so it is read off
- * the table the way the kernel reads it, and a store of a project's own that
- * carries no name falls back to the key.
- */
+/** Every table name a plugin declared, as the database spells it. */
 function declaredTables(owned: Readonly<Record<string, Readonly<Record<string, unknown>>>>): string[]
 {
     return Object.values(owned).flatMap((tables) =>
         Object.entries(tables).map(([key, table]) => tableName(table) ?? key));
 }
 
-export function database(settings: StoreOptions): Store<Handle>
+/** Opens a database and holds one handle per plugin over it. */
+export function database(settings: StoreOptions): Store<DrizzleDb>
 {
     const connection = connect(settings);
     const backing = store({ connection, tables: settings.tables });
 
     return {
-        of: backing.of,
+        forPlugin: backing.forPlugin,
         tx: backing.tx,
         write: backing.write,
         inTransaction: backing.inTransaction,
         close: backing.close,
 
         /** Runs every migration that has not run, in the order given. */
-        migrate: (sources: readonly Source[]): Step[] =>
+        migrate: (sources: readonly MigrationSource[]): MigrationStep[] =>
         {
             return migrate(connection, sources, declaredTables(settings.tables));
         },
 
-        /**
-         * Where events wait, in this same database.
-         *
-         * Built here rather than from a connection handed out, because an
-         * outbox that wrote somewhere else would be exactly the thing it
-         * exists to prevent: two places that can disagree about whether the
-         * work happened.
-         */
+        /** Where events wait, in this same database. */
         outbox: (): Outbox =>
         {
             return outbox(connection);

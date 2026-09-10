@@ -1,26 +1,19 @@
-import { answer, Reply, Refusal } from "./answer";
-import type { Identity, Context, Method, Route } from "./contract";
+import { refusalBodyFor, Reply, Refusal } from "./refusal";
+import type { Identity, Context, HttpMethod, Route } from "./contract";
 import { KernelFault } from "./faults";
 import { createPermissions } from "./permissions";
 
-/** What decides whether one identity has any budget left on one route. */
-export type Budget = {
+/** What decides whether one identity has any rateLimiter left on one route. */
+export type RateLimiter = {
     spend: (key: string, window: { requests: number; seconds: number }) => { allowed: boolean; resetsIn: number };
 
-    /**
-     * Gives one spend back, for a route counting only what it guards against.
-     *
-     * Optional, because a project brings its own budget and one written
-     * before this still counts every call. A route asking for it and getting
-     * nothing back is a route that counts everything, which is where it
-     * started.
-     */
+    /** Gives one spend back, for a route counting only what it guards against. */
     refund?: (key: string) => void;
 };
 
 /** One request, as it reaches the kernel. */
-export type Incoming = {
-    method: Method;
+export type KernelRequest = {
+    method: HttpMethod;
     path: string;
     input: unknown;
     identity?: Identity | undefined;
@@ -28,12 +21,7 @@ export type Incoming = {
     /** The request's headers, lowercase. A route sees only what it declared. */
     headers?: Readonly<Record<string, string>> | undefined;
 
-    /**
-     * The body's bytes as they arrived, for a route that declared `keepsRaw`.
-     *
-     * Carried beside `input` rather than instead of it: the schema still
-     * runs, and a signature still has the string it was computed over.
-     */
+    /** The body's bytes as they arrived, for a route that declared `keepsRaw`. */
     sent?: Uint8Array | undefined;
 
     /**
@@ -45,7 +33,7 @@ export type Incoming = {
 };
 
 /** What the kernel answers: a status, and a body already safe to send. */
-export type Outgoing = {
+export type KernelResponse = {
     status: number;
     body: unknown;
     headers?: Readonly<Record<string, string>>;
@@ -57,7 +45,7 @@ export type RouteOwner = {
     route: Route<Context>;
 };
 
-type Log = (
+type RequestLog = (
     level: "debug" | "info" | "warn" | "error",
     plugin: string,
     line: string,
@@ -65,39 +53,25 @@ type Log = (
 ) => void;
 
 /** Nothing found. Said the same way whoever asked, so probing learns nothing. */
-export const unknownRoute: Outgoing = {
+export const unknownRoute: KernelResponse = {
     status: 404,
     body: { code: "NOT_FOUND", message: "No such route." },
 };
 
 /** The kernel has stopped. A retry elsewhere is the only useful answer. */
-export const notServing: Outgoing = {
+export const notServing: KernelResponse = {
     status: 503,
     body: { code: "NOT_SERVING", message: "The service is shutting down." },
 };
 
-/**
- * Answers one request.
- *
- * The order is the whole security story, and it is deliberate:
- *
- *   1. signed in, unless the route says it is public
- *   2. permitted, against what the route declared
- *   3. parsed, so a handler only ever sees input that passed its schema
- *   4. run
- *   5. filtered, so only what the output schema names leaves
- *
- * Authentication comes before parsing so an anonymous identity cannot reach a
- * schema, and filtering comes last so a handler cannot leak by returning too
- * much.
- */
+/** Answers one request. */
 export async function respond(
     mounted: RouteOwner,
-    incoming: Incoming,
+    incoming: KernelRequest,
     context: (plugin: string, identity?: Identity, headers?: Readonly<Record<string, string>>, sent?: Uint8Array) => Context,
-    log: Log,
-    budget?: Budget,
-): Promise<Outgoing>
+    log: RequestLog,
+    rateLimiter?: RateLimiter,
+): Promise<KernelResponse>
 {
     const { plugin, route } = mounted;
     const identity = incoming.identity;
@@ -107,9 +81,6 @@ export async function respond(
        id of "" is nobody, and every such one would share one rate-limit bucket. */
     const identityId = identity !== undefined && identity.id.trim() !== "" ? identity.id : undefined;
 
-    // Spent up front, because a refused request must not reach the handler.
-    // A route that counts only failures gives it back once the answer says it
-    // succeeded, which is the first moment anything knows.
     let spent: string | undefined;
 
     try
@@ -119,13 +90,11 @@ export async function respond(
             throw new KernelFault("UNAUTHENTICATED", `${route.method} ${route.path} needs a caller.`, { plugin });
         }
 
-        // After identity, so one caller's flood cannot spend another's
-        // budget, and before the handler, so a refused request costs nothing.
-        if (route.limit !== undefined && budget !== undefined)
+        if (route.limit !== undefined && rateLimiter !== undefined)
         {
             spent = `${identityId ?? incoming.from ?? "anonymous"}:${route.method} ${route.path}`;
 
-            const verdict = budget.spend(spent, route.limit);
+            const verdict = rateLimiter.spend(spent, route.limit);
 
             if (!verdict.allowed)
             {
@@ -154,23 +123,15 @@ export async function respond(
 
         if (!parsed.success)
         {
-            throw new Refusal(400, "INVALID_INPUT", "The request is not valid.", fields(parsed.error));
+            throw new Refusal(400, "INVALID_INPUT", "The request is not valid.", fieldErrors(parsed.error));
         }
 
-        // Handed on only where the route asked: bytes nobody declared are
-        // bytes a log can carry, the same reason `reads` names its headers.
         const sent = route.keepsRaw === true ? incoming.sent : undefined;
 
-        const returned = await route.handle(parsed.data, context(plugin, identity, headersFor(route, incoming.headers), sent));
+        const returned = await route.handle(parsed.data, context(plugin, identity, allowedHeaders(route, incoming.headers), sent));
 
-        // A handler may say what status and headers its answer carries. The
-        // body still passes the schema either way: what a route sends is
-        // never a decision the handler alone makes.
         const carried = returned instanceof Reply ? returned : undefined;
 
-        // A whitelist, not a check: what the schema does not name does not
-        // leave, so a column added to a table tomorrow cannot appear in a
-        // response by itself.
         const filtered = route.output.safeParse(carried === undefined ? returned : carried.body);
 
         if (!filtered.success)
@@ -184,13 +145,9 @@ export async function respond(
 
         const status = carried?.status ?? (route.method === "POST" ? 201 : 200);
 
-        // Read off the status rather than off "the handler returned": a
-        // handler may answer Reply(409) without throwing, and giving that one
-        // its spend back would hand an attacker a free attempt for every
-        // refusal a route chose to return rather than raise.
         if (spent !== undefined && route.limit?.countSuccess === false && status < 400)
         {
-            budget?.refund?.(spent);
+            rateLimiter?.refund?.(spent);
         }
 
         if (carried !== undefined)
@@ -202,14 +159,8 @@ export async function respond(
     }
     catch (cause)
     {
-        const refusal = answer(cause);
+        const refusal = refusalBodyFor(cause);
 
-        // A 5xx is ours and nobody saw it; a 4xx was already explained to
-        // whoever caused it.
-        //
-        // Read off the error rather than passed whole: an Error serialises to
-        // "{}", so a log holding one says a request failed and nothing about
-        // why, which is the moment the log existed for.
         if (refusal.status >= 500)
         {
             log("error", plugin, `${route.method} ${route.path} threw`, logRecord(cause));
@@ -242,14 +193,7 @@ function logRecord(cause: unknown): Readonly<Record<string, unknown>>
     return { error: String(cause) };
 }
 
-/**
- * A header a handler may never set.
- *
- * `set-cookie` decides who the caller is on their next request, which is the
- * session plugin's business and nobody else's. The rest are the kit's own
- * answer about itself, and a route overriding them turns one endpoint into
- * the hole in a policy that holds everywhere else.
- */
+/** A header a handler may never set. */
 const OURS: ReadonlySet<string> = new Set([
     "set-cookie",
     "content-security-policy",
@@ -264,7 +208,7 @@ function filterHeaders(
     asked: Readonly<Record<string, string>>,
     plugin: string,
     route: Route<Context>,
-    log: Log,
+    log: RequestLog,
 ): Readonly<Record<string, string>>
 {
     const outgoing: Record<string, string> = {};
@@ -280,8 +224,6 @@ function filterHeaders(
             continue;
         }
 
-        // A newline splits one header into two, and the second is whatever
-        // the value's author wanted to say.
         if (/[\r\n]/.test(value))
         {
             log("warn", plugin, `${route.method} ${route.path} tried to set "${lower}" to a value carrying a newline`);
@@ -295,13 +237,8 @@ function filterHeaders(
     return outgoing;
 }
 
-/**
- * The headers a route named, and nothing else.
- *
- * A handler that could read any header could read the cookie carrying the
- * session, and anything logging its input would then be logging a credential.
- */
-function headersFor(route: Route<Context>, sent: Readonly<Record<string, string>> = {}): Readonly<Record<string, string>>
+/** The headers a route named, and nothing else. */
+function allowedHeaders(route: Route<Context>, sent: Readonly<Record<string, string>> = {}): Readonly<Record<string, string>>
 {
     const sending: Record<string, string> = {};
 
@@ -318,25 +255,20 @@ function headersFor(route: Route<Context>, sent: Readonly<Record<string, string>
     return sending;
 }
 
-/**
- * Which fields failed, and why.
- *
- * Built only from an input schema the plugin wrote, so what it names is what
- * the caller already sent us.
- */
-function fields(error: { issues: readonly { path: readonly PropertyKey[]; message: string }[] }): Record<string, string>
+/** Which fields failed, and why. */
+function fieldErrors(error: { issues: readonly { path: readonly PropertyKey[]; message: string }[] }): Record<string, string>
 {
-    const named: Record<string, string> = {};
+    const byField: Record<string, string> = {};
 
     for (const issue of error.issues)
     {
-        const at = issue.path.map((segment) => String(segment)).join(".");
+        const field = issue.path.map((segment) => String(segment)).join(".");
 
-        if (at !== "" && named[at] === undefined)
+        if (field !== "" && byField[field] === undefined)
         {
-            named[at] = issue.message;
+            byField[field] = issue.message;
         }
     }
 
-    return named;
+    return byField;
 }

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 
 export type OversizedDoc = {
     path: string;
@@ -12,8 +12,9 @@ export type UndocumentedKey = {
 
 const LIMIT = 1800;
 
-// A contract nobody can read in one sitting is a contract nobody reads. What
-// grows past this is two documents, or a rule that belongs in code.
+/** Folders a project holds but did not write. */
+const NOT_OURS = ["node_modules", "dist", ".git", "coverage"];
+
 export function findOversizedDocs(root: string, limit: number = LIMIT): OversizedDoc[]
 {
     if (!existsSync(root))
@@ -24,7 +25,12 @@ export function findOversizedDocs(root: string, limit: number = LIMIT): Oversize
     return readdirSync(root, { withFileTypes: true, recursive: true })
         .filter((entry) =>
         {
-            return entry.isFile() && entry.name.endsWith(".md") && !entry.parentPath.includes("progress");
+            if (!entry.isFile() || !entry.name.endsWith(".md") || entry.parentPath.includes("progress"))
+            {
+                return false;
+            }
+
+            return !NOT_OURS.some((folder) => entry.parentPath.split(sep).includes(folder));
         })
         .map((entry) =>
         {
@@ -38,8 +44,6 @@ export function findOversizedDocs(root: string, limit: number = LIMIT): Oversize
         });
 }
 
-// A document that is present but empty reads as done and says nothing, which
-// is worse than one that is missing and obviously so.
 export function findMissingDocs(root: string, required: readonly string[]): string[]
 {
     return required.filter((path) =>
@@ -55,29 +59,22 @@ export function findMissingDocs(root: string, required: readonly string[]): stri
     });
 }
 
-/**
- * Plugins that describe themselves nowhere.
- *
- * A plugin is a capability someone else has to understand before they can
- * depend on it, and its contract says what crosses the boundary rather than
- * why anyone would want it. A folder with no `usage.md` is one nobody can
- * decide about without reading its source.
- */
-export function findUnexplainedPlugins(plugins: string): string[]
+/** Plugins that describe themselves nowhere. */
+export function findUnexplainedPlugins(folder: string): string[]
 {
-    if (!existsSync(plugins))
+    if (!existsSync(folder))
     {
         return [];
     }
 
-    return readdirSync(plugins, { withFileTypes: true })
+    return readdirSync(folder, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
         .map((entry) => entry.name)
         .filter((name) =>
         {
             try
             {
-                return readFileSync(join(plugins, name, "usage.md"), "utf8").trim().length === 0;
+                return readFileSync(join(folder, name, "usage.md"), "utf8").trim().length === 0;
             }
             catch
             {
@@ -86,11 +83,9 @@ export function findUnexplainedPlugins(plugins: string): string[]
         });
 }
 
-// Every key the contract accepts is named in the procedure that explains it.
-// A key added to one and not the other is how a document starts lying.
-export function findUndocumentedKeys(contract: string, procedure: string): string[]
+export function findUndocumentedKeys(contractPath: string, procedurePath: string): string[]
 {
-    const shape = /export type Definition[\s\S]*?\n\};/.exec(contract)?.[0] ?? "";
+    const shape = /export type Definition[\s\S]*?\n\};/.exec(contractPath)?.[0] ?? "";
     const keys = [...shape.matchAll(/^\s{4}([a-zA-Z]+)\??:/gm)].map((match) =>
     {
         return match[1] ?? "";
@@ -98,6 +93,6 @@ export function findUndocumentedKeys(contract: string, procedure: string): strin
 
     return keys.filter((key) =>
     {
-        return !procedure.includes(`\`${key}\``);
+        return !procedurePath.includes(`\`${key}\``);
     });
 }

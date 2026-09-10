@@ -8,6 +8,8 @@ import { start } from "../api";
 import type { Context } from "../../kernel/api";
 import type { Store } from "../../database/api";
 
+const from = new URL("./migrations", import.meta.url).pathname;
+
 const route = defineRoute<Context>();
 
 /** A site that keeps nothing: one route, no tables, nothing to migrate. */
@@ -30,6 +32,7 @@ const keeping = definePlugin("keeping", {
     version: "1.0.0",
     describe: "Keeps notes.",
     tables: { notes },
+    migrations: `${from}/keeping`,
 });
 
 describe("a project with no tables at all", () =>
@@ -126,7 +129,7 @@ describe("a store that is not SQLite", () =>
 
         return {
             opened: 0,
-            of: (plugin: string) => ({ rows: held.get(plugin) ?? [] }),
+            forPlugin: (plugin: string) => ({ rows: held.get(plugin) ?? [] }),
             tx: async (_plugin, run) => run({}),
             write: async (run) => run(),
             inTransaction: () => false,
@@ -161,7 +164,7 @@ describe("a store that is not SQLite", () =>
 
     test("is refused when it cannot migrate or close, naming both", async () =>
     {
-        const half = { of: () => ({}), tx: async (_p: string, run: (db: unknown) => Promise<unknown>) => run({}) };
+        const half = { forPlugin: () => ({}), tx: async (_p: string, run: (db: unknown) => Promise<unknown>) => run({}) };
 
         const failed = await start({ plugins: [pages], database: half as unknown as Store })
             .catch((cause: unknown) => cause);

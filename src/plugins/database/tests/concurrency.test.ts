@@ -15,7 +15,7 @@ beforeEach(() =>
 {
     store = database({ file: ":memory:", tables: { a: { rows }, b: { rows } } });
 
-    (store.of("a") as unknown as { $client: { exec: (sql: string) => void } }).$client.exec(CREATE);
+    (store.forPlugin("a") as unknown as { $client: { exec: (sql: string) => void } }).$client.exec(CREATE);
 });
 
 afterEach(() =>
@@ -25,7 +25,7 @@ afterEach(() =>
 
 test("a write made outside a transaction survives another transaction's rollback", async () =>
 {
-    const db = store.of("a");
+    const db = store.forPlugin("a");
 
     const rolling = store.tx("a", async (inside) =>
     {
@@ -48,7 +48,7 @@ test("a write made outside a transaction survives another transaction's rollback
 
 test("two overlapping transactions both finish rather than one refusing", async () =>
 {
-    const db = store.of("a");
+    const db = store.forPlugin("a");
 
     const both = await Promise.allSettled([
         store.tx("a", async (inside) =>
@@ -69,7 +69,7 @@ test("two overlapping transactions both finish rather than one refusing", async 
 
 test("one transaction's rollback leaves the other's committed work alone", async () =>
 {
-    const db = store.of("a");
+    const db = store.forPlugin("a");
 
     await Promise.allSettled([
         store.tx("a", async (inside) =>
@@ -91,7 +91,7 @@ test("one transaction's rollback leaves the other's committed work alone", async
 
 test("an inner transaction that fails leaves the outer one able to commit", async () =>
 {
-    const db = store.of("a");
+    const db = store.forPlugin("a");
 
     await store.tx("a", async (outer) =>
     {
@@ -110,7 +110,7 @@ test("an inner transaction that fails leaves the outer one able to commit", asyn
 
 test("a transaction from another plugin inside one joins rather than refusing", async () =>
 {
-    const db = store.of("a");
+    const db = store.forPlugin("a");
 
     await store.tx("a", async (outer) =>
     {
@@ -127,7 +127,7 @@ test("a transaction from another plugin inside one joins rather than refusing", 
 
 test("a transaction waiting on something slow does not make the next one nested", async () =>
 {
-    const db = store.of("a");
+    const db = store.forPlugin("a");
 
     // The first transaction parks on a real gap. Without the call stack
     // deciding what is nested, the next one off the queue reads a counter,

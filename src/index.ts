@@ -1,65 +1,66 @@
-export { answer, Reply, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, Refusal } from "./plugins/kernel/api";
+export { refusalBodyFor, Reply, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, Refusal } from "./plugins/kernel/api";
 export type {
-    Abandoned,
-    Announcement,
-    Answer,
-    Budget,
+    FailedJob,
+    OutboxMessage,
+    RefusalBody,
+    RateLimiter,
     Channel,
-    Answered,
+    IdentifiedCaller,
     Identity,
     Command,
     Context,
-    Declared,
+    PermissionEntry,
+    RegisteredChannel,
     Definition,
-    Description,
-    Dialer,
-    Endpoint,
+    Describable,
+    HttpClient,
+    AnyRoute,
     Event,
-    Failure,
+    ListenerFailure,
     FaultCode,
     EmittedEvent,
     Hook,
-    Incoming,
+    KernelRequest,
     Participation,
     Kernel,
     Listener,
-    Log,
+    LogFn,
     Logger,
-    Measured,
-    Method,
+    Tagged,
+    HttpMethod,
     ScopeFilter,
-    Options,
-    Outbound,
+    KernelOptions,
+    HttpRequest,
     Outbox,
     Schedule,
-    Scheduled,
-    Outgoing,
+    QueuedJob,
+    KernelResponse,
     Participant,
     Permission,
     Plugin,
-    Pushed,
-    Reach,
-    Registration,
+    ChannelMessage,
+    ChannelReach,
+    RegisteredRoute,
     Route,
-    Run,
-    Schematic,
+    AnyCommand,
+    DescribableWithSchema,
     Sockets,
-    Storage,
+    KernelStore,
     ContractProblem,
 } from "./plugins/kernel/api";
 
 export { database, MigrationFault, createScopeFilter, outbox, schedule } from "./plugins/database/api";
-export type { Handle, DatabaseOptions, Source, Step, Store, Tables } from "./plugins/database/api";
+export type { DrizzleDb, DatabaseOptions, MigrationSource, MigrationStep, Store, TablesByName } from "./plugins/database/api";
 
-export { securityHeaders, requestId, serve, sockets, cookieIn, SessionHeaders, isUpload, claimedName } from "./plugins/http/api";
-export type { Joined, Server, ServerOptions, SessionOptions, Upload } from "./plugins/http/api";
+export { securityHeaders, requestId, serve, sockets, cookieIn, SessionHeaders, isUploadedFile, claimedName } from "./plugins/http/api";
+export type { Subscription, HonoApp, ServerOptions, SessionOptions, UploadedFile } from "./plugins/http/api";
 
-export { dial, OutboundFault } from "./plugins/outbound/api";
-export type { DialerOptions } from "./plugins/outbound/api";
+export { httpClient, HttpRequestError } from "./plugins/outbound/api";
+export type { HttpClientOptions } from "./plugins/outbound/api";
 
 export { limiter, unlimited, equalsInConstantTime } from "./plugins/guard/api";
-export type { Limiter, Verdict, Window } from "./plugins/guard/api";
+export type { RateLimitResult, RateLimitWindow } from "./plugins/guard/api";
 
 export { discover, discoverFrom, start } from "./plugins/mount/api";
-export type { Found, Skipped } from "./plugins/mount/api";
+export type { DiscoveryResult, SkippedFolder } from "./plugins/mount/api";
 export type { RunningApp, StartOptions } from "./plugins/mount/api";

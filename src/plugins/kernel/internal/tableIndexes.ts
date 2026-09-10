@@ -1,12 +1,4 @@
-/**
- * The indexes a table declares, read off the table rather than imported.
- *
- * Same reason as `tableName`: the kernel holds no driver. Drizzle keeps the
- * extra config as a builder, so it is run once with the columns it was given
- * and each entry read for the name it carries and whether it is unique.
- *
- * Empty for anything that is not a table, or a table declaring none.
- */
+/** The indexes a table declares, read off the table rather than imported. */
 export type DeclaredIndex = {
     name: string;
     unique: boolean;
@@ -31,9 +23,6 @@ export function tableIndexes(table: unknown): DeclaredIndex[]
 
     let built: unknown;
 
-    // A builder of a shape this does not know is not a reason to refuse a
-    // boot: an index nobody could read is one nobody can check, and the
-    // check exists to catch a missing one, not to police drizzle.
     try
     {
         built = (bag[builder] as (given: unknown) => unknown)(bag[columns]);
@@ -44,7 +33,7 @@ export function tableIndexes(table: unknown): DeclaredIndex[]
     }
 
     const entries = Array.isArray(built) ? built : Object.values(built as Record<string, unknown>);
-    const found: DeclaredIndex[] = [];
+    const indexes: DeclaredIndex[] = [];
 
     for (const entry of entries)
     {
@@ -64,9 +53,9 @@ export function tableIndexes(table: unknown): DeclaredIndex[]
 
         if (typeof name === "string")
         {
-            found.push({ name, unique: unique === true });
+            indexes.push({ name, unique: unique === true });
         }
     }
 
-    return found;
+    return indexes;
 }

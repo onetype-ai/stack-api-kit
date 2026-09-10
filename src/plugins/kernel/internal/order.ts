@@ -1,11 +1,6 @@
 import type { Plugin } from "./contract";
 
-/**
- * Dependency order: every plugin comes after the ones it depends on.
- *
- * Ties break by name, so one set always yields one order. A run that varied
- * would make what a plugin sees at setup depend on iteration order.
- */
+/** Dependency order: every plugin comes after the ones it depends on. */
 export function order(known: ReadonlyMap<string, Plugin>): Plugin[]
 {
     const sorted: Plugin[] = [];

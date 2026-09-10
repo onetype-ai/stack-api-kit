@@ -2,14 +2,14 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 
 import { createKernel, definePlugin } from "../api";
-import type { Definition, Plugin, Storage } from "../api";
+import type { Definition, Plugin, KernelStore } from "../api";
 
 /**
  * A store a test drives, behaving the way the real one does: an inner call
  * becomes a savepoint rather than a second transaction, so only the outermost
  * one commits.
  */
-function withStore(): Storage & { rollbacks: () => number; commits: () => number; savepoints: () => number }
+function withStore(): KernelStore & { rollbacks: () => number; commits: () => number; savepoints: () => number }
 {
     let rollbacks = 0;
     let commits = 0;
@@ -17,7 +17,7 @@ function withStore(): Storage & { rollbacks: () => number; commits: () => number
     let depth = 0;
 
     return {
-        of: (plugin) => ({ plugin }),
+        forPlugin: (plugin) => ({ plugin }),
 
         tx: async (plugin, run) =>
         {
@@ -507,13 +507,13 @@ describe("transactions", () =>
     });
 });
 
-describe("outbound", () =>
+describe("allowedHosts", () =>
 {
     test("refuses a host the plugin never declared", async () =>
     {
         const kernel = createKernel({
-            plugins: [participant("billing", { outbound: ["https://api.stripe.com"] })],
-            dial: () => Promise.resolve({}),
+            plugins: [participant("billing", { allowedHosts: ["https://api.stripe.com"] })],
+            httpClient: () => Promise.resolve({}),
         });
 
         await kernel.start();
@@ -527,8 +527,8 @@ describe("outbound", () =>
     test("a url that is not one says so, rather than to declare it", async () =>
     {
         const kernel = createKernel({
-            plugins: [participant("billing", { outbound: ["https://api.stripe.com"] })],
-            dial: () => Promise.resolve({}),
+            plugins: [participant("billing", { allowedHosts: ["https://api.stripe.com"] })],
+            httpClient: () => Promise.resolve({}),
         });
 
         await kernel.start();
@@ -544,8 +544,8 @@ describe("outbound", () =>
     {
         const calls: string[] = [];
         const kernel = createKernel({
-            plugins: [participant("billing", { outbound: ["https://api.stripe.com"] })],
-            dial: (call) =>
+            plugins: [participant("billing", { allowedHosts: ["https://api.stripe.com"] })],
+            httpClient: (call) =>
             {
                 calls.push(call.url);
 
@@ -563,8 +563,8 @@ describe("outbound", () =>
     test("refuses a url whose host only looks like one it declared", async () =>
     {
         const kernel = createKernel({
-            plugins: [participant("billing", { outbound: ["https://api.stripe.com"] })],
-            dial: () => Promise.resolve({}),
+            plugins: [participant("billing", { allowedHosts: ["https://api.stripe.com"] })],
+            httpClient: () => Promise.resolve({}),
         });
 
         await kernel.start();
@@ -576,8 +576,8 @@ describe("outbound", () =>
     test("refuses plain http even to a declared host", async () =>
     {
         const kernel = createKernel({
-            plugins: [participant("billing", { outbound: ["https://api.stripe.com"] })],
-            dial: () => Promise.resolve({}),
+            plugins: [participant("billing", { allowedHosts: ["https://api.stripe.com"] })],
+            httpClient: () => Promise.resolve({}),
         });
 
         await kernel.start();
@@ -652,7 +652,7 @@ describe("push", () =>
         kernel.context("chat", { id: "u1", permissions: [], claims: { shopId: "acme" } })
             .push("chat.said", { text: "hi" });
 
-        expect(sockets.sent()).toMatchObject([{ reach: "scope", within: "acme" }]);
+        expect(sockets.sent()).toMatchObject([{ reach: "scope", scope: "acme" }]);
     });
 
     test("and refuses one from a caller with no scope at all", async () =>
@@ -682,7 +682,7 @@ describe("push", () =>
             message: { text: "hi" },
             reach: "everyone",
             requires: [],
-            within: undefined,
+            scope: undefined,
             from: undefined,
         }]);
     });

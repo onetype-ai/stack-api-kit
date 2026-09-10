@@ -1,27 +1,18 @@
 import { Hono } from "hono";
 import type { Context as HonoContext } from "hono";
 
-import type { Identity, Kernel, Method } from "../../kernel/api";
+import type { Identity, Kernel, HttpMethod } from "../../kernel/api";
 import { securityHeaders } from "./headers";
 import { cors, type CorsPolicy } from "./origin";
-import { input } from "./input";
+import { readInput } from "./input";
 import { sessionCookie, withSessionKey, type SessionOptions } from "./session";
-import { formBody, type Upload } from "./upload";
+import { formBody, type UploadedFile } from "./upload";
 
 /** What options needs to know. */
 export type ServerOptions = {
     kernel: Kernel;
 
-    /**
-     * Who is calling, where the project answers rather than a plugin.
-     *
-     * Left out, the kernel asks whichever plugin declared `identifies`, which
-     * is where a session already lives. Passed, this wins: it was given by
-     * name.
-     *
-     * Throwing answers 401. Undefined is a stranger, which only a public
-     * route accepts.
-     */
+    /** Who is calling, where the project answers rather than a plugin. */
     identify?: ((c: HonoContext) => Identity | undefined | Promise<Identity | undefined>) | undefined;
 
     /**
@@ -39,15 +30,7 @@ export type ServerOptions = {
     /** The largest body accepted, before it is parsed. */
     bodyBytes?: number;
 
-    /**
-     * What a session is kept in, when it is a cookie.
-     *
-     * A route answers `x-session-key` with `x-session-expires`, or
-     * `x-session-end` to close one; this turns that into `set-cookie` and
-     * takes the headers back out. Left out, they leave as they are and the
-     * project decides what they mean: a token in a mobile client is the same
-     * routes with nothing changed.
-     */
+    /** What a session is kept in, when it is a cookie. */
     session?: SessionOptions | undefined;
 
     /** Where a line goes. */
@@ -57,23 +40,13 @@ export type ServerOptions = {
 /** Which methods a caller may send a body with, and we will read one from. */
 const CARRIES: ReadonlySet<string> = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
-// Kept only when it is safe to write down: an id carrying a newline is how
-// one request writes a second line into the log and calls it whatever it
-// likes.
-export function requestId(sent: string | undefined): string
+export function requestId(header: string | undefined): string
 {
-    return sent !== undefined && /^[A-Za-z0-9_-]{1,64}$/.test(sent) ? sent : crypto.randomUUID();
+    return header !== undefined && /^[A-Za-z0-9_-]{1,64}$/.test(header) ? header : crypto.randomUUID();
 }
 
-/**
- * Builds the Hono app the kernel's routes are mounted on.
- *
- * Everything crossing into the process crosses here, which is why the limits
- * live here: a plugin that had to remember to bound a body is one that will
- * forget once.
- */
 /** The headers a route declared, read off the request in lowercase. */
-function headersOf(c: HonoContext, reads: readonly string[]): Readonly<Record<string, string>>
+function readHeaders(c: HonoContext, reads: readonly string[]): Readonly<Record<string, string>>
 {
     const headers: Record<string, string> = {};
 
@@ -111,7 +84,7 @@ function methodsFor(answering: ReadonlyMap<string, Set<string>>, path: string): 
             continue;
         }
 
-        if (parts.every((part, at) => part.startsWith(":") || part === segments[at]))
+        if (parts.every((part, index) => part.startsWith(":") || part === segments[index]))
         {
             return methods;
         }
@@ -121,13 +94,8 @@ function methodsFor(answering: ReadonlyMap<string, Set<string>>, path: string): 
 }
 
 
-/**
- * The body, or nothing when it outgrows what is allowed.
- *
- * Counted chunk by chunk and abandoned the moment it is too big, so a caller
- * cannot make the server hold what it is about to refuse.
- */
-async function bodyOf(stream: ReadableStream<Uint8Array> | null, bytes: number): Promise<Uint8Array | undefined>
+/** The body, or nothing when it outgrows what is allowed. */
+async function readBytes(stream: ReadableStream<Uint8Array> | null, bytes: number): Promise<Uint8Array | undefined>
 {
     if (stream === null)
     {
@@ -167,33 +135,26 @@ async function bodyOf(stream: ReadableStream<Uint8Array> | null, bytes: number):
 
     const all = new Uint8Array(read);
 
-    let at = 0;
+    let written = 0;
 
     for (const part of parts)
     {
-        all.set(part, at);
-        at += part.byteLength;
+        all.set(part, written);
+        written += part.byteLength;
     }
 
     return all;
 }
 
 /** What a route was sent, or the refusal to answer instead. */
-type ReadBody =
-    | { body: unknown; uploads: Readonly<Record<string, Upload | Upload[]>>; sent?: Uint8Array }
+type BodyResult =
+    | { body: unknown; uploads: Readonly<Record<string, UploadedFile | UploadedFile[]>>; sent?: Uint8Array }
     | { refused: { code: string; message: string }; status: number };
 
 const TOO_LARGE = { refused: { code: "TOO_LARGE", message: "The request body is too large." }, status: 413 } as const;
 
-/**
- * The body a route asked for, bounded before anything parses it.
- *
- * A form is read by the platform rather than a parser of ours, and only where
- * the route declared it takes one: a route expecting JSON cannot be handed a
- * file, and one expecting a form cannot be handed JSON. Both refusals are 415,
- * which says the body was the wrong kind rather than the wrong shape.
- */
-async function bodyFor(request: Request, route: { method: string; accepts?: "json" | "form"; keepsRaw?: boolean }, bytes: number): Promise<ReadBody>
+/** The body a route asked for, bounded before anything parses it. */
+async function requestBody(request: Request, route: { method: string; accepts?: "json" | "form"; keepsRaw?: boolean }, bytes: number): Promise<BodyResult>
 {
     if (!CARRIES.has(route.method))
     {
@@ -224,9 +185,7 @@ async function bodyFor(request: Request, route: { method: string; accepts?: "jso
         };
     }
 
-    // Bounded first either way: what the platform reads, it reads whole, so a
-    // form is counted before it is handed over rather than after.
-    const raw = await bodyOf(request.body, bytes);
+    const raw = await readBytes(request.body, bytes);
 
     if (raw === undefined)
     {
@@ -235,13 +194,20 @@ async function bodyFor(request: Request, route: { method: string; accepts?: "jso
 
     if (sentForm)
     {
-        const read = await formBody(new Request(request.url, {
-            method: request.method,
-            headers: request.headers,
-            body: raw,
-        }));
+        try
+        {
+            const read = await formBody(new Request(request.url, {
+                method: request.method,
+                headers: request.headers,
+                body: raw,
+            }));
 
-        return { body: read.fields, uploads: read.uploads };
+            return { body: read.fields, uploads: read.uploads };
+        }
+        catch
+        {
+            return { refused: { code: "INVALID_FORM", message: "The request body is not a valid form." }, status: 400 };
+        }
     }
 
     if (raw.byteLength === 0)
@@ -249,8 +215,6 @@ async function bodyFor(request: Request, route: { method: string; accepts?: "jso
         return { body: undefined, uploads: {} };
     }
 
-    // Kept only where the route declared it: these are the bytes a signature
-    // was computed over, and parsing is what makes them unrecoverable.
     const kept = route.keepsRaw === true ? { sent: raw } : {};
 
     try
@@ -263,6 +227,7 @@ async function bodyFor(request: Request, route: { method: string; accepts?: "jso
     }
 }
 
+/** Builds the Hono app the kernel's routes are mounted on. */
 export function serve(options: ServerOptions): Hono
 {
     const app = new Hono();
@@ -291,7 +256,6 @@ export function serve(options: ServerOptions): Hono
 
         for (const [name, value] of Object.entries(cors(policy, c.req.header("origin"))))
         {
-            // A preflight already said which methods its own path answers.
             if (name === "access-control-allow-methods" && c.req.method === "OPTIONS" && c.res.headers.has(name))
             {
                 continue;
@@ -303,18 +267,8 @@ export function serve(options: ServerOptions): Hono
         c.header("x-request-id", traced);
     });
 
-    // A preflight is answered only for a path some route declared, and only
-    // for the methods that path actually answers: approving one for a route
-    // that does not exist tells a browser it may send what nothing will take,
-    // and maps out the surface for anyone asking.
     const byPath = new Map<string, Set<string>>();
 
-    // Two questions a deployment asks, and they are not the same one. Live
-    // says the process is up, which is what decides a restart. Ready says the
-    // kernel started, its migrations ran and its plugins are up, which is
-    // what decides whether traffic may arrive. A process that answers live
-    // but not ready is one that should be left alone to finish starting,
-    // never killed and never sent a request.
     app.get("/live", (c) => c.json({ live: true }));
 
     app.get("/ready", (c) =>
@@ -356,23 +310,18 @@ export function serve(options: ServerOptions): Hono
 
             try
             {
-                // The project's own wins: it was passed by name, where the
-                // kernel's comes from whichever plugin declared it.
                 identity = options.identify === undefined
                     ? await options.kernel.identify?.(withSessionKey(c.req.raw, options.session))
                     : await options.identify(c);
             }
             catch (cause)
             {
-                // Whatever went wrong reading a session, the caller is not
-                // signed in. A 500 here would turn an expired token into an
-                // outage, and tell whoever sent it that it was interesting.
                 options.log?.("warn", "identify threw", { requestId, error: cause instanceof Error ? cause.message : String(cause) });
 
                 return c.json({ code: "UNAUTHENTICATED", message: "This request needs to be signed in." }, 401);
             }
 
-            const read = await bodyFor(c.req.raw, route, bodyBytes);
+            const read = await requestBody(c.req.raw, route, bodyBytes);
 
             if ("refused" in read)
             {
@@ -380,16 +329,16 @@ export function serve(options: ServerOptions): Hono
             }
 
             const answer = await options.kernel.handle({
-                method: route.method as Method,
+                method: route.method as HttpMethod,
                 path: route.path,
-                input: input({
+                input: readInput({
                     params: c.req.param(),
                     query: c.req.queries() as Record<string, string[]>,
                     body: read.body,
                     uploads: read.uploads,
                 }),
                 identity,
-                headers: headersOf(c, route.reads),
+                headers: readHeaders(c, route.reads),
                 ...("sent" in read && read.sent !== undefined && { sent: read.sent }),
                 ...(options.from !== undefined && { from: options.from(c) }),
             });

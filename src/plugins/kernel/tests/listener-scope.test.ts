@@ -51,7 +51,7 @@ function startServer()
 {
     const store = database({ file: ":memory:", tables: { keeper: { notes } } });
 
-    store.of("keeper").$client.exec(
+    store.forPlugin("keeper").$client.exec(
         "CREATE TABLE acting_notes (id TEXT PRIMARY KEY, shop_id TEXT NOT NULL, body TEXT NOT NULL)",
     );
 
@@ -68,7 +68,7 @@ describe("a listener acting for a scope", () =>
         const kernel = createKernel({
             plugins: recorder(heard),
             db: store,
-            ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
+            ...(store.createScopeFilter !== undefined && { scopeFilter: store.createScopeFilter() }),
         });
 
         await kernel.start();
@@ -90,7 +90,7 @@ describe("a listener acting for a scope", () =>
         const kernel = createKernel({
             plugins: recorder([]),
             db: store,
-            ...(store.createScopeFilter !== undefined && { narrow: store.createScopeFilter() }),
+            ...(store.createScopeFilter !== undefined && { scopeFilter: store.createScopeFilter() }),
         });
 
         await kernel.start();

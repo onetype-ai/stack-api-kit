@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { dial, OutboundFault } from "../api";
+import { httpClient, HttpRequestError } from "../api";
 
 type FetchStub = {
     status?: number;
@@ -36,28 +36,28 @@ describe("answers", () =>
     {
         stubFetch({ body: '{"ok":true}' });
 
-        await expect(dial()({ method: "GET", url: "https://api.example.test/x" })).resolves.toEqual({ ok: true });
+        await expect(httpClient()({ method: "GET", url: "https://api.example.test/x" })).resolves.toEqual({ ok: true });
     });
 
     test("returns undefined for an empty body", async () =>
     {
         stubFetch({ status: 204, body: "" });
 
-        await expect(dial()({ method: "GET", url: "https://api.example.test/x" })).resolves.toBeUndefined();
+        await expect(httpClient()({ method: "GET", url: "https://api.example.test/x" })).resolves.toBeUndefined();
     });
 
     test("refuses a body that is not JSON", async () =>
     {
         stubFetch({ body: "not json" });
 
-        await expect(dial()({ method: "GET", url: "https://api.example.test/x" })).rejects.toMatchObject({ code: "MALFORMED" });
+        await expect(httpClient()({ method: "GET", url: "https://api.example.test/x" })).rejects.toMatchObject({ code: "MALFORMED" });
     });
 
     test("answers a page as text when the call asked for text", async () =>
     {
         stubFetch({ body: "<html><h1>Hi</h1></html>" });
 
-        await expect(dial()({ method: "GET", url: "https://api.example.test/x", accepts: "text" }))
+        await expect(httpClient()({ method: "GET", url: "https://api.example.test/x", accepts: "text" }))
             .resolves.toBe("<html><h1>Hi</h1></html>");
     });
 
@@ -72,7 +72,7 @@ describe("answers", () =>
             return Promise.resolve(new Response("<html></html>", { status: 200 }));
         });
 
-        await dial()({ method: "GET", url: "https://api.example.test/x", accepts: "text" });
+        await httpClient()({ method: "GET", url: "https://api.example.test/x", accepts: "text" });
 
         expect(sent["accept"]).toBe("*/*");
     });
@@ -81,17 +81,17 @@ describe("answers", () =>
     {
         stubFetch({ status: 402, body: '{"error":"card declined"}' });
 
-        const failed = await dial()({ method: "GET", url: "https://api.example.test/x" }).catch((cause: unknown) => cause);
+        const failed = await httpClient()({ method: "GET", url: "https://api.example.test/x" }).catch((cause: unknown) => cause);
 
-        expect(failed).toBeInstanceOf(OutboundFault);
-        expect((failed as OutboundFault).status).toBe(402);
+        expect(failed).toBeInstanceOf(HttpRequestError);
+        expect((failed as HttpRequestError).status).toBe(402);
     });
 
     test("refuses an answer past the size it was given", async () =>
     {
         stubFetch({ body: "x".repeat(2_000) });
 
-        await expect(dial({ maxBytes: 100 })({ method: "GET", url: "https://api.example.test/x" }))
+        await expect(httpClient({ maxBytes: 100 })({ method: "GET", url: "https://api.example.test/x" }))
             .rejects.toMatchObject({ code: "TOO_LARGE" });
     });
 });
@@ -108,7 +108,7 @@ describe("cancelling", () =>
 
         const stopper = new AbortController();
 
-        const aborted = dial()({ method: "GET", url: "https://api.example.test/x", signal: stopper.signal });
+        const aborted = httpClient()({ method: "GET", url: "https://api.example.test/x", signal: stopper.signal });
 
         stopper.abort();
 
@@ -123,7 +123,7 @@ describe("cancelling", () =>
                 init?.signal?.addEventListener("abort", () => fail(new DOMException("aborted", "AbortError")));
             }));
 
-        await expect(dial({ timeoutMs: 10 })({ method: "GET", url: "https://api.example.test/x" }))
+        await expect(httpClient({ timeoutMs: 10 })({ method: "GET", url: "https://api.example.test/x" }))
             .rejects.toMatchObject({ code: "TIMEOUT" });
     });
 });
@@ -141,7 +141,7 @@ describe("redirects", () =>
             return Promise.resolve(new Response("{}", { status: 200 }));
         });
 
-        await dial()({ method: "GET", url: "https://api.example.test/x" });
+        await httpClient()({ method: "GET", url: "https://api.example.test/x" });
 
         expect(asked?.redirect).toBe("error");
     });
@@ -153,8 +153,8 @@ describe("what a partner asked for when it refused", () =>
     {
         stubFetch({ status: 429, body: "{}", headers: { "retry-after": "120" } });
 
-        const failed = await dial()({ method: "GET", url: "https://api.example.test/x" })
-            .catch((cause: unknown) => cause) as OutboundFault;
+        const failed = await httpClient()({ method: "GET", url: "https://api.example.test/x" })
+            .catch((cause: unknown) => cause) as HttpRequestError;
 
         expect(failed.retryAfter).toBe(120);
     });
@@ -165,8 +165,8 @@ describe("what a partner asked for when it refused", () =>
 
         stubFetch({ status: 503, body: "{}", headers: { "retry-after": at } });
 
-        const failed = await dial()({ method: "GET", url: "https://api.example.test/x" })
-            .catch((cause: unknown) => cause) as OutboundFault;
+        const failed = await httpClient()({ method: "GET", url: "https://api.example.test/x" })
+            .catch((cause: unknown) => cause) as HttpRequestError;
 
         expect(failed.retryAfter).toBeGreaterThan(50);
         expect(failed.retryAfter).toBeLessThanOrEqual(60);
@@ -176,8 +176,8 @@ describe("what a partner asked for when it refused", () =>
     {
         stubFetch({ status: 429, body: "{}" });
 
-        const failed = await dial()({ method: "GET", url: "https://api.example.test/x" })
-            .catch((cause: unknown) => cause) as OutboundFault;
+        const failed = await httpClient()({ method: "GET", url: "https://api.example.test/x" })
+            .catch((cause: unknown) => cause) as HttpRequestError;
 
         expect(failed.retryAfter).toBeUndefined();
     });

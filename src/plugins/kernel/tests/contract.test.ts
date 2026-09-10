@@ -264,7 +264,7 @@ describe("declarations", () =>
 
     test("refuses an outbound host that travels in the clear", async () =>
     {
-        const failed = await refusalFor([participant("billing", { outbound: ["http://api.example.test"] })]);
+        const failed = await refusalFor([participant("billing", { allowedHosts: ["http://api.example.test"] })]);
 
         expect(failed?.code).toBe("UNDECLARED_HOST");
         expect(failed?.message).toMatch(/not encrypted/);
@@ -272,21 +272,21 @@ describe("declarations", () =>
 
     test("refuses an outbound host with no scheme at all", async () =>
     {
-        const failed = await refusalFor([participant("billing", { outbound: ["api.example.test"] })]);
+        const failed = await refusalFor([participant("billing", { allowedHosts: ["api.example.test"] })]);
 
         expect(failed?.message).toMatch(/names no scheme/);
     });
 
     test("refuses an outbound host carrying a path", async () =>
     {
-        const failed = await refusalFor([participant("billing", { outbound: ["https://api.example.test/v1/charges"] })]);
+        const failed = await refusalFor([participant("billing", { allowedHosts: ["https://api.example.test/v1/charges"] })]);
 
         expect(failed?.message).toMatch(/is not an origin/);
     });
 
     test("refuses a scheme the kit does not know", async () =>
     {
-        const failed = await refusalFor([participant("billing", { outbound: ["gopher://api.example.test"] })]);
+        const failed = await refusalFor([participant("billing", { allowedHosts: ["gopher://api.example.test"] })]);
 
         expect(failed?.message).toMatch(/does not know/);
     });
@@ -294,7 +294,7 @@ describe("declarations", () =>
     test("accepts the connections a plugin really opens, not only https", async () =>
     {
         const failed = await refusalFor([participant("billing", {
-            outbound: ["redis://cache.internal:6379", "postgres://db.internal:5432", "wss://events.internal"],
+            allowedHosts: ["redis://cache.internal:6379", "postgres://db.internal:5432", "wss://events.internal"],
         })]);
 
         expect(failed).toBeUndefined();

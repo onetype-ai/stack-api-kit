@@ -43,7 +43,7 @@ test("what a listener wrote is there once the test waits for it", async () =>
         lengths.push(written.length);
     }
 
-    await api.settle();
+    await api.flush();
 
     await api.stop();
 
@@ -92,7 +92,7 @@ test("a chain of two listeners settles too", async () =>
 
     api.kernel.context("first").events.emit("first.done", { id: "one" });
 
-    await api.settle();
+    await api.flush();
 
     await api.stop();
 
@@ -123,7 +123,7 @@ test("a listener that throws is raised where the test waited, not left silent", 
 
     api.kernel.context("source").events.emit("source.happened", { id: "one" });
 
-    await expect(api.settle()).rejects.toThrow(/sink listening to "source.happened": the sink broke/);
+    await expect(api.flush()).rejects.toThrow(/sink listening to "source.happened": the sink broke/);
 
     await api.stop();
 });
@@ -152,12 +152,12 @@ test("a failure already read is not raised again", async () =>
 
     api.kernel.context("source").events.emit("source.happened", { id: "one" });
 
-    await expect(api.settle()).rejects.toThrow(/expected/);
+    await expect(api.flush()).rejects.toThrow(/expected/);
 
     // Taken deliberately, so the next wait is about what comes next.
     expect(api.kernel.events.failures()).toHaveLength(1);
 
-    await api.settle();
+    await api.flush();
 
     await api.stop();
 });

@@ -13,7 +13,7 @@ function participant(name: string, found: Partial<Definition> = {}): Plugin
 test("a participant that never answers is a refusal, not a request held open", async () =>
 {
     const kernel = createKernel({
-        patience: 50,
+        hookTimeoutMs: 50,
         plugins: [
             participant("owner", { hooks: { "owner.check": { describe: "A check.", schema: z.object({}) } } }),
             participant("silent", {
@@ -40,7 +40,7 @@ test("a participant that never answers is a refusal, not a request held open", a
 test("a participant that answers in time is still heard", async () =>
 {
     const kernel = createKernel({
-        patience: 500,
+        hookTimeoutMs: 500,
         plugins: [
             participant("owner", { hooks: { "owner.check": { describe: "A check.", schema: z.object({}) } } }),
             participant("slow", {

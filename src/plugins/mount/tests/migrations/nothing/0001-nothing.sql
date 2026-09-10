@@ -1,0 +1,1 @@
+CREATE TABLE unrelated (id TEXT PRIMARY KEY);

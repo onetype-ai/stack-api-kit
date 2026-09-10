@@ -14,16 +14,10 @@ type ParticipantOwner<Context> = {
     participant: Participation<Context>;
 };
 
-/**
- * How long a participant has to answer.
- *
- * A participant that throws is already a refusal; one that never answers is
- * the same thing arriving more slowly, and without this it holds the request
- * open for as long as the process lives.
- */
+/** How long a participant has to answer. */
 const PATIENCE = 5000;
 
-export function hooks<Context>(patience: number = PATIENCE)
+export function hooks<Context>(hookTimeoutMs: number = PATIENCE)
 {
     const declared = new Map<string, HookOwner>();
     const participants = new Map<string, ParticipantOwner<Context>[]>();
@@ -72,13 +66,13 @@ export function hooks<Context>(patience: number = PATIENCE)
                         answering,
                         new Promise<typeof LATE>((done) =>
                         {
-                            timer = setTimeout(() => done(LATE), patience);
+                            timer = setTimeout(() => done(LATE), hookTimeoutMs);
                         }),
                     ]);
 
                     if (refusal === LATE)
                     {
-                        return `"${entry.plugin}" did not answer in ${String(patience)}ms.`;
+                        return `"${entry.plugin}" did not answer in ${String(hookTimeoutMs)}ms.`;
                     }
 
                     if (refusal !== undefined)
@@ -88,8 +82,6 @@ export function hooks<Context>(patience: number = PATIENCE)
                 }
                 catch (cause)
                 {
-                    // A participant whose check crashed has not agreed to
-                    // anything, so a throw is a refusal, never consent.
                     return `"${entry.plugin}" refused: ${cause instanceof Error ? cause.message : String(cause)}`;
                 }
                 finally

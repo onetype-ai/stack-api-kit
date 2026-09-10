@@ -1,124 +1,114 @@
-import type { Declared, Identity, Pushed } from "../../kernel/api";
+import type { RegisteredChannel, Identity, ChannelMessage } from "../../kernel/api";
 
 /** One open connection, as whoever holds the wire sees it. */
-export type Joined = {
+export type Subscription = {
     /** Whether this connection may hear a channel at all. */
-    hears: (channel: string) => boolean;
+    isListening: (channel: string) => boolean;
 
     /** What the client said it listens to. Refused when it may not. */
-    listen: (channel: string) => boolean;
+    listenTo: (channel: string) => boolean;
 
-    forget: (channel: string) => void;
+    stopListening: (channel: string) => void;
 
     /** The connection closed: it hears nothing more. */
-    left: () => void;
+    close: () => void;
 };
 
-type Connection = {
-    who: Identity | undefined;
+type SocketState = {
+    identity: Identity | undefined;
     send: (text: string) => void;
     listening: Set<string>;
 };
 
-/**
- * Every open connection, and how far what a plugin pushes travels.
- *
- * The kernel decides nothing about wires: it hands this what was pushed, and
- * this decides who is close enough to hear it. What holds the wire calls
- * `joined` once per connection and speaks to it through what comes back.
- */
-export function sockets(kernel: { channels: () => readonly Declared[] }, claim?: string)
+/** Every open connection, and how far what a plugin pushes travels. */
+export function sockets(kernel: { channels: () => readonly RegisteredChannel[] }, claim?: string)
 {
-    const open = new Set<Connection>();
+    const open = new Set<SocketState>();
 
-    let declared: Map<string, Declared> | undefined;
+    let declared: Map<string, RegisteredChannel> | undefined;
 
-    // Read on first use, not here: a kernel is built holding this, so what it
-    // declares is not knowable until it has started.
-    const channelFor = (name: string): Declared | undefined =>
+    const channelFor = (name: string): RegisteredChannel | undefined =>
     {
         declared ??= new Map(kernel.channels().map((one) => [one.channel, one]));
 
         return declared.get(name);
     };
 
-    const within = (who: Identity | undefined): string | undefined =>
+    const scopeOf = (identity: Identity | undefined): string | undefined =>
     {
-        const held = claim === undefined ? undefined : who?.claims[claim];
+        const claimed = claim === undefined ? undefined : identity?.claims[claim];
 
-        return typeof held === "string" ? held : undefined;
+        return typeof claimed === "string" ? claimed : undefined;
     };
 
-    const mayHear = (channel: string, who: Identity | undefined): boolean =>
+    const mayHear = (channel: string, identity: Identity | undefined): boolean =>
     {
-        const one = channelFor(channel);
+        const declared = channelFor(channel);
 
-        if (one === undefined)
+        if (declared === undefined)
         {
             return false;
         }
 
-        // A channel nobody signed in may hear says so; every other reach
-        // needs somebody to be reaching.
-        if (one.reach !== "everyone" && who === undefined)
+        if (declared.reach !== "everyone" && identity === undefined)
         {
             return false;
         }
 
-        if (one.reach === "scope" && within(who) === undefined)
+        if (declared.reach === "scope" && scopeOf(identity) === undefined)
         {
             return false;
         }
 
-        return one.requires.every((permission) => who?.permissions.includes(permission) === true);
+        return declared.requires.every((permission) => identity?.permissions.includes(permission) === true);
     };
 
-    const reaches = (sending: Pushed, listener: Connection): boolean =>
+    const reaches = (message: ChannelMessage, listener: SocketState): boolean =>
     {
-        if (!listener.listening.has(sending.channel))
+        if (!listener.listening.has(message.channel))
         {
             return false;
         }
 
-        if (sending.reach === "scope")
+        if (message.reach === "scope")
         {
-            return within(listener.who) === sending.within;
+            return scopeOf(listener.identity) === message.scope;
         }
 
-        if (sending.reach === "viewer" || sending.reach === "connection")
+        if (message.reach === "viewer" || message.reach === "connection")
         {
-            return listener.who?.id === sending.from?.id;
+            return listener.identity?.id === message.from?.id;
         }
 
         return true;
     };
 
     return {
-        push: (sending: Pushed): void =>
+        push: (message: ChannelMessage): void =>
         {
-            const text = JSON.stringify({ channel: sending.channel, body: sending.message });
+            const text = JSON.stringify({ channel: message.channel, body: message.message });
 
             for (const listener of open)
             {
-                if (reaches(sending, listener) && mayHear(sending.channel, listener.who))
+                if (reaches(message, listener) && mayHear(message.channel, listener.identity))
                 {
                     listener.send(text);
                 }
             }
         },
 
-        joined: (who: Identity | undefined, send: (text: string) => void): Joined =>
+        subscribe: (identity: Identity | undefined, send: (text: string) => void): Subscription =>
         {
-            const connection: Connection = { who, send, listening: new Set() };
+            const connection: SocketState = { identity, send, listening: new Set() };
 
             open.add(connection);
 
             return {
-                hears: (channel: string) => mayHear(channel, who),
+                isListening: (channel: string) => mayHear(channel, identity),
 
-                listen: (channel: string): boolean =>
+                listenTo: (channel: string): boolean =>
                 {
-                    if (!mayHear(channel, who))
+                    if (!mayHear(channel, identity))
                     {
                         return false;
                     }
@@ -128,9 +118,9 @@ export function sockets(kernel: { channels: () => readonly Declared[] }, claim?:
                     return true;
                 },
 
-                forget: (channel: string) => connection.listening.delete(channel),
+                stopListening: (channel: string) => connection.listening.delete(channel),
 
-                left: () => open.delete(connection),
+                close: () => open.delete(connection),
             };
         },
     };

@@ -1,21 +1,9 @@
-/**
- * How a route's answer becomes a session cookie.
- *
- * A plugin never sets `set-cookie`: it says who this session is for and how
- * long it lasts, and this turns that into whatever the deployment keeps a
- * session in. That boundary is what lets a mobile client holding a token use
- * the same routes unchanged.
- */
+/** How a route's answer becomes a session cookie. */
 export type SessionOptions = {
     /** The cookie's name. */
     name: string;
 
-    /**
-     * Whether to mark it `Secure`.
-     *
-     * A browser drops a `Secure` cookie sent over http, so a deployment on
-     * localhost that set this would never keep one.
-     */
+    /** Whether to mark it `Secure`. */
     secure: boolean;
 
     sameSite?: "Strict" | "Lax" | "None";
@@ -33,12 +21,7 @@ const LEAST_MOMENT = 1_000_000_000_000;
 export const SessionHeaders = {
     key: "x-session-key",
 
-    /**
-     * When the session ends, in epoch milliseconds: `Date.now() + lifetime`.
-     *
-     * A moment rather than a duration, however the name reads. A header is a
-     * string, so nothing but this says which.
-     */
+    /** When the session ends, in epoch milliseconds: `Date.now() + lifetime`. */
     expires: "x-session-expires",
 
     end: "x-session-end",
@@ -60,8 +43,6 @@ export function cookieFor(key: string, seconds: number, options: SessionOptions)
         parts.push(`Domain=${options.domain}`);
     }
 
-    // SameSite=None is only honoured on a secure cookie, so a deployment
-    // asking for one over http gets a cookie no browser keeps.
     if (options.secure || options.sameSite === "None")
     {
         parts.push("Secure");
@@ -75,33 +56,28 @@ export function cookieIn(header: string | undefined, name: string): string | und
 {
     for (const part of (header ?? "").split(";"))
     {
-        const at = part.indexOf("=");
+        const equals = part.indexOf("=");
 
-        if (at > 0 && part.slice(0, at).trim() === name)
+        if (equals > 0 && part.slice(0, equals).trim() === name)
         {
-            return decodeURIComponent(part.slice(at + 1).trim());
+            return decodeURIComponent(part.slice(equals + 1).trim());
         }
     }
 
     return undefined;
 }
 
-export type SessionAnswer = {
+export type SessionResult = {
     cookie: string | undefined;
     headers: Readonly<Record<string, string>>;
 };
 
-/**
- * What a route asked for, turned into a cookie and taken back out.
- *
- * The key must not also leave on a header a script can read: keeping it in one
- * the browser will not hand over is the whole point.
- */
+/** What a route asked for, turned into a cookie and taken back out. */
 export function sessionCookie(
     answered: Readonly<Record<string, string>>,
     options: SessionOptions,
     now: number,
-): SessionAnswer
+): SessionResult
 {
     const key = answered[SessionHeaders.key];
     const ending = answered[SessionHeaders.end];
@@ -124,10 +100,6 @@ export function sessionCookie(
 
     const expires = Number(answered[SessionHeaders.expires] ?? 0);
 
-    // A number this small is a lifetime somebody meant as one: no moment
-    // lands before 2001, and the two are told apart nowhere else. Refused
-    // rather than served, because the cookie it would make is thrown away on
-    // arrival and every test still passes.
     if (Number.isFinite(expires) && expires > 0 && expires < LEAST_MOMENT)
     {
         throw new TypeError(`${SessionHeaders.expires} is a moment in epoch milliseconds, and ${String(expires)} is a lifetime. Send Date.now() + lifetime.`);
@@ -138,14 +110,7 @@ export function sessionCookie(
     return { cookie: cookieFor(key, seconds, options), headers };
 }
 
-/**
- * The same request, carrying the key its cookie holds.
- *
- * The other half of what `session` does: a route answers a key and the kit
- * turns it into a cookie, so the cookie is turned back before anything reads
- * the request. Without this, `session` is a switch in `main.ts` that stops
- * every plugin reading a header from signing anybody in.
- */
+/** The same request, carrying the key its cookie holds. */
 export function withSessionKey(request: Request, options: SessionOptions | undefined): Request
 {
     if (options === undefined || request.headers.has(SessionHeaders.key))

@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 
 import { Refusal, Reply, createKernel, definePlugin } from "../api";
-import type { Identity, Definition, Options, Plugin } from "../api";
+import type { Identity, Definition, KernelOptions, Plugin } from "../api";
 import { limiter } from "../../guard/api";
 
 function budgetOf(limit?: { requests: number; seconds: number }): Plugin
@@ -28,9 +28,9 @@ function createIdentity(id: string): Identity
     return { id, permissions: [], claims: {} };
 }
 
-async function startKernel(options: Partial<Options> & { plugins: readonly Plugin[] })
+async function startKernel(options: Partial<KernelOptions> & { plugins: readonly Plugin[] })
 {
-    const kernel = createKernel({ budget: limiter(), ...options });
+    const kernel = createKernel({ rateLimiter: limiter(), ...options });
 
     await kernel.start();
 
