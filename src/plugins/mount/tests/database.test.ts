@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
@@ -8,7 +9,7 @@ import { start } from "../api";
 import type { Context } from "../../kernel/api";
 import type { Store } from "../../database/api";
 
-const from = new URL("./migrations", import.meta.url).pathname;
+const from = fileURLToPath(new URL("./migrations", import.meta.url));
 
 const route = defineRoute<Context>();
 
@@ -125,16 +126,16 @@ describe("a store that is not SQLite", () =>
     /** Whatever a project brought: Postgres, MySQL, or rows in a Map. */
     function elsewhere(): Store & { opened: number }
     {
-        const held = new Map<string, unknown[]>();
+        const rowsByPlugin = new Map<string, unknown[]>();
 
         return {
             opened: 0,
-            forPlugin: (plugin: string) => ({ rows: held.get(plugin) ?? [] }),
+            forPlugin: (plugin: string) => ({ rows: rowsByPlugin.get(plugin) ?? [] }),
             tx: async (_plugin, run) => run({}),
             write: async (run) => run(),
             inTransaction: () => false,
             migrate: () => [],
-            close: () => { held.clear(); },
+            close: () => { rowsByPlugin.clear(); },
         };
     }
 

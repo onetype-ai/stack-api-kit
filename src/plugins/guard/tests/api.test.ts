@@ -44,7 +44,7 @@ describe("limiting", () =>
         limit.spend("u1", { requests: 1, seconds: 60 });
         clock = 30_000;
 
-        expect(limit.spend("u1", { requests: 1, seconds: 60 }).resetsIn).toBe(30);
+        expect(limit.spend("u1", { requests: 1, seconds: 60 }).resetsInSeconds).toBe(30);
     });
 
     test("drops windows that have passed rather than growing forever", () =>
@@ -78,8 +78,7 @@ describe("giving a spend back", () =>
 
         expect([limit.spend("u1", window).allowed, limit.spend("u1", window).allowed]).toEqual([true, true]);
 
-        // More refunds than spends would bank credit against the window,
-        // which is a caller earning attempts by succeeding.
+        // More refunds than spends would bank credit against the window: a caller earning attempts by succeeding.
         for (let turn = 0; turn < 6; turn += 1)
         {
             limit.refund("u1");

@@ -14,12 +14,12 @@ and another is how a permitted host hands the request to one nobody declared.
 ## Usage
 
 ```ts
-const kernel = createKernel({ plugins, dial: dial({ timeoutMs: 10_000 }) });
+const kernel = createKernel({ plugins, httpClient: httpClient({ timeoutMs: 10_000 }) });
 ```
 
 ```ts
 export default definePlugin("billing", {
-    outbound: ["https://api.stripe.com"],
+    allowedHosts: ["https://api.stripe.com"],
     services: (ctx) => ({
         charge: (id: string) => ctx.fetch({ method: "POST", url: `https://api.stripe.com/v1/charges/${id}` }),
     }),
@@ -39,7 +39,7 @@ export default definePlugin("billing", {
 
 ## Refuses
 
-An `OutboundFault` carrying a code: `TIMEOUT`, `ABORTED`, `NETWORK`,
+An `HttpRequestError` carrying a code: `TIMEOUT`, `ABORTED`, `NETWORK`,
 `TOO_LARGE`, `MALFORMED`, or `STATUS` with the status it was refused with.
 `retryAfter` is the seconds a partner asked for, when it asked. Nothing else
 it throws carries a header, a token, or the body that was sent.

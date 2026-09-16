@@ -1,14 +1,15 @@
 import { timingSafeEqual } from "node:crypto";
 
+/** Answers false on a length mismatch before comparing, because `timingSafeEqual` throws on unequal lengths, and that throw is itself a timing signal. */
 export function equalsInConstantTime(left: string, right: string): boolean
 {
-    const first = Buffer.from(left, "utf8");
-    const second = Buffer.from(right, "utf8");
+    const leftBytes = Buffer.from(left, "utf8");
+    const rightBytes = Buffer.from(right, "utf8");
 
-    if (first.length !== second.length)
+    if (leftBytes.length !== rightBytes.length)
     {
         return false;
     }
 
-    return timingSafeEqual(first, second);
+    return timingSafeEqual(leftBytes, rightBytes);
 }

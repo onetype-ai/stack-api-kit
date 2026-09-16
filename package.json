@@ -23,9 +23,11 @@
         "typecheck": "tsc --noEmit",
         "boundaries": "node tools/boundaries.mjs",
         "docs": "node tools/docs.mjs",
-        "build": "tsup && node tools/name-types.mjs",
+        "build": "tsup && node tools/name-types.mjs && node tools/schema.mjs",
         "prepublishOnly": "tools/check.sh && tsup && node tools/name-types.mjs",
-        "prepack": "tsup && node tools/name-types.mjs"
+        "prepack": "tsup && node tools/name-types.mjs",
+        "schema": "node tools/schema.mjs",
+        "declared": "node tools/declared.mjs"
     },
     "dependencies": {
         "zod": "^4.5.4"
@@ -70,6 +72,7 @@
     },
     "files": [
         "dist",
+        "schema.md",
         "README.md",
         "#docs",
         "!#docs/progress"

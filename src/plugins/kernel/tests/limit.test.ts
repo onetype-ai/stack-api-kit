@@ -214,13 +214,13 @@ describe("a budget counting only what it guards against", () =>
 
 describe("a budget that would enforce nothing", () =>
 {
-    test("refuses to start when a route declares a limit and no budget was given", async () =>
+    test("refuses to start when a route declares a limit and no rateLimiter was given", async () =>
     {
         const kernel = createKernel({ plugins: [budgetOf({ requests: 5, seconds: 60 })] });
 
         const failed = await kernel.start().then(() => undefined).catch((cause: unknown) => cause as Error);
 
-        expect(failed?.message).toMatch(/no budget was given/);
+        expect(failed?.message).toMatch(/no rateLimiter was given/);
         expect(failed?.message).toMatch(/GET \/thing/);
     });
 

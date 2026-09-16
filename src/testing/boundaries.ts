@@ -1,12 +1,14 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 
+/** One file importing another plugin: `from` is relative to the importing plugin's folder, `to` is the plugin name reached, `specifier` the text as written. */
 export type ImportEdge = {
     from: string;
     to: string;
     specifier: string;
 };
 
+/** One crossing the boundaries refuse, `rule` saying which: an undeclared dependency, a reach past `@plugins/<name>`, an import loop, a folder with no plugin.ts, a process escape, or a util written twice. */
 export type ImportViolation = {
     rule: "undeclared" | "deep" | "cycle" | "contract" | "escape" | "twice";
     message: string;
@@ -25,7 +27,7 @@ type ImportsByPlugin = {
     specifiers: { path: string; specifier: string }[];
 };
 
-/** PluginModules that leave this process, which no declaration in the contract narrows. */
+/** Imports that leave this process, which no declaration in the contract narrows. */
 const ESCAPES: Readonly<Record<string, string>> = {
     "child_process": "spawns a program that runs as this user, with this process's files, environment and network",
     "worker_threads": "runs code in a thread that shares this process's memory",
@@ -33,6 +35,7 @@ const ESCAPES: Readonly<Record<string, string>> = {
     "cluster": "forks this process",
 };
 
+/** Reads every plugin folder under `root` by regex, never by compiling, and answers what crosses a boundary; tests are excused the deep import of a dependency's `plugin.ts`. */
 export function findImportViolations(root: string): ImportViolation[]
 {
     const names = readdirSync(root, { withFileTypes: true })
@@ -277,16 +280,17 @@ function findEscapes(plugins: readonly ImportsByPlugin[]): ImportViolation[]
         plugin.specifiers.flatMap(({ path, specifier }) =>
         {
             const module = /^node:([a-z_]+)/.exec(specifier)?.[1] ?? "";
-            const why = ESCAPES[module];
+            const consequence = ESCAPES[module];
 
-            return why === undefined ? [] : [{
+            return consequence === undefined ? [] : [{
                 rule: "escape" as const,
-                message: `${plugin.name}/${path} imports "${specifier}", which ${why}. No key in the contract narrows a process the way outbound narrows a host, so this crossing is declared nowhere. Move it behind a service the application supplies, or name this plugin in "leaving" to say the crossing is meant.`,
+                message: `${plugin.name}/${path} imports "${specifier}", which ${consequence}. No key in the contract narrows a process the way outbound narrows a host, so this crossing is declared nowhere. Move it behind a service the application supplies, or name this plugin in "leaving" to say the crossing is meant.`,
             }];
         }),
     );
 }
 
+/** One method name and signature that more than one plugin wrote for itself under its own `utils/`, with every file holding a copy. */
 export type DuplicateSignature = {
     signature: string;
     plugins: readonly string[];
@@ -319,20 +323,21 @@ export function findSharedNames(root: string): DuplicateSignature[]
             for (const method of readFileSync(path, "utf8").matchAll(/^ {4}(?:readonly )?([a-zA-Z][a-zA-Z0-9]*)(\([^)]*\)\s*:\s*[^\n{]+)/gm))
             {
                 const signature = `${method[1]!}${method[2]!.replace(/\s+/g, " ").trim()}`;
-                const held = owners.get(signature) ?? { plugins: new Set<string>(), files: [] };
+                const owner = owners.get(signature) ?? { plugins: new Set<string>(), files: [] };
 
-                held.plugins.add(plugin.name);
-                held.files.push(relative(root, path));
-                owners.set(signature, held);
+                owner.plugins.add(plugin.name);
+                owner.files.push(relative(root, path));
+                owners.set(signature, owner);
             }
         }
     }
 
     return [...owners]
-        .filter(([, held]) => held.plugins.size > 1)
-        .map(([signature, held]) => ({ signature, plugins: [...held.plugins].sort(), files: held.files }));
+        .filter(([, owner]) => owner.plugins.size > 1)
+        .map(([signature, owner]) => ({ signature, plugins: [...owner.plugins].sort(), files: owner.files }));
 }
 
+/** One enum name two plugins each declare with overlapping but unequal members: `shared` is in both, `apart` in only one. */
 export type SplitVocabulary = {
     name: string;
     plugins: readonly string[];
@@ -341,6 +346,7 @@ export type SplitVocabulary = {
     apart: readonly string[];
 };
 
+/** An inline `z.enum` whose members exactly match a named enum another plugin exports, so `values` is a copy with no name and nothing compares the two. */
 export type CopiedVocabulary = {
     name: string;
     owner: string;
@@ -367,49 +373,49 @@ export function findSplitVocabulary(root: string): SplitVocabulary[]
 
             for (const found of readFileSync(path, "utf8").matchAll(/(?:export )?const (\w+) = z\.enum\(\[([^\]]*)\]/g))
             {
-                const values = [...(found[2] ?? "").matchAll(/"([^"]+)"/g)].map((one) => one[1] ?? "").sort();
-                const held = byName.get(found[1] ?? "") ?? [];
+                const values = [...(found[2] ?? "").matchAll(/"([^"]+)"/g)].map((member) => member[1] ?? "").sort();
+                const declarations = byName.get(found[1] ?? "") ?? [];
 
-                held.push({ plugin: plugin.name, file: relative(root, path), values });
-                byName.set(found[1] ?? "", held);
+                declarations.push({ plugin: plugin.name, file: relative(root, path), values });
+                byName.set(found[1] ?? "", declarations);
             }
         }
     }
 
-    return [...byName].flatMap(([name, held]) => differingValues(root, name, held));
+    return [...byName].flatMap(([name, declarations]) => differingValues(root, name, declarations));
 }
 
-function differingValues(root: string, name: string, held: { plugin: string; file: string; values: string[] }[]): SplitVocabulary[]
+function differingValues(root: string, name: string, declarations: { plugin: string; file: string; values: string[] }[]): SplitVocabulary[]
 {
     const split: SplitVocabulary[] = [];
 
-    for (let one = 0; one < held.length; one += 1)
+    for (let index = 0; index < declarations.length; index += 1)
     {
-        for (let two = one + 1; two < held.length; two += 1)
+        for (let other = index + 1; other < declarations.length; other += 1)
         {
-            const first = held[one]!;
-            const second = held[two]!;
+            const declaration = declarations[index]!;
+            const otherDeclaration = declarations[other]!;
 
-            if (first.plugin === second.plugin)
+            if (declaration.plugin === otherDeclaration.plugin)
             {
                 continue;
             }
 
-            const shared = first.values.filter((value) => second.values.includes(value));
+            const shared = declaration.values.filter((value) => otherDeclaration.values.includes(value));
             const apart = [
-                ...first.values.filter((value) => !second.values.includes(value)),
-                ...second.values.filter((value) => !first.values.includes(value)),
+                ...declaration.values.filter((value) => !otherDeclaration.values.includes(value)),
+                ...otherDeclaration.values.filter((value) => !declaration.values.includes(value)),
             ];
 
-            if (shared.length === 0 || apart.length === 0 || !importsPlugin(root, first.plugin, second.plugin))
+            if (shared.length === 0 || apart.length === 0 || !eitherDependsOn(root, declaration.plugin, otherDeclaration.plugin))
             {
                 continue;
             }
 
             split.push({
                 name,
-                plugins: [first.plugin, second.plugin],
-                files: [first.file, second.file],
+                plugins: [declaration.plugin, otherDeclaration.plugin],
+                files: [declaration.file, otherDeclaration.file],
                 shared,
                 apart,
             });
@@ -419,6 +425,7 @@ function differingValues(root: string, name: string, held: { plugin: string; fil
     return split;
 }
 
+/** Finds inline `z.enum` members that exactly match an enum another plugin names, ignoring tests; an identical set within the same plugin is not reported. */
 export function findCopiedVocabulary(root: string): CopiedVocabulary[]
 {
     const owners = new Map<string, { name: string; plugin: string }>();
@@ -448,11 +455,11 @@ export function findCopiedVocabulary(root: string): CopiedVocabulary[]
         }
     }
 
-    return inline.flatMap((one) =>
+    return inline.flatMap((copy) =>
     {
-        const owner = owners.get(one.values);
+        const owner = owners.get(copy.values);
 
-        if (owner === undefined || owner.plugin === one.plugin)
+        if (owner === undefined || owner.plugin === copy.plugin)
         {
             return [];
         }
@@ -460,21 +467,22 @@ export function findCopiedVocabulary(root: string): CopiedVocabulary[]
         return [{
             name: owner.name,
             owner: owner.plugin,
-            copier: one.plugin,
-            file: one.file,
-            values: one.values.split(","),
+            copier: copy.plugin,
+            file: copy.file,
+            values: copy.values.split(","),
         }];
     });
 }
 
 function exportedMembers(written: string): string
 {
-    return [...written.matchAll(/"([^"]+)"/g)].map((one) => one[1] ?? "").sort().join(",");
+    return [...written.matchAll(/"([^"]+)"/g)].map((member) => member[1] ?? "").sort().join(",");
 }
 
-function importsPlugin(root: string, one: string, two: string): boolean
+/** Whether either plugin declares the other in dependsOn, in either direction. */
+function eitherDependsOn(root: string, plugin: string, other: string): boolean
 {
-    return dependsOn(root, one, two) || dependsOn(root, two, one);
+    return dependsOn(root, plugin, other) || dependsOn(root, other, plugin);
 }
 
 function dependsOn(root: string, from: string, on: string): boolean
@@ -490,3 +498,124 @@ function dependsOn(root: string, from: string, on: string): boolean
 
     return declared.includes(`"${on}"`);
 }
+
+/** One method reaching a scoped table without the narrowing its scope declares. */
+export type UnscopedReach = {
+    plugin: string;
+    file: string;
+    table: string;
+    message: string;
+};
+
+/** The calls that narrow a query to one tenant, and the one that declares every tenant was intended. */
+const NARROWING = /\b(scoped|stamped|forScope|unscoped)\s*[<(]/u;
+
+/** Reads each plugin's declared scope, then answers where its tables are reached without narrowing: such a query returns every tenant's rows, and nothing at compile time, boot or request says so. */
+export function findUnscopedReach(root: string): UnscopedReach[]
+{
+    if (!existsSync(root))
+    {
+        return [];
+    }
+
+    const reached: UnscopedReach[] = [];
+
+    for (const entry of readdirSync(root, { withFileTypes: true }))
+    {
+        if (!entry.isDirectory())
+        {
+            continue;
+        }
+
+        const contract = join(root, entry.name, "plugin.ts");
+
+        if (!existsSync(contract))
+        {
+            continue;
+        }
+
+        // The tables map, however the contract is laid out: a scope written on one
+        // line closes on that line, one written out closes on its own.
+        const scope = /scope\s*:[\s\S]*?tables\s*:\s*\{([^}]*)\}/u.exec(readFileSync(contract, "utf8"))?.[1];
+        const tables = [...(scope ?? "").matchAll(/(\w+)\s*:\s*"/gu)]
+            .map((named) => named[1] ?? "")
+            .filter((name) => name !== "");
+
+        if (tables.length === 0)
+        {
+            continue;
+        }
+
+        // Where a plugin writes sqliteTable("<sql name>", …), so a raw query
+        // naming the database's spelling can be found as well as the variable.
+        let tableSource = "";
+
+        for (const file of readdirSync(join(root, entry.name), { withFileTypes: true, recursive: true }))
+        {
+            if (file.isFile() && file.name.endsWith(".ts"))
+            {
+                tableSource += readFileSync(join(file.parentPath, file.name), "utf8");
+            }
+        }
+
+        for (const file of readdirSync(join(root, entry.name), { withFileTypes: true, recursive: true }))
+        {
+            if (!file.isFile() || !file.name.endsWith(".ts") || file.name.endsWith(".test.ts"))
+            {
+                continue;
+            }
+
+            const where = join(file.parentPath, file.name);
+            const source = readFileSync(where, "utf8");
+
+            for (const table of tables)
+            {
+                // A query, not a mention: `.from(notes)` reaches rows, while
+                // the word "notes" in a sentence reaches nothing. Matching the
+                // bare name reported prose as a leak and taught readers to
+                // ignore the one check that catches a tenant breach.
+                // The SQL name too: raw SQL names the table the database knows,
+                // never the drizzle variable, so a `sql\`select … from x\`` was
+                // invisible to a check watching only the builder.
+                const sqlName = new RegExp(`\\b${table}\\s*[:=]\\s*\\w*[Tt]able\\s*\\(\\s*["'\`]([^"'\`]+)`, "u").exec(tableSource)?.[1];
+
+                const queries = [
+                    ...source.matchAll(new RegExp(`\\.(?:from|insert|update|delete)\\s*\\(\\s*${table}\\b`, "gu")),
+                    ...(sqlName === undefined ? [] : source.matchAll(new RegExp(`\\b(?:from|into|update|join)\\s+"?${sqlName}"?\\b`, "giu"))),
+                ];
+
+                if (queries.length === 0)
+                {
+                    continue;
+                }
+
+                // Each query is judged by the function it sits in, since the
+                // condition is usually built a line or two above it. Reading
+                // the whole file instead would let one careful query excuse
+                // every forgetful one beside it.
+                const unnarrowed = queries.filter((query) =>
+                {
+                    const opened = source.lastIndexOf("\n    {", query.index);
+                    const closed = source.indexOf("\n    }", query.index);
+
+                    return !NARROWING.test(source.slice(opened === -1 ? 0 : opened, closed === -1 ? undefined : closed));
+                });
+
+                if (unnarrowed.length > 0)
+                {
+                    const times = unnarrowed.length === 1 ? "" : ` in ${String(unnarrowed.length)} places`;
+
+                    reached.push({
+                        plugin: entry.name,
+                        file: relative(root, where),
+                        table,
+                        message: `${relative(root, where)}: queries "${table}"${times}, which "${entry.name}" scopes, and narrows by nothing. Every tenant's rows answer. Pass ctx.scoped("${table}") to where, or ctx.forScope(claim) for a caller the request does not name.`,
+                    });
+                }
+            }
+        }
+    }
+
+    return reached;
+}
+

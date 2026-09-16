@@ -128,7 +128,7 @@ test("a field read only by a test is not a read", () =>
         "    return problems.used;",
         "}",
     ].join("\n"));
-    writeFileSync(join(at, "problems", "tests", "api.test.ts"), 'const made = { used: "a", fixtured: "b" };\n');
+    writeFileSync(join(at, "problems", "tests", "api.test.ts"), 'const fixture = { used: "a", fixtured: "b" };\n');
 
     expect(findUnusedFields(at)).toEqual([{ file: "problems/api.ts", shape: "Result", field: "fixtured" }]);
 

@@ -296,12 +296,12 @@ export class Packer
 
     head(names: readonly string[]): string
     {
-        const said = this.whole ? this.at : names.join(", ");
+        const describing = this.whole ? this.at : names.join(", ");
         const many = this.whole || names.length > 1;
 
         if (this.whole)
         {
-            return `# ${said} packed
+            return `# ${describing} packed
 
 Every file of ${many ? `these ${this.name}s` : `this ${this.name}`}, one after another. A line starting
 with "${this.mark}" opens a file and names its path; everything until the next
@@ -314,7 +314,7 @@ the next pack throws away.
 
         /* Examples say so at both ends: an agent that joins in the middle
            still learns it is reading a sample, not the application. */
-        return `# EXAMPLES START HERE: ${said}
+        return `# EXAMPLES START HERE: ${describing}
 
 These are example ${this.name}s, here to be read, not the application you are
 building. Take the mechanics from them and leave the domain alone: yours has

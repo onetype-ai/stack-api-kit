@@ -24,7 +24,7 @@ type TableOwners = {
 };
 
 /** Checks every contract, and reports everything wrong rather than the first. */
-export function validate(plugins: readonly Plugin[], config: Readonly<Record<string, unknown>>): ContractProblem[]
+export function validate(plugins: readonly Plugin[], config: Readonly<Record<string, unknown>>, grantedBy?: string): ContractProblem[]
 {
     const problems: ContractProblem[] = [];
     const report: ProblemReport = (code, plugin, message) =>
@@ -68,13 +68,13 @@ export function validate(plugins: readonly Plugin[], config: Readonly<Record<str
     }
 
     checkCycles(by, report);
-    checkGranting(by, owned, report);
+    checkGranting(by, owned, report, grantedBy);
 
     return problems;
 }
 
 /** Who says who a caller is, and what being one means. */
-function checkGranting(by: ReadonlyMap<string, Plugin>, owned: TableOwners, report: ProblemReport): void
+function checkGranting(by: ReadonlyMap<string, Plugin>, owned: TableOwners, report: ProblemReport, grantedBy?: string): void
 {
     for (const key of ["identifies", "grants"] as const)
     {
@@ -86,18 +86,41 @@ function checkGranting(by: ReadonlyMap<string, Plugin>, owned: TableOwners, repo
         }
     }
 
-    const granting = [...by.values()].find((plugin) => plugin.definition.grants !== undefined);
+    // grants answers what the caller holds, so any plugin declaring it decides
+    // the whole authorization model. The application names the one that may.
+    if (grantedBy !== undefined)
+    {
+        for (const [name, plugin] of by)
+        {
+            if (plugin.definition.grants !== undefined && name !== grantedBy)
+            {
+                report("UNNOMINATED_GRANTS", name, `"${name}" declares grants, and this application named "${grantedBy}" as the one that may. A plugin granting itself permissions decides what every guard allows.`);
+            }
+        }
+    }
 
-    if (granting === undefined)
+    const granter = [...by.values()].find((plugin) => plugin.definition.grants !== undefined);
+
+    if (granter === undefined)
     {
         return;
     }
 
-    const may = granting.definition.mayGrant === undefined
+    const supported = granter.definition.grantsSupported === undefined
         ? new Set(owned.permissions.keys())
-        : new Set(granting.definition.mayGrant);
+        : new Set(granter.definition.grantsSupported);
 
-    if (may.size === 0)
+    // An empty grantsSupported reads as the strictest declaration and is the loosest
+    // outcome: nothing is supported, so every guarded route is permanently 403
+    // with nothing said. Declaring none is a decision worth stating.
+    if (granter.definition.grantsSupported !== undefined && supported.size === 0)
+    {
+        report("UNGRANTABLE_PERMISSION", granter.name, `"${granter.name}" declares grantsSupported as an empty list, so it grants nothing and every route naming a permission is unreachable. Name the permissions it may grant, or leave grantsSupported out.`);
+
+        return;
+    }
+
+    if (supported.size === 0)
     {
         return;
     }
@@ -108,9 +131,9 @@ function checkGranting(by: ReadonlyMap<string, Plugin>, owned: TableOwners, repo
         {
             for (const permission of route.requires ?? [])
             {
-                if (!may.has(permission))
+                if (!supported.has(permission))
                 {
-                    report("UNGRANTABLE_PERMISSION", name, `Route ${route.method} "${route.path}" requires "${permission}", which "${granting.name}" never grants. Add it to mayGrant, or nobody can reach this route.`);
+                    report("UNGRANTABLE_PERMISSION", name, `Route ${route.method} "${route.path}" requires "${permission}", which "${granter.name}" never grants. Add it to grantsSupported, or nobody can reach this route.`);
                 }
             }
         }
@@ -122,11 +145,11 @@ function checkOwn(name: string, plugin: Plugin, owned: TableOwners, report: Prob
 {
     const claim = (kind: keyof TableOwners, key: string, code: KernelFault["code"], label: string): void =>
     {
-        const first = owned[kind].get(key);
+        const owner = owned[kind].get(key);
 
-        if (first !== undefined)
+        if (owner !== undefined)
         {
-            report(code, name, `${label} "${key}" is already declared by "${first}". Two plugins cannot own one name.`);
+            report(code, name, `${label} "${key}" is already declared by "${owner}". Two plugins cannot own one name.`);
 
             return;
         }
@@ -169,11 +192,32 @@ function checkOwn(name: string, plugin: Plugin, owned: TableOwners, report: Prob
         claim("tables", tableName(table) ?? key, "DUPLICATE_TABLE", "Table");
     }
 
+    const METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
+
     for (const route of plugin.definition.routes ?? [])
     {
         checkPath(name, route.method, route.path, owned, report);
 
-        if (route.describe.trim() === "")
+        // dispatch matches "METHOD path" exactly, so a lowercase or invented
+        // method answered nothing and said nothing about why
+        if (!METHODS.has(route.method as string))
+        {
+            report("INVALID_ROUTE", name, `Route "${String(route.method)} ${route.path}" names a method nothing will match. Use one of ${[...METHODS].join(", ")}.`);
+        }
+
+        // each of these answered 500 on every request instead of refusing here,
+        // and the 500 named none of them
+        if (typeof route.handle !== "function")
+        {
+            report("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" declares no handle, so every request to it answers 500. Add handle: (input, ctx) => ....`);
+        }
+
+        if (typeof (route.input as { safeParse?: unknown } | undefined)?.safeParse !== "function")
+        {
+            report("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" declares no input schema. Every route parses what arrives: use z.object({}) for one that takes nothing.`);
+        }
+
+        if (typeof route.describe !== "string" || route.describe.trim() === "")
         {
             report("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" has no description. A route nobody described is one nobody can review.`);
         }
@@ -184,6 +228,15 @@ function checkOwn(name: string, plugin: Plugin, owned: TableOwners, report: Prob
         }
 
         checkRanges(name, route, report);
+        // Neither public nor guarded answers every signed-in caller, whatever
+        // they hold. `public` is written out so a world-readable route is a
+        // decision; an empty `requires` must be written out for the same
+        // reason, or an omission is indistinguishable from a decision.
+        if (route.public !== true && route.requires === undefined)
+        {
+            report("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" names no permission and is not public, so every signed-in caller may reach it. Declare requires: [...], mark it public: true, or write requires: [] to say anyone signed in may.`);
+        }
+
         checkLimit(name, route, report);
         checkHeaders(name, route, report);
     }
@@ -199,11 +252,25 @@ function checkOwn(name: string, plugin: Plugin, owned: TableOwners, report: Prob
             report("UNDECLARED_SCOPE", name, "A scope names the claim it reads. An empty one reads nothing.");
         }
 
-        for (const table of Object.keys(scope.tables))
+        for (const [table, column] of Object.entries(scope.tables))
         {
             if (!(table in owns))
             {
                 report("UNDECLARED_SCOPE", name, `Scope names "${table}", which is not one of this plugin's tables. A plugin scopes only what it owns.`);
+
+                continue;
+            }
+
+            // The column is knowable here, and naming one the table lacks used
+            // to boot clean and then fail on whichever request read it first.
+            // Only a real table is checked: a test may stand one in as {}, and
+            // refusing that would fail every kernel built without a database.
+            const columns = owns[table] as Readonly<Record<string, unknown>> | undefined;
+            const real = columns !== undefined && typeof columns === "object" && Object.keys(columns).length > 0;
+
+            if (real && !(column in (columns as Readonly<Record<string, unknown>>)))
+            {
+                report("UNDECLARED_SCOPE", name, `Scope narrows "${table}" by "${column}", and the table declares no such column. Name the column that carries the claim.`);
             }
         }
 
@@ -235,7 +302,7 @@ function checkOwn(name: string, plugin: Plugin, owned: TableOwners, report: Prob
 }
 
 /** A header carrying a credential, which no route may ask to read. */
-export const SECRET: ReadonlySet<string> = new Set(["cookie", "authorization", "proxy-authorization", "set-cookie"]);
+export const SECRET: ReadonlySet<string> = new Set(["cookie", "authorization", "proxy-authorization", "set-cookie", "x-session-key"]);
 
 /** A header naming a signature, by shape rather than by partner. */
 const SIGNATURE = /(^|-)(signature|sig|hmac)(-|$)/;
@@ -266,7 +333,6 @@ function checkHeaders(name: string, route: NonNullable<Plugin["definition"]["rou
     }
 }
 
-/** A route's own budget, when it declares one. */
 /** Which schemes a plugin may declare, and what each one means. */
 const SCHEMES: ReadonlySet<string> = new Set([
     "https",
@@ -294,7 +360,7 @@ function whyUnreachable(host: string): string | undefined
 
     if (schemeEnd === -1)
     {
-        return `HttpRequest host "${host}" names no scheme. Write it as an origin, such as "https://api.stripe.com" or "redis://cache.internal:6379".`;
+        return `Declared host "${host}" names no scheme. Write it as an origin, such as "https://api.stripe.com" or "redis://cache.internal:6379".`;
     }
 
     const scheme = host.slice(0, schemeEnd).toLowerCase();
@@ -302,17 +368,17 @@ function whyUnreachable(host: string): string | undefined
 
     if (PLAIN.has(scheme))
     {
-        return `HttpRequest host "${host}" is not encrypted. Use "${scheme}s://" instead: what travels over ${scheme} travels in the clear, credentials included.`;
+        return `Declared host "${host}" is not encrypted. Use "${scheme}s://" instead: what travels over ${scheme} travels in the clear, credentials included.`;
     }
 
     if (!SCHEMES.has(scheme))
     {
-        return `HttpRequest host "${host}" uses a scheme this kit does not know. RegisteredChannel hosts are one of: ${[...SCHEMES].join(", ")}.`;
+        return `Declared host "${host}" uses a scheme this kit does not know. Declared hosts are one of: ${[...SCHEMES].join(", ")}.`;
     }
 
     if (!/^[a-z0-9._-]+(:\d+)?$/i.test(rest))
     {
-        return `HttpRequest host "${host}" is not an origin. Declare the host it reaches, such as "${scheme}://cache.internal:6379", and no path.`;
+        return `Declared host "${host}" is not an origin. Declare the host it reaches, such as "${scheme}://cache.internal:6379", and no path.`;
     }
 
     return undefined;
@@ -398,11 +464,11 @@ function checkPath(name: string, method: string, given: string, owned: TableOwne
     }
 
     const shape = `${method} ${given.replace(/:[a-zA-Z0-9]+/g, ":*")}`;
-    const first = owned.routes.get(shape);
+    const owner = owned.routes.get(shape);
 
-    if (first !== undefined)
+    if (owner !== undefined)
     {
-        report("DUPLICATE_ROUTE", name, `Route ${method} "${given}" is already declared by "${first}". Which one answers would depend on order.`);
+        report("DUPLICATE_ROUTE", name, `Route ${method} "${given}" is already declared by "${owner}". Which one answers would depend on order.`);
 
         return;
     }
@@ -432,7 +498,7 @@ function checkReferences(name: string, plugin: Plugin, by: ReadonlyMap<string, P
 {
     const declared = new Set(plugin.definition.dependsOn ?? []);
 
-    /** RegisteredChannel somewhere. What a listener needs, and all it needs. */
+    /** Declared somewhere. What a listener needs, and all it needs. */
     const mustExist = (kind: keyof TableOwners, key: string, code: KernelFault["code"], label: string): void =>
     {
         if (owned[kind].get(key) === undefined)
@@ -452,9 +518,9 @@ function checkReferences(name: string, plugin: Plugin, by: ReadonlyMap<string, P
     {
         const single = absent.length === 1;
         const missing = absent.map((need) => `"${need}"`).join(", ");
-        const each = single ? "That single declares its own dependsOn" : "Those declare their own dependsOn";
+        const each = single ? "That one declares its own dependsOn" : "Those declare their own dependsOn";
 
-        report("UNKNOWN_DEPENDENCY", name, `"${name}" depends on ${missing}, which no plugin provides. Pass ${single ? "it" : "them"} to createKernel, or remove ${single ? "it" : "them"} from dependsOn. ${each}, which this run cannot read from here: pass what they name too, or every boot names single more link.`);
+        report("UNKNOWN_DEPENDENCY", name, `"${name}" depends on ${missing}, which no plugin provides. Pass ${single ? "it" : "them"} to createKernel, or remove ${single ? "it" : "them"} from dependsOn. ${each}, which this run cannot read from here: pass what they name too, or every boot names one more link.`);
     }
 
     const reach = (kind: keyof TableOwners, key: string, code: KernelFault["code"], label: string): void =>
@@ -480,7 +546,7 @@ function checkReferences(name: string, plugin: Plugin, by: ReadonlyMap<string, P
 
         if (owned.events.get(key) === name)
         {
-            report("UNHEARD_EVENT", name, `"${name}" listens to its own "${key}", and a plugin never hears what it emitted. Call the service directly.`);
+            report("SELF_HEARD_EVENT", name, `"${name}" listens to its own "${key}", and a plugin never hears what it emitted. Call the service directly.`);
         }
     }
 
@@ -525,10 +591,10 @@ function checkConfig(name: string, plugin: Plugin, config: Readonly<Record<strin
 
     if (!parsed.success)
     {
-        const first = parsed.error.issues[0];
-        const where = first === undefined || first.path.length === 0 ? "" : ` at "${first.path.join(".")}"`;
+        const issue = parsed.error.issues[0];
+        const location = issue === undefined || issue.path.length === 0 ? "" : ` at "${issue.path.join(".")}"`;
 
-        report("INVALID_CONFIG", name, `Config for "${name}" is invalid${where}: ${first?.message ?? "it does not match the schema"}.`);
+        report("INVALID_CONFIG", name, `Config for "${name}" is invalid${location}: ${issue?.message ?? "it does not match the schema"}.`);
     }
 }
 

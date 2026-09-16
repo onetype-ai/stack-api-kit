@@ -11,7 +11,7 @@ export function createScopeFilter(tablesByPlugin: Readonly<Record<string, Readon
     {
         const columns = Object.values(tablesByPlugin)
             .map((tables) => tables[table])
-            .find((held) => held !== undefined) as Column | undefined;
+            .find((column) => column !== undefined) as Column | undefined;
 
         if (columns === undefined)
         {

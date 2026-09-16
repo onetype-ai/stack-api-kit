@@ -22,7 +22,7 @@ export function blockedUrlReason(rawUrl: string): string | undefined
     }
     catch
     {
-        return `"" is not an address.`;
+        return `"${rawUrl}" is not an address.`;
     }
 
     if (url.protocol !== "https:")

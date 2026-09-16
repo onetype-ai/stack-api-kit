@@ -25,6 +25,9 @@ function route(found: Partial<Definition["routes"] extends undefined ? never : N
         input: z.object({}),
         output: z.object({}),
         handle: () => ({}),
+
+        // written out, because a route naming no permission is refused
+        requires: [],
         ...found,
     } as NonNullable<Definition["routes"]>[number];
 }
@@ -417,7 +420,7 @@ describe("references", () =>
             }),
         ]);
 
-        expect(failed?.code).toBe("UNHEARD_EVENT");
+        expect(failed?.code).toBe("SELF_HEARD_EVENT");
         expect(failed?.message).toContain("Call the service directly");
     });
 

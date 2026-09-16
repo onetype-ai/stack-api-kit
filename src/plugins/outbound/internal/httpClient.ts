@@ -1,5 +1,6 @@
 import type { HttpRequest } from "../../kernel/api";
 
+/** How the built-in caller is configured: `timeoutMs` defaults to 10000, `maxBytes` to 5000000, and `headers` is called per request so a rotating credential stays fresh. */
 export type HttpClientOptions = {
     timeoutMs?: number;
     maxBytes?: number;
@@ -42,6 +43,7 @@ function toRequestBody(body: unknown): Uint8Array | ArrayBuffer | Blob | FormDat
     return isBinaryType(body) ? body : JSON.stringify(body);
 }
 
+/** Builds the outbound caller: it follows no redirects, reads at most `maxBytes`, gives up after `timeoutMs`, and throws `HttpRequestError` for every failure including a non-2xx status. */
 export function httpClient(options: HttpClientOptions = {})
 {
     const timeoutMs = options.timeoutMs ?? 10_000;

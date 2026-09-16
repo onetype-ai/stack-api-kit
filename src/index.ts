@@ -18,6 +18,7 @@ export type {
     Event,
     ListenerFailure,
     FaultCode,
+    FaultDetail,
     EmittedEvent,
     Hook,
     KernelRequest,
@@ -49,8 +50,11 @@ export type {
     ContractProblem,
 } from "./plugins/kernel/api";
 
+export { declarationsOf } from "./plugins/declared/api";
+export type { Declaration, DeclaredCommand, DeclaredEntry, DeclaredRoute, DeclaredScope } from "./plugins/declared/api";
+
 export { database, MigrationFault, createScopeFilter, outbox, schedule } from "./plugins/database/api";
-export type { DrizzleDb, DatabaseOptions, MigrationSource, MigrationStep, Store, TablesByName } from "./plugins/database/api";
+export type { DrizzleDb, DatabaseOptions, MigrationSource, MigrationStep, Store, StoreOptions, TablesByName } from "./plugins/database/api";
 
 export { securityHeaders, requestId, serve, sockets, cookieIn, SessionHeaders, isUploadedFile, claimedName } from "./plugins/http/api";
 export type { Subscription, HonoApp, ServerOptions, SessionOptions, UploadedFile } from "./plugins/http/api";
@@ -62,5 +66,5 @@ export { limiter, unlimited, equalsInConstantTime } from "./plugins/guard/api";
 export type { RateLimitResult, RateLimitWindow } from "./plugins/guard/api";
 
 export { discover, discoverFrom, start } from "./plugins/mount/api";
-export type { DiscoveryResult, SkippedFolder } from "./plugins/mount/api";
-export type { RunningApp, StartOptions } from "./plugins/mount/api";
+export type { DiscoveryResult, PluginModules, SkippedFolder } from "./plugins/mount/api";
+export type { StartedApp, StartOptions } from "./plugins/mount/api";

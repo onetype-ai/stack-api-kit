@@ -58,6 +58,10 @@ const CLIENT_FAULTS: Readonly<Record<string, { status: number; message: string }
     PERMISSION_DENIED: { status: 403, message: "This request is not permitted." },
     RATE_LIMITED: { status: 429, message: "Too many requests. Try again shortly." },
     INVALID_PAYLOAD: { status: 400, message: "The request body is not valid." },
+
+    // a caller the scope cannot place is refused, not a server fault
+    UNCLAIMED_SCOPE: { status: 403, message: "This request is not permitted." },
+    UNSCOPED_CALLER: { status: 403, message: "This request is not permitted." },
 };
 
 /** What the caller is told about a failure. */

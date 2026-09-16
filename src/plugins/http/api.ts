@@ -4,6 +4,7 @@ import { cookieIn, SessionHeaders, type SessionOptions } from "./internal/sessio
 import { sockets, type Subscription } from "./internal/sockets";
 import { claimedName, isUploadedFile, type UploadedFile } from "./internal/upload";
 
+/** The Hono app `serve` returns, with the kernel's routes, CORS and security headers already mounted. */
 export type HonoApp = ReturnType<typeof serve>;
 
 export { securityHeaders, requestId, serve, sockets, cookieIn, SessionHeaders, isUploadedFile, claimedName };

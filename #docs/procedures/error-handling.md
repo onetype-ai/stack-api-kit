@@ -35,8 +35,8 @@ Wrap a cause, never replace it: `cause` must survive to the top.
 
 One class per subject, carrying a `code` that is a closed union: a caller
 branches on it, and a new member is a compile error wherever it is handled
-exhaustively. `KernelFault`, `MigrationFault`, `OutboundFault`. Never a bare
-`Error`, a string, or an object literal.
+exhaustively. `KernelFault`, `MigrationFault`, `HttpRequestError`. Never
+a bare `Error`, a string, or object literal.
 
 ## Where we throw
 

@@ -12,7 +12,8 @@ export type { Tagged } from "./internal/measure";
 export type { DeclaredIndex } from "./internal/tableIndexes";
 
 export type { RefusalBody } from "./internal/refusal";
-export type { FaultCode } from "./internal/faults";
+export { isPrivateIp } from "./internal/privateAddress";
+export type { FaultCode, FaultDetail } from "./internal/faults";
 
 export type {
     IdentifiedCaller,

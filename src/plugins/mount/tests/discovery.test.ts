@@ -43,7 +43,7 @@ describe("discovering plugins from a folder", () =>
 
         const found = await discoverFrom(root);
 
-        expect(found.plugins.map((one) => one.name)).toEqual(["done"]);
+        expect(found.plugins.map((plugin) => plugin.name)).toEqual(["done"]);
         expect(found.skipped).toEqual([{ folder: "halfway", why: "holds no plugin.ts" }]);
     });
 
@@ -56,7 +56,7 @@ describe("discovering plugins from a folder", () =>
 
         const found = await discoverFrom(root);
 
-        expect(found.plugins.map((one) => one.name)).toEqual(["done"]);
+        expect(found.plugins.map((plugin) => plugin.name)).toEqual(["done"]);
         expect(found.skipped[0]?.folder).toBe("broken");
         expect(found.skipped[0]?.why).toMatch(/Cannot find module/);
     });
@@ -81,8 +81,7 @@ describe("discovering plugins from a folder", () =>
         const found = await discoverFrom(root);
         const kernel = createKernel({ plugins: found.plugins });
 
-        // Stepping over a folder is not the same as pretending nobody wanted
-        // it: a missing region is loud wherever it actually matters.
+        // Stepping over a folder is not pretending nobody wanted it: a missing region is loud wherever it actually matters.
         await expect(kernel.start()).rejects.toThrow(/"reader" depends on "worker", which no plugin provides/);
     });
 
@@ -93,6 +92,6 @@ describe("discovering plugins from a folder", () =>
             alpha: { "plugin.ts": contract("alpha") },
         });
 
-        expect((await discoverFrom(root)).plugins.map((one) => one.name)).toEqual(["alpha", "zebra"]);
+        expect((await discoverFrom(root)).plugins.map((plugin) => plugin.name)).toEqual(["alpha", "zebra"]);
     });
 });

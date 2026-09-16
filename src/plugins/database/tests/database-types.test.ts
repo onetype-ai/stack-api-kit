@@ -10,8 +10,7 @@ test("what database opens is what a project holds, and what the kernel takes", (
 {
     const store: Store = database({ file: ":memory:", tables: { a: { rows } } });
 
-    // The kernel's view is narrower, and a store satisfies it without help:
-    // one is a subset of the other rather than a separate shape to adapt.
+    // The kernel's view is narrower and a store satisfies it without help: one is a subset of the other, not a separate shape to adapt.
     const found: KernelStore = store;
 
     expect(typeof store.migrate).toBe("function");

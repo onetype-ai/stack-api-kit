@@ -8,11 +8,7 @@ export type KernelStore = {
     /** Runs work in one transaction, rolled back if it throws. */
     tx: <Result>(plugin: string, run: (db: unknown) => Promise<Result>) => Promise<Result>;
 
-    /**
-     * Runs work that is not in a transaction, but never during someone
-     * else's. Optional, so a project may pass a store that needs no such
-     * ordering.
-     */
+    /** Runs work that is not in a transaction, but never during someone else's. Optional, so a project may pass a store needing no such ordering. */
     write?: <Result>(run: () => Promise<Result>) => Promise<Result>;
 
     /** Whether a transaction is open right now. For diagnosis. */
@@ -28,6 +24,7 @@ export type OutboxMessage = {
 };
 
 /** Where events wait, so one is never lost between a commit and its delivery. */
+/** Delivery is at least once, not exactly once: one listener failing keeps the row, and the next start hands the event to every listener again. A listener that charges, sends or bills must recognise what it already did. */
 export type Outbox = {
     /** Writes events inside the transaction that emitted them. */
     save: (db: unknown, messages: readonly OutboxMessage[]) => void;
@@ -93,8 +90,11 @@ export type ChannelMessage = {
     /** The scope it stays inside, when its reach is one. */
     scope: string | undefined;
 
-    /** Whose request pushed it, for a reach of "connection" or "viewer". */
+    /** Whose request pushed it, for a reach of "viewer". */
     from: Identity | undefined;
+
+    /** Which socket pushed it, for a reach of "connection"; absent means none can hear it. */
+    fromConnection: string | undefined;
 };
 
 /** What holds the open sockets, when anything does. */

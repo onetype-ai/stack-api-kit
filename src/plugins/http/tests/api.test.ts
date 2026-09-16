@@ -20,6 +20,7 @@ const listing: Partial<Definition> = {
     routes: [{
         method: "GET",
         path: "/items",
+        requires: [],
         describe: "Lists items.",
         public: true,
         input: z.object({}),
@@ -32,6 +33,7 @@ const taking: Partial<Definition> = {
     routes: [{
         method: "POST",
         path: "/items",
+        requires: [],
         describe: "Creates an item.",
         public: true,
         input: z.object({ title: z.string().min(1) }),
@@ -167,6 +169,7 @@ describe("origins", () =>
             routes: [{
                 method: "GET",
                 path: "/items/:id",
+                requires: [],
                 describe: "Answers one.",
                 public: true,
                 input: z.object({ id: z.string() }),
@@ -190,6 +193,7 @@ describe("query parameters", () =>
         routes: [{
             method: "GET",
             path: "/items",
+            requires: [],
             describe: "Lists items.",
             public: true,
             input: z.object({ q: z.string(), page: z.coerce.number().default(1) }),
@@ -214,6 +218,7 @@ describe("query parameters", () =>
             routes: [{
                 method: "GET",
                 path: "/items",
+                requires: [],
                 describe: "Lists items.",
                 public: true,
                 input: z.object({ tag: z.array(z.string()) }),
@@ -261,10 +266,7 @@ describe("bodies", () =>
         expect(answer.status).toBe(413);
     });
 
-    // A chunked request sends no content-length, so the claim cannot be
-    // checked: the bytes are counted as they arrive, and the rest is never
-    // asked for. Buffering it whole first would spend the memory a caller
-    // was about to be refused for asking to spend.
+    // A chunked request sends no content-length, so bytes are counted as they arrive: buffering it whole first would spend the memory the caller was about to be refused for.
     test("and stops reading one that arrives without saying how big it is", async () =>
     {
         const app = await startServer(taking, { bodyBytes: 100 });
@@ -313,6 +315,7 @@ describe("bodies", () =>
             routes: [{
                 method: "DELETE",
                 path: "/items",
+                requires: [],
                 describe: "Removes items.",
                 public: true,
                 input: z.object({}),
@@ -353,6 +356,7 @@ describe("input", () =>
             routes: [{
                 method: "GET",
                 path: "/items/:id",
+                requires: [],
                 describe: "Answers one item.",
                 public: true,
                 input: z.object({ id: z.string() }),
@@ -372,6 +376,7 @@ describe("input", () =>
             routes: [{
                 method: "POST",
                 path: "/items/:id",
+                requires: [],
                 describe: "Writes one item.",
                 public: true,
                 input: z.object({ id: z.string() }),
@@ -395,6 +400,7 @@ describe("input", () =>
             routes: [{
                 method: "POST",
                 path: "/items",
+                requires: [],
                 describe: "Creates an item.",
                 public: true,
                 input: z.object({ title: z.string() }),
@@ -421,6 +427,7 @@ describe("an answer carrying its own status", () =>
             routes: [{
                 method: "GET",
                 path: "/go",
+                requires: [],
                 describe: "Sends the caller onward.",
                 public: true,
                 input: z.object({}),
@@ -441,6 +448,7 @@ describe("an answer carrying its own status", () =>
             routes: [{
                 method: "GET",
                 path: "/thing",
+                requires: [],
                 describe: "Answers with a tag.",
                 public: true,
                 input: z.object({}),
@@ -461,6 +469,7 @@ describe("an answer carrying its own status", () =>
             routes: [{
                 method: "GET",
                 path: "/thing",
+                requires: [],
                 describe: "Tries to weaken the response.",
                 public: true,
                 input: z.object({}),
@@ -485,6 +494,7 @@ describe("headers a route declared", () =>
         routes: [{
             method: "GET",
             path: "/thing",
+            requires: [],
             describe: "Answers what it read.",
             public: true,
             reads: ["accept-language"],
@@ -538,6 +548,7 @@ describe("the bytes a route asked to keep", () =>
             {
                 method: "POST",
                 path: "/hook",
+                requires: [],
                 describe: "Takes a signed delivery.",
                 public: true,
                 reads: ["x-signature"],
@@ -552,6 +563,7 @@ describe("the bytes a route asked to keep", () =>
             {
                 method: "POST",
                 path: "/plain",
+                requires: [],
                 describe: "Takes the same body, and asked for nothing.",
                 public: true,
                 input: z.object({ id: z.string(), amount: z.number() }),
@@ -589,8 +601,7 @@ describe("the bytes a route asked to keep", () =>
 
         const body = await answer.json() as { sent: string; parsed: string };
 
-        // The whole reason the bytes have to be carried: this is what a
-        // handler would have signed instead, and it is a different string.
+        // Why the bytes have to be carried: this is what a handler would have signed instead, and it is a different string.
         expect(body.parsed).not.toBe(body.sent);
         expect(body.parsed).toBe('{"id":"evt_1","amount":42}');
     });
@@ -617,6 +628,7 @@ describe("identities", () =>
             routes: [{
                 method: "GET",
                 path: "/items",
+                requires: [],
                 describe: "Lists items.",
                 input: z.object({}),
                 output: z.object({}),

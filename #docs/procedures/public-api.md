@@ -19,7 +19,7 @@ factory or accessor.
 
 ```ts
 export { MigrationFault } from "./internal/migrate";
-export type { DrizzleDb, MigrationStep } from "./internal/store";
+export type { DrizzleDb } from "./internal/store";
 export function database(settings: Settings): Store
 ```
 

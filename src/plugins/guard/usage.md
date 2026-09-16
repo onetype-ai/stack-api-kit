@@ -20,7 +20,7 @@ const verdict = limit.spend(`${identity.id}:${route.path}`, { requests: 60, seco
 
 if (!verdict.allowed)
 {
-    return refused(429, verdict.resetsIn);
+    return refused(429, verdict.resetsInSeconds);
 }
 ```
 

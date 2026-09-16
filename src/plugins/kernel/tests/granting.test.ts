@@ -18,7 +18,7 @@ const auth = definePlugin("auth", {
         return key === null ? undefined : { id: `person-${key}`, claims: { key } };
     },
     grants: () => ["auth.self", "billing.manage"],
-    mayGrant: ["auth.self", "billing.manage"],
+    grantsSupported: ["auth.self", "billing.manage"],
 } as Partial<Definition> as Definition);
 
 /** One that declares a permission and a route needing it. */
@@ -101,7 +101,7 @@ describe("a route requiring what nothing grants", () =>
             describe: "Grants less than the routes need.",
             permissions: { "auth.self": { describe: "Read your own." } },
             grants: () => ["auth.self"],
-            mayGrant: ["auth.self"],
+            grantsSupported: ["auth.self"],
         } as Partial<Definition> as Definition);
 
         const failed = await createKernel({ plugins: [short, billing] }).start().catch((cause: unknown) => cause);
@@ -192,14 +192,14 @@ describe("a plugin that grants without saying what it may grant", () =>
         await expect(kernel.start()).rejects.toThrow(/nowhere.manage/);
     });
 
-    test("while a plugin naming mayGrant is still held to exactly that list", async () =>
+    test("while a plugin naming grantsSupported is still held to exactly that list", async () =>
     {
         const auth = definePlugin("auth", {
             version: "1.0.0",
             describe: "Grants only its own.",
             permissions: { "auth.self": { describe: "Read your own account." } },
             grants: () => ["auth.self"],
-            mayGrant: ["auth.self"],
+            grantsSupported: ["auth.self"],
         } as Partial<Definition> as Definition);
 
         const kernel = createKernel({ plugins: [auth, arriving] });

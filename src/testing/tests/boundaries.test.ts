@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { findCopiedVocabulary, findImportViolations, findSharedNames, findSplitVocabulary } from "../boundaries";
+import { findCopiedVocabulary, findImportViolations, findSharedNames, findSplitVocabulary, findUnscopedReach } from "../boundaries";
 
 let root = "";
 
@@ -146,9 +146,7 @@ describe("cycles", () =>
         expect(problems.filter((violation) => violation.rule === "cycle")).toEqual([]);
     });
 
-    // A listener boots what it hears, and the emitter may depend on it: that
-    // is a loop on paper and never at runtime, since nothing a deployment
-    // loads imports the other way.
+    // A listener boots what it hears and the emitter may depend on it: a loop on paper and never at runtime, since nothing a deployment loads imports the other way.
     test("and neither is a test booting the plugin whose events it hears", () =>
     {
         const problems = findImportViolations(
@@ -504,3 +502,114 @@ describe("a set one plugin wrote out where another names it", () =>
         expect(copied).toEqual([]);
     });
 });
+
+describe("a scoped table reached without narrowing", () =>
+{
+    const scoped = (services: string) => tree({
+        venues: {
+            "plugin.ts": `export const venues = definePlugin("venues", {
+    version: "1.0.0",
+    describe: "Owns rooms.",
+    tables: { rooms },
+    scope: {
+        describe: "The tenant.",
+        claim: "tenantId",
+        tables: { rooms: "tenantId" },
+    },
+});`,
+            "services/rooms.ts": services,
+        },
+    });
+
+    // The one mistake that reads another tenant's rows and says nothing: no
+    // compiler, no boot and no request notices a missing narrowing.
+    test("is named, with the table and both ways out", () =>
+    {
+        const root = scoped(`export class Rooms
+{
+    async list()
+    {
+        return await this.#ctx.db.select().from(rooms);
+    }
+}`);
+
+        const [found] = findUnscopedReach(root);
+
+        expect(found?.table).toBe("rooms");
+        expect(found?.plugin).toBe("venues");
+        expect(found?.message).toContain('ctx.scoped("rooms")');
+        expect(found?.message).toContain("ctx.forScope(claim)");
+    });
+
+    test("is not named when the read narrows", () =>
+    {
+        const root = scoped(`export class Rooms
+{
+    async list()
+    {
+        const condition = this.#ctx.scoped<SQL>("rooms");
+
+        return await this.#ctx.db.select().from(rooms).where(condition);
+    }
+}`);
+
+        expect(findUnscopedReach(root)).toEqual([]);
+    });
+
+    test("is not named when a scheduled run narrows by the claim it was given", () =>
+    {
+        const root = scoped(`export class Rooms
+{
+    async sweep()
+    {
+        const condition = this.#ctx.forScope("acme");
+
+        return await this.#ctx.db.select().from(rooms).where(condition);
+    }
+}`);
+
+        expect(findUnscopedReach(root)).toEqual([]);
+    });
+
+    // A route path or a permission string names the table without reaching a
+    // row; reporting those trains a reader to ignore the check entirely.
+    test("says nothing about a route that only names the table in a path", () =>
+    {
+        const root = scoped(`const listing = route({
+    method: "GET",
+    path: "/rooms",
+    requires: ["rooms.read"],
+    describe: "Lists the caller's rooms.",
+});`);
+
+        expect(findUnscopedReach(root)).toEqual([]);
+    });
+
+    // A delete reaches rows a builder wrapper never sees, which is why this
+    // reads the source rather than wrapping the handle.
+    test("counts a delete the same as a read", () =>
+    {
+        const root = scoped(`export class Rooms
+{
+    async wipe()
+    {
+        return await this.#ctx.db.delete(rooms);
+    }
+}`);
+
+        expect(findUnscopedReach(root)[0]?.message).toContain('queries "rooms"');
+    });
+
+    test("says nothing about a plugin that declares no scope", () =>
+    {
+        const root = tree({
+            notes: {
+                "plugin.ts": 'export const notes = definePlugin("notes", { version: "1.0.0", describe: "Notes.", tables: { notes } });',
+                "services/notes.ts": "export class Notes { async list() { return await this.#ctx.db.select().from(notes); } }",
+            },
+        });
+
+        expect(findUnscopedReach(root)).toEqual([]);
+    });
+});
+

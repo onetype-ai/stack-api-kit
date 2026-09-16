@@ -5,6 +5,7 @@ import type { HttpClientOptions } from "../outbound/api";
 import { discover, discoverFrom } from "./internal/discover";
 import { start } from "./internal/start";
 
+/** Everything `start` takes; `outbox` and `schedule` are opt-in, while `sockets` and `limits` are on unless set to false. */
 export type StartOptions = {
     plugins: readonly Plugin[];
 
@@ -38,7 +39,8 @@ export type StartOptions = {
     log?: Logger | undefined;
 };
 
-export type RunningApp = {
+/** What `start` answers: the running kernel and store, the Hono app and its `fetch`, `sockets` only when sockets were asked for, and `stop`, which stops the kernel and closes the database. */
+export type StartedApp = {
     kernel: Kernel;
     store: Store;
     app: ReturnType<typeof import("../http/api").serve>;
@@ -53,4 +55,4 @@ export type RunningApp = {
 };
 
 export { discover, discoverFrom, start };
-export type { DiscoveryResult, SkippedFolder } from "./internal/discover";
+export type { DiscoveryResult, PluginModules, SkippedFolder } from "./internal/discover";

@@ -4,7 +4,7 @@ import type { RateLimitResult } from "./limit";
 export function unlimited()
 {
     return {
-        spend: (): RateLimitResult => ({ allowed: true, remaining: Number.MAX_SAFE_INTEGER, resetsIn: 0 }),
+        spend: (): RateLimitResult => ({ allowed: true, remaining: Number.MAX_SAFE_INTEGER, resetsInSeconds: 0 }),
         refund: (): void => undefined,
         sweep: (): number => 0,
         size: (): number => 0,

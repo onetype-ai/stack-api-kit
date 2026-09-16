@@ -32,11 +32,11 @@ export default { fetch: app.fetch, port: 3000 };
   `HttpOnly` cookie and takes the headers back out; `x-session-end` clears
   one. Left out, they leave as they are, so a token client is unchanged.
 - Query and path parameters reach the route as one object under the body; its
-  input schema decides what any of it means. A header arrives only where the
-  route named it in `reads`.
+  input schema decides what it means. A header arrives only where the route
+  named it in `reads`.
 - `accepts: "form"` reads `multipart/form-data` through the platform: text
-  parts become fields, file parts `Upload`s. A filename is the caller's claim,
-  stripped of a path.
+  parts become fields, file parts `UploadedFile`s. A filename is the caller's
+  claim, stripped of a path.
 - Each response carries `x-request-id`, as does every log line for it.
 
 ## Refuses

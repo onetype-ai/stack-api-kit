@@ -3,9 +3,9 @@ import type { Identity, Context, HttpMethod, Route } from "./contract";
 import { KernelFault } from "./faults";
 import { createPermissions } from "./permissions";
 
-/** What decides whether one identity has any rateLimiter left on one route. */
+/** What decides whether one identity has any allowance left on one route. */
 export type RateLimiter = {
-    spend: (key: string, window: { requests: number; seconds: number }) => { allowed: boolean; resetsIn: number };
+    spend: (key: string, window: { requests: number; seconds: number }) => { allowed: boolean; resetsInSeconds: number };
 
     /** Gives one spend back, for a route counting only what it guards against. */
     refund?: (key: string) => void;
@@ -24,11 +24,7 @@ export type KernelRequest = {
     /** The body's bytes as they arrived, for a route that declared `keepsRaw`. */
     sent?: Uint8Array | undefined;
 
-    /**
-     * Where it came from, when nobody is signed in: an address, a key, or
-     * whatever the project counts anonymous callers by. Only a rate limit
-     * reads it.
-     */
+    /** Where it came from when nobody is signed in. Only a rate limit reads it. */
     from?: string | undefined;
 };
 
@@ -78,8 +74,9 @@ export async function respond(
     const permissions = createPermissions(() => identity);
 
     /* identify may be written in JavaScript, where the type does not hold: an
-       id of "" is nobody, and every such one would share one rate-limit bucket. */
-    const identityId = identity !== undefined && identity.id.trim() !== "" ? identity.id : undefined;
+       id of "" is nobody, and every such one would share one rate-limit bucket.
+       A non-string id crashed here rather than reading as nobody. */
+    const identityId = typeof identity?.id === "string" && identity.id.trim() !== "" ? identity.id : undefined;
 
     let spent: string | undefined;
 
@@ -100,10 +97,14 @@ export async function respond(
             {
                 spent = undefined;
 
+                // this path returns before the catch below, so without a line
+                // here a brute-force run left nothing behind at all
+                log("warn", plugin, `${route.method} ${route.path} refused 429`, { code: "RATE_LIMITED" });
+
                 return {
                     status: 429,
                     body: { code: "RATE_LIMITED", message: "Too many requests. Try again shortly." },
-                    headers: { "retry-after": String(verdict.resetsIn) },
+                    headers: { "retry-after": String(verdict.resetsInSeconds) },
                 };
             }
         }
@@ -130,9 +131,9 @@ export async function respond(
 
         const returned = await route.handle(parsed.data, context(plugin, identity, allowedHeaders(route, incoming.headers), sent));
 
-        const carried = returned instanceof Reply ? returned : undefined;
+        const reply = returned instanceof Reply ? returned : undefined;
 
-        const filtered = route.output.safeParse(carried === undefined ? returned : carried.body);
+        const filtered = route.output.safeParse(reply === undefined ? returned : reply.body);
 
         if (!filtered.success)
         {
@@ -143,16 +144,16 @@ export async function respond(
             return { status: 500, body: { code: "INTERNAL", message: "The request could not be completed." } };
         }
 
-        const status = carried?.status ?? (route.method === "POST" ? 201 : 200);
+        const status = reply?.status ?? (route.method === "POST" ? 201 : 200);
 
         if (spent !== undefined && route.limit?.countSuccess === false && status < 400)
         {
             rateLimiter?.refund?.(spent);
         }
 
-        if (carried !== undefined)
+        if (reply !== undefined)
         {
-            return { status, body: filtered.data, headers: filterHeaders(carried.headers, plugin, route, log) };
+            return { status, body: filtered.data, headers: filterHeaders(reply.headers, plugin, route, log) };
         }
 
         return { status, body: filtered.data };
@@ -164,6 +165,12 @@ export async function respond(
         if (refusal.status >= 500)
         {
             log("error", plugin, `${route.method} ${route.path} threw`, logRecord(cause));
+        }
+        else
+        {
+            // every refusal, not only the ones that are our fault: a run of
+            // 401s is what an attack looks like, and it left no trace at all
+            log("warn", plugin, `${route.method} ${route.path} refused ${refusal.status}`, { code: refusal.code });
         }
 
         return {

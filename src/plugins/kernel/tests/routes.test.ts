@@ -68,7 +68,7 @@ test("a route written inline still works, with input unknown", async () =>
 test("a listener, participant and command each read their payload without a cast", async () =>
 {
     const payload = z.object({ id: z.string(), at: z.number() });
-    const asked = z.object({ title: z.string() });
+    const asking = z.object({ title: z.string() });
     const given = z.object({ ownerId: z.string() });
 
     const heard: string[] = [];
@@ -79,7 +79,7 @@ test("a listener, participant and command each read their payload without a cast
                 version: "1.0.0",
                 describe: "Announces and asks.",
                 emits: { "source.made": { describe: "Result.", schema: payload } },
-                hooks: { "source.asking": { describe: "Asks.", schema: asked } },
+                hooks: { "source.asking": { describe: "Asks.", schema: asking } },
             }),
             definePlugin("watcher", {
                 version: "1.0.0",
@@ -98,7 +98,7 @@ test("a listener, participant and command each read their payload without a cast
                 },
 
                 participates: {
-                    "source.asking": defineParticipant()(asked, {
+                    "source.asking": defineParticipant()(asking, {
                         describe: "Refuses an empty title.",
                         handle: (payload) => (payload.title === "" ? "A title is needed." : undefined),
                     }),

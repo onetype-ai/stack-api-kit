@@ -51,11 +51,12 @@ type OpenTransaction = {
 };
 
 /** What an absent dependency answers: a refusal naming who and what to pass. */
-function absentWiring(plugin: string, what: string, used: string, pass: string): never
+// The three entry points name the same wiring differently, so the message names each by the key that surface accepts.
+function absentWiring(plugin: string, what: string, used: string, pass: string, onStart = pass): never
 {
     throw new KernelFault(
         "NOT_STARTED",
-        `"${plugin}" used ctx.${used}, but no ${what} was given. Pass \`${pass}\` to createKernel, \`${pass}: true\` to start, or \`${pass}: true\` to startTestKernel in a test.`,
+        `"${plugin}" used ctx.${used}, but no ${what} was given. Pass \`${pass}\` to createKernel, or \`${onStart}\` to start.`,
         { plugin },
     );
 }
@@ -105,7 +106,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
 
     const built = new Map<string, unknown>();
 
-    const servicesOf = (name: string): unknown =>
+    const servicesFor = (name: string): unknown =>
     {
         if (built.has(name))
         {
@@ -162,11 +163,11 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
         if (identity !== undefined && typeof identity.claims[scope.claim] !== "string")
         {
             const claimed = identity.claims[scope.claim];
-            const carried = claimed === undefined ? "carries no such claim" : `carries it as ${typeof claimed}, and a scope narrows by a string`;
+            const explanation = claimed === undefined ? "carries no such claim" : `carries it as ${typeof claimed}, and a scope narrows by a string`;
 
             throw new KernelFault(
                 "UNCLAIMED_SCOPE",
-                `"${plugin}" scopes by "${scope.claim}", and the identity answered ${carried}. Put it in the claims identifies returns, or scope by one it carries.`,
+                `"${plugin}" scopes by "${scope.claim}", and the identity answered ${explanation}. Put it in the claims identifies returns, or scope by one it carries.`,
                 { plugin },
             );
         }
@@ -189,7 +190,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
 
         get services(): unknown
         {
-            return servicesOf(plugin);
+            return servicesFor(plugin);
         },
 
         identity,
@@ -224,7 +225,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
                 return openTransaction.db;
             }
 
-            return wiring.db === undefined ? absentWiring(plugin, "store", "db", "db") : wiring.db.forPlugin(plugin);
+            return wiring.db === undefined ? absentWiring(plugin, "store", "db", "db", "database") : wiring.db.forPlugin(plugin);
         },
 
         write: <Returned,>(run: () => Promise<Returned>): Promise<Returned> =>
@@ -243,7 +244,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
 
             if (store === undefined)
             {
-                return absentWiring(plugin, "store", "db", "db");
+                return absentWiring(plugin, "store", "db", "db", "database");
             }
 
             const mark = {};
@@ -287,11 +288,16 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
                 {
                     const delivered = wiring.bus.deliver(announcement.plugin, announcement.name, announcement.payload, (to) => listenerContext(to));
 
-                    void delivered.then((listenerContext) =>
+                    void delivered.then((heard) =>
                     {
-                        if (listenerContext)
+                        if (heard)
                         {
-                            void wiring.outbox?.markSent(announcement.id);
+                            // a delete that failed leaves the row for start() to
+                            // replay, so say so rather than dying on the rejection
+                            void wiring.outbox?.markSent(announcement.id).catch((cause: unknown) =>
+                            {
+                                wiring.log("error", announcement.plugin, `could not clear "${announcement.name}" from the outbox; it will be delivered again`, { cause: cause instanceof Error ? cause.message : String(cause) });
+                            });
                         }
                     });
                 }
@@ -334,7 +340,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
             {
                 throw new KernelFault(
                     "UNDECLARED_HOST",
-                    `"${plugin}" called ${host}, which it does not declare. Add it to outbound.`,
+                    `"${plugin}" called ${host}, which it does not declare. Add it to allowedHosts.`,
                     { plugin },
                 );
             }
@@ -343,7 +349,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
             {
                 throw new KernelFault(
                     "UNDECLARED_HOST",
-                    `"${plugin}" declares ${host}, but ctx.fetch speaks https and nothing else. ChannelReach it with its own client, opened in setup and closed in teardown.`,
+                    `"${plugin}" declares ${host}, but ctx.fetch speaks https and nothing else. Reach it with its own client, opened in setup and closed in teardown.`,
                     { plugin },
                 );
             }
@@ -364,6 +370,19 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
                     queued.push({ id: crypto.randomUUID(), plugin, name: event, payload: payloadChecked });
 
                     return;
+                }
+
+                // The outbox writes inside the transaction that emitted, so an
+                // emit outside one cannot reach it. Delivering anyway looked
+                // durable and was not: a failed listener lost the event with
+                // nothing kept to retry.
+                if (wiring.outbox !== undefined)
+                {
+                    throw new KernelFault(
+                        "UNKEPT_EVENT",
+                        `"${plugin}" emitted "${event}" outside a transaction while an outbox is configured, so nothing would keep it if a listener failed. Emit inside ctx.tx, or drop the outbox.`,
+                        { plugin },
+                    );
                 }
 
                 wiring.bus.deliver(plugin, event, payloadChecked, (to) => listenerContext(to));
@@ -403,6 +422,10 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
                 requires: declared.requires ?? [],
                 scope: declared.reach === "scope" ? (pushScope as string) : undefined,
                 from: identity,
+
+                // the request path does not carry which socket asked, so a
+                // "connection" push reaches nobody rather than every tab
+                fromConnection: undefined,
             });
         },
 
@@ -514,7 +537,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
                 );
             }
 
-            return servicesOf(name) as Api;
+            return servicesFor(name) as Api;
         },
     };
 

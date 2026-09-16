@@ -38,8 +38,7 @@ describe("an event kept in an outbox", () =>
         const unsent = outbox(connection);
         const heard: string[] = [];
 
-        // A process that committed the work and stopped before delivering:
-        // the row is what it left behind.
+        // A process that committed the work and stopped before delivering: the row is what it left behind.
         unsent.save({}, [{ id: "a1", plugin: "orders", name: "orders.placed", payload: { id: "order-1" } }]);
 
         expect(await unsent.pending()).toHaveLength(1);

@@ -1,12 +1,14 @@
+/** A budget: `requests` allowed per `seconds`, counted in fixed windows rather than a sliding one. */
 export type RateLimitWindow = {
     requests: number;
     seconds: number;
 };
 
+/** What one `spend` answers; `remaining` floors at 0 and `resetsInSeconds` is the whole window on the call that opened it. */
 export type RateLimitResult = {
     allowed: boolean;
     remaining: number;
-    resetsIn: number;
+    resetsInSeconds: number;
 };
 
 type WindowCount = {
@@ -14,6 +16,7 @@ type WindowCount = {
     until: number;
 };
 
+/** An in-process counter: `spend` allows and counts, `refund` gives one back, `sweep` drops expired keys, `size` reports how many are held; it is per-process, so a second server counts its own. */
 export function limiter(now: () => number = Date.now)
 {
     const counts = new Map<string, WindowCount>();
@@ -21,6 +24,13 @@ export function limiter(now: () => number = Date.now)
     return {
         spend: (key: string, window: RateLimitWindow): RateLimitResult =>
         {
+            // seconds: 0 expires the window before the next call reads it, so
+            // every request reset the count and the limit allowed everything
+            if (!Number.isInteger(window.requests) || window.requests < 1 || !Number.isInteger(window.seconds) || window.seconds < 1)
+            {
+                throw new RangeError(`A rate limit counts whole requests over whole seconds, both at least 1; received ${String(window.requests)} over ${String(window.seconds)}.`);
+            }
+
             const moment = now();
             const bucket = counts.get(key);
 
@@ -28,7 +38,7 @@ export function limiter(now: () => number = Date.now)
             {
                 counts.set(key, { hits: 1, until: moment + window.seconds * 1_000 });
 
-                return { allowed: true, remaining: window.requests - 1, resetsIn: window.seconds };
+                return { allowed: true, remaining: window.requests - 1, resetsInSeconds: window.seconds };
             }
 
             bucket.hits += 1;
@@ -36,7 +46,7 @@ export function limiter(now: () => number = Date.now)
             return {
                 allowed: bucket.hits <= window.requests,
                 remaining: Math.max(0, window.requests - bucket.hits),
-                resetsIn: Math.ceil((bucket.until - moment) / 1_000),
+                resetsInSeconds: Math.ceil((bucket.until - moment) / 1_000),
             };
         },
 

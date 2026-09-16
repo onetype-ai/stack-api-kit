@@ -6,6 +6,7 @@ import type { Plugin } from "../../kernel/api";
 
 export type PluginModules = Readonly<Record<string, { default?: Plugin }>>;
 
+/** Takes a bundler's glob of modules and throws on the first one with no default export, where `discoverFrom` would collect it into `skipped` instead; the result is sorted by plugin name. */
 export function discover(modules: PluginModules): Plugin[]
 {
     return Object.entries(modules)
@@ -28,7 +29,7 @@ export type SkippedFolder = {
     why: string;
 };
 
-/** What discoverFrom answers: what it modules, and what it stepped over. */
+/** What discoverFrom answers: what it found, and what it stepped over. */
 export type DiscoveryResult = {
     plugins: Plugin[];
     skipped: SkippedFolder[];

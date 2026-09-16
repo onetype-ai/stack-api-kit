@@ -109,8 +109,7 @@ test("asking for later work without a schedule names the plugin that asked, not 
         setup: (ctx) => { ctx.commands.later("sweeper.sweep", {}, 60); },
     });
 
-    // A neighbour that wants nothing to do with schedules, and whose test this
-    // would be: a boot is shared, so it stops for them too.
+    // A neighbour wanting nothing to do with schedules: a boot is shared, so it stops for them too.
     const bystander = definePlugin("bystander", { version: "1.0.0", describe: "Keeps to itself." });
 
     await expect(startTestKernel({ plugins: [bystander, sweeper] }))

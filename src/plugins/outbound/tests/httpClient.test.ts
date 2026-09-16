@@ -132,18 +132,18 @@ describe("redirects", () =>
 {
     test("never follows one, so a permitted host cannot hand the call on", async () =>
     {
-        let asked: RequestInit | undefined;
+        let capturedInit: RequestInit | undefined;
 
         vi.stubGlobal("fetch", (_url: string, init?: RequestInit) =>
         {
-            asked = init;
+            capturedInit = init;
 
             return Promise.resolve(new Response("{}", { status: 200 }));
         });
 
         await httpClient()({ method: "GET", url: "https://api.example.test/x" });
 
-        expect(asked?.redirect).toBe("error");
+        expect(capturedInit?.redirect).toBe("error");
     });
 });
 

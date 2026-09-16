@@ -42,7 +42,7 @@ fail naming the real cause, then put it back.
 
 ## What a project checks about itself
 
-`Project.checks()` is the whole self-check: boundaries, wiring, document
+`Project.findAll()` is the whole self-check: boundaries, wiring, document
 length, and every contract key its procedure never names. It finds its own
 paths, so a project writes one test and no path into here.
 

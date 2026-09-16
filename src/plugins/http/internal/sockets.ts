@@ -2,19 +2,24 @@ import type { RegisteredChannel, Identity, ChannelMessage } from "../../kernel/a
 
 /** One open connection, as whoever holds the wire sees it. */
 export type Subscription = {
+    /** This connection, told apart from every other one the same person has open. */
+    id: string;
+
     /** Whether this connection may hear a channel at all. */
-    isListening: (channel: string) => boolean;
+    mayHear: (channel: string) => boolean;
 
     /** What the client said it listens to. Refused when it may not. */
-    listenTo: (channel: string) => boolean;
+    listen: (channel: string) => boolean;
 
-    stopListening: (channel: string) => void;
+    /** What the client said it stopped listening to. */
+    unlisten: (channel: string) => void;
 
     /** The connection closed: it hears nothing more. */
     close: () => void;
 };
 
 type SocketState = {
+    id: string;
     identity: Identity | undefined;
     send: (text: string) => void;
     listening: Set<string>;
@@ -29,7 +34,7 @@ export function sockets(kernel: { channels: () => readonly RegisteredChannel[] }
 
     const channelFor = (name: string): RegisteredChannel | undefined =>
     {
-        declared ??= new Map(kernel.channels().map((one) => [one.channel, one]));
+        declared ??= new Map(kernel.channels().map((channel) => [channel.channel, channel]));
 
         return declared.get(name);
     };
@@ -60,7 +65,22 @@ export function sockets(kernel: { channels: () => readonly RegisteredChannel[] }
             return false;
         }
 
-        return declared.requires.every((permission) => identity?.permissions.includes(permission) === true);
+        if (declared.requires.length === 0)
+        {
+            return true;
+        }
+
+        // Array.isArray first: a string permissions field makes this
+        // String.prototype.includes, and "hr.employee,hr.admin" then contains
+        // "hr.admin". The HTTP path refuses that shape; this one must too.
+        const granted = identity?.permissions;
+
+        if (!Array.isArray(granted))
+        {
+            return false;
+        }
+
+        return declared.requires.every((permission) => granted.includes(permission));
     };
 
     const reaches = (message: ChannelMessage, listener: SocketState): boolean =>
@@ -75,7 +95,14 @@ export function sockets(kernel: { channels: () => readonly RegisteredChannel[] }
             return scopeOf(listener.identity) === message.scope;
         }
 
-        if (message.reach === "viewer" || message.reach === "connection")
+        if (message.reach === "connection")
+        {
+            // the one socket that asked; without an id this read as "viewer"
+            // and a per-tab secret went to every tab the person had open
+            return message.fromConnection !== undefined && listener.id === message.fromConnection;
+        }
+
+        if (message.reach === "viewer")
         {
             return listener.identity?.id === message.from?.id;
         }
@@ -99,14 +126,16 @@ export function sockets(kernel: { channels: () => readonly RegisteredChannel[] }
 
         subscribe: (identity: Identity | undefined, send: (text: string) => void): Subscription =>
         {
-            const connection: SocketState = { identity, send, listening: new Set() };
+            const connection: SocketState = { id: crypto.randomUUID(), identity, send, listening: new Set() };
 
             open.add(connection);
 
             return {
-                isListening: (channel: string) => mayHear(channel, identity),
+                id: connection.id,
 
-                listenTo: (channel: string): boolean =>
+                mayHear: (channel: string) => mayHear(channel, identity),
+
+                listen: (channel: string): boolean =>
                 {
                     if (!mayHear(channel, identity))
                     {
@@ -118,7 +147,7 @@ export function sockets(kernel: { channels: () => readonly RegisteredChannel[] }
                     return true;
                 },
 
-                stopListening: (channel: string) => connection.listening.delete(channel),
+                unlisten: (channel: string) => connection.listening.delete(channel),
 
                 close: () => open.delete(connection),
             };

@@ -2,12 +2,13 @@ import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { findCopiedVocabulary, findImportViolations, findSharedNames, findSplitVocabulary } from "./boundaries";
+import { findCopiedVocabulary, findImportViolations, findSharedNames, findSplitVocabulary, findUnscopedReach } from "./boundaries";
 import { findOversizedDocs, findUndocumentedKeys, findUnexplainedPlugins } from "./docs";
 import { findUnusedFields } from "./wiring";
 
+/** One finding from any `Project` check, already written out as a sentence a person can act on; `check` says which check spoke. */
 export type ProjectProblem = {
-    check: "boundaries" | "wiring" | "oversized" | "missing" | "unexplained" | "undocumented" | "twice" | "split";
+    check: "boundaries" | "wiring" | "oversized" | "missing" | "unexplained" | "undocumented" | "twice" | "split" | "unscoped";
     message: string;
 };
 
@@ -41,6 +42,7 @@ const CONTRACT = [
 /** Files a tool folds a folder into, so their size says nothing about a reader. */
 const PACKED = new Set(["docs.md", "README.md"]);
 
+/** Every project-wide check in one object, each answering `ProjectProblem[]`; `findAll` runs the lot against sensible defaults and answers an empty array when a project is clean. */
 export const Project = {
     findAll: (checking: ProjectCheckOptions = {}): ProjectProblem[] =>
     {
@@ -52,6 +54,7 @@ export const Project = {
         return [
             ...Project.findImportViolations(checking.plugins ?? join(root, "src", "plugins"), checking.leaving ?? []),
             ...Project.findUnusedFields(checking.plugins ?? join(root, "src", "plugins")),
+            ...Project.findUnscopedReach(checking.plugins ?? join(root, "src", "plugins")),
 
             ...Project.findUnusedFields(checking.utils ?? join(root, "src", "utils"), false),
             ...Project.findUnexplainedPlugins(checking.plugins ?? join(root, "src", "plugins")),
@@ -69,6 +72,12 @@ export const Project = {
         return findImportViolations(root)
             .filter((wrong) => !(wrong.rule === "escape" && leaving.some((name) => wrong.message.startsWith(`${name}/`))))
             .map((wrong) => ({ check: "boundaries" as const, message: wrong.message }));
+    },
+
+    /** Where a scoped table is reached without narrowing, which returns another tenant's rows with nothing reporting it. */
+    findUnscopedReach: (root: string): ProjectProblem[] =>
+    {
+        return findUnscopedReach(root).map((reached) => ({ check: "unscoped" as const, message: reached.message }));
     },
 
     findUnusedFields: (root: string, apart = true): ProjectProblem[] =>
@@ -93,7 +102,7 @@ export const Project = {
             .filter((copied) => !excused.includes(copied.name))
             .map((copied) => ({
                 check: "split" as const,
-                message: `${copied.file} writes out [${copied.values.join(", ")}] where "${copied.owner}" declares the same set as ${copied.name}. A copy with no name is one nothing compares: the day ${copied.owner} adds a member, this one keeps refusing it. ChannelReach for ${copied.owner}'s through dependsOn, or name it in "apart" if the two are not one idea.`,
+                message: `${copied.file} writes out [${copied.values.join(", ")}] where "${copied.owner}" declares the same set as ${copied.name}. A copy with no name is one nothing compares: the day ${copied.owner} adds a member, this one keeps refusing it. Reach for ${copied.owner}'s through dependsOn, or name it in "apart" if the two are not one idea.`,
             }));
     },
 

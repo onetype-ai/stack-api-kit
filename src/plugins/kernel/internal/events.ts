@@ -1,6 +1,7 @@
 import type { Event, EmittedEvent } from "./contract";
 import { KernelFault } from "./faults";
 
+/** One listener that threw, with `at` the PAST epoch-ms moment it failed, unlike `QueuedJob.at` which is a FUTURE run time; only the last 100 are kept, and `error` is whatever was thrown. */
 export type ListenerFailure = {
     event: string;
     plugin: string;

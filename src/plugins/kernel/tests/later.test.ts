@@ -195,13 +195,11 @@ describe("work asked for later", () =>
             return tried.length;
         }
 
-        // A 4xx is an answer about the work, so the same answer four times
-        // is four times the cost for one outcome.
+        // A 4xx is an answer about the work, so the same answer four times is four times the cost for one outcome.
         expect(await attemptsFor(400)).toBe(1);
         expect(await attemptsFor(404)).toBe(1);
 
-        // The two 4xx that HTTP already says are about the moment, and
-        // everything 5xx, which never claimed to be final.
+        // The two 4xx that HTTP already says are about the moment, and everything 5xx, which never claimed to be final.
         expect(await attemptsFor(429)).toBe(4);
         expect(await attemptsFor(408)).toBe(4);
         expect(await attemptsFor(502)).toBe(4);
@@ -253,8 +251,7 @@ describe("work asked for later", () =>
         }
         catch (cause)
         {
-            // The name is the point: this refusal stops every test that boots
-            // "holds" as a dependency, in files its author never opened.
+            // The name is the point: this refusal stops every test booting "holds" as a dependency, in files its author never opened.
             expect((cause as Error).message).toMatch(/^"holds" used ctx\.commands\.later/);
             expect((cause as { plugin?: string }).plugin).toBe("holds");
         }

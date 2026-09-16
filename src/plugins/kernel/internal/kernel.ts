@@ -31,7 +31,7 @@ export type KernelOptions = {
     httpClient?: HttpClient;
     log?: LogFn;
 
-    /** What counts requests against a route's declared budget. */
+    /** What counts requests against a route's declared limit. */
     rateLimiter?: RateLimiter;
 
     /** Where events wait between the transaction that emitted them and the listener that hears them. */
@@ -52,11 +52,13 @@ export type KernelOptions = {
     /** How a declared scope becomes a condition the store understands. */
     scopeFilter?: ScopeFilter;
 
+    /** Which plugin may answer what the caller holds; any other declaring `grants` is refused at startup. */
+    grantedBy?: string;
+
     /** How long a hook participant has to answer, in milliseconds. */
     hookTimeoutMs?: number;
 };
 
-/** A route, and the plugin it came from. */
 /** One channel a plugin declared, as a reader of the api sees it. */
 export type RegisteredChannel = {
     plugin: string;
@@ -72,6 +74,7 @@ export type PermissionEntry = {
     describe: string;
 };
 
+/** A route, and the plugin it came from. */
 export type RegisteredRoute = {
     plugin: string;
     method: HttpMethod;
@@ -104,6 +107,9 @@ export type Kernel = {
 
     /** Every permission any plugin declared. */
     permissions: () => readonly PermissionEntry[];
+
+    /** The plugins this kernel started, for a caller reading what they declare. */
+    plugins: () => readonly Plugin[];
     handle: (incoming: KernelRequest) => Promise<KernelResponse>;
 
     context: (plugin: string, identity?: Identity) => Context;
@@ -230,7 +236,7 @@ export function createKernel(options: KernelOptions): Kernel
     const known = new Map(options.plugins.map((plugin) => [plugin.name, plugin]));
 
     const identifying = options.plugins.find((plugin) => plugin.definition.identifies !== undefined);
-    const granting = options.plugins.find((plugin) => plugin.definition.grants !== undefined);
+    const granter = options.plugins.find((plugin) => plugin.definition.grants !== undefined);
     const bus = events<Context>(Date.now, (plugin, line, about) =>
     {
         log("error", plugin, line, about);
@@ -416,7 +422,7 @@ export function createKernel(options: KernelOptions): Kernel
                 return;
             }
 
-            const problems = validate(options.plugins, config);
+            const problems = validate(options.plugins, config, options.grantedBy);
 
             if (problems.length > 0)
             {
@@ -492,7 +498,7 @@ export function createKernel(options: KernelOptions): Kernel
 
                     throw new KernelFault(
                         "INVALID_ROUTE",
-                        `${bounded.length} ${bounded.length === 1 ? "route declares a limit" : "routes declare limits"} and no budget was given to createKernel, so nothing would enforce them:\n${described.map((route) => `  - ${route}`).join("\n")}\nPass \`budget\`, or remove the limits.`,
+                        `${bounded.length} ${bounded.length === 1 ? "route declares a limit" : "routes declare limits"} and no rateLimiter was given to createKernel, so nothing would enforce them:\n${described.map((route) => `  - ${route}`).join("\n")}\nPass \`rateLimiter\`, or remove the limits.`,
                         { plugin: bounded[0]?.plugin ?? "" },
                     );
                 }
@@ -529,7 +535,16 @@ export function createKernel(options: KernelOptions): Kernel
 
                 if (delivered)
                 {
-                    await options.outbox?.markSent(announcement.id);
+                    // a delete that failed keeps the row, so the next start
+                    // replays it; that is safer than stopping the replay here
+                    try
+                    {
+                        await options.outbox?.markSent(announcement.id);
+                    }
+                    catch (cause)
+                    {
+                        log("error", announcement.plugin, `could not clear "${announcement.name}" from the outbox; it will be delivered again`, { cause: cause instanceof Error ? cause.message : String(cause) });
+                    }
                 }
             }
         },
@@ -587,6 +602,13 @@ export function createKernel(options: KernelOptions): Kernel
                     requires: declared.requires ?? [],
                 }))),
 
+        // the definitions themselves, so declarationsOf can read them without
+        // the kernel having to know what a declaration looks like
+        plugins: (): readonly Plugin[] =>
+        {
+            return [...known.values()];
+        },
+
         permissions: (): readonly PermissionEntry[] =>
             [...known.values()].flatMap((plugin) =>
                 Object.entries(plugin.definition.permissions ?? {}).map(([permission, declared]) => ({
@@ -631,17 +653,17 @@ export function createKernel(options: KernelOptions): Kernel
         {
             const ctx = contextFor(identifying.name);
 
-            const asked = new Request(request.url, { method: request.method, headers: request.headers });
-            const who = await identifying.definition.identifies?.(ctx as never, asked);
+            const copy = new Request(request.url, { method: request.method, headers: request.headers });
+            const who = await identifying.definition.identifies?.(ctx as never, copy);
 
             if (who === undefined)
             {
                 return undefined;
             }
 
-            const permissions = granting === undefined
+            const permissions = granter === undefined
                 ? []
-                : await granting.definition.grants?.(contextFor(granting.name) as never, who) ?? [];
+                : await granter.definition.grants?.(contextFor(granter.name) as never, who) ?? [];
 
             return { ...who, permissions };
         },

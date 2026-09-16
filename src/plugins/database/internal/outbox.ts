@@ -49,10 +49,17 @@ export function outbox(connection: Database.Database): Outbox
             }
             catch (cause)
             {
-                if (!(cause instanceof TypeError))
+                // A closed connection is the one case worth surviving: shutdown
+                // races a delivery in flight. Swallowing every TypeError hid
+                // that, and the row stayed for start() to deliver twice.
+                const closed = cause instanceof TypeError && /connection is not open/iu.test(cause.message);
+
+                if (!closed)
                 {
                     throw cause;
                 }
+
+                return Promise.reject(cause);
             }
 
             return Promise.resolve();

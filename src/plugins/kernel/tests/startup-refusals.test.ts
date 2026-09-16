@@ -7,14 +7,7 @@ import type { Context } from "../api";
 
 type TestContext = Context<unknown, unknown>;
 
-/**
- * The three faults a survey found in 98% of generated applications: a
- * credential reachable from the client, CORS that allows anyone, and a route
- * callable without authorisation.
- *
- * None of them is advice here. Each is refused, and each of these fails when
- * the refusal is removed.
- */
+// The three faults a survey found in 98% of generated applications: a credential reachable from the client, CORS allowing anyone, and a route callable without authorisation.
 describe("what a generated application cannot get wrong here", () =>
 {
     test("a route reading a credential header refuses to start", async () =>
@@ -63,8 +56,7 @@ describe("what a generated application cannot get wrong here", () =>
 
     test("a route claiming a signature check without the bytes refuses to start", async () =>
     {
-        // Refused rather than warned: no amount of care in the handler makes
-        // this work, because the bytes it would check are already gone.
+        // Refused rather than warned: no care in the handler makes this work, because the bytes it would check are already gone.
         await expect(signing("stripe-signature", false).start())
             .rejects.toThrow(/reads "stripe-signature" and does not declare keepsRaw/);
     });

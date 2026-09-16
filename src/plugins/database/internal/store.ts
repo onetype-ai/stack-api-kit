@@ -5,6 +5,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 
 import { queue } from "./queue";
 
+/** One plugin's drizzle tables keyed by the name its contract declares them under; the values are opaque here so the kit never depends on a drizzle table's shape. */
 export type TablesByName = Readonly<Record<string, unknown>>;
 
 export type StoreInternals = {
@@ -12,6 +13,7 @@ export type StoreInternals = {
     tables: Readonly<Record<string, TablesByName>>;
 };
 
+/** A drizzle handle over the one shared better-sqlite3 connection, scoped to a single plugin's tables; asking for one for a plugin declaring no tables throws. */
 export type DrizzleDb = ReturnType<typeof drizzle>;
 
 /** One connection, and one handle per plugin over it. */
@@ -33,11 +35,11 @@ export function store(holding: StoreInternals)
             throw new Error(`"${plugin}" reached the database after it was closed.`);
         }
 
-        const already = handles.get(plugin);
+        const existing = handles.get(plugin);
 
-        if (already !== undefined)
+        if (existing !== undefined)
         {
-            return already;
+            return existing;
         }
 
         const owns = holding.tables[plugin];

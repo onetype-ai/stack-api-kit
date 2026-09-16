@@ -1,11 +1,13 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, sep } from "node:path";
 
+/** One markdown file over the limit, `size` measured in characters of its whole text rather than lines or bytes. */
 export type OversizedDoc = {
     path: string;
     size: number;
 };
 
+/** One contract key a procedure never documents; exported for naming only, since `findUndocumentedKeys` answers plain strings. */
 export type UndocumentedKey = {
     key: string;
 };
@@ -15,6 +17,7 @@ const LIMIT = 1800;
 /** Folders a project holds but did not write. */
 const NOT_OURS = ["node_modules", "dist", ".git", "coverage"];
 
+/** Walks every `.md` under `root` and answers those longer than `limit` characters (1800 by default), skipping `node_modules`, `dist`, `.git`, `coverage` and anything under a `progress` folder. */
 export function findOversizedDocs(root: string, limit: number = LIMIT): OversizedDoc[]
 {
     if (!existsSync(root))
@@ -44,6 +47,7 @@ export function findOversizedDocs(root: string, limit: number = LIMIT): Oversize
         });
 }
 
+/** Answers which of the `required` paths, read relative to `root`, are absent or hold nothing but whitespace; a file that exists but is empty counts as missing. */
 export function findMissingDocs(root: string, required: readonly string[]): string[]
 {
     return required.filter((path) =>
@@ -83,9 +87,10 @@ export function findUnexplainedPlugins(folder: string): string[]
         });
 }
 
-export function findUndocumentedKeys(contractPath: string, procedurePath: string): string[]
+/** Takes the two files' TEXT, not their paths, and answers the keys of `Definition` that the procedure never names in backticks. */
+export function findUndocumentedKeys(contract: string, procedure: string): string[]
 {
-    const shape = /export type Definition[\s\S]*?\n\};/.exec(contractPath)?.[0] ?? "";
+    const shape = /export type Definition[\s\S]*?\n\};/.exec(contract)?.[0] ?? "";
     const keys = [...shape.matchAll(/^\s{4}([a-zA-Z]+)\??:/gm)].map((match) =>
     {
         return match[1] ?? "";
@@ -93,6 +98,6 @@ export function findUndocumentedKeys(contractPath: string, procedurePath: string
 
     return keys.filter((key) =>
     {
-        return !procedurePath.includes(`\`${key}\``);
+        return !procedure.includes(`\`${key}\``);
     });
 }

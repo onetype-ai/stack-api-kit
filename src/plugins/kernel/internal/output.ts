@@ -220,9 +220,9 @@ function hasNumberRange(checks: unknown): boolean
         return false;
     }
 
-    return checks.some((one) =>
+    return checks.some((check) =>
     {
-        const def = (one as { _zod?: { def?: { check?: unknown } }; def?: { check?: unknown } })._zod?.def ?? (one as { def?: { check?: unknown } }).def;
+        const def = (check as { _zod?: { def?: { check?: unknown } }; def?: { check?: unknown } })._zod?.def ?? (check as { def?: { check?: unknown } }).def;
         const name = String(def?.check ?? "");
 
         return name === "greater_than" || name === "less_than";

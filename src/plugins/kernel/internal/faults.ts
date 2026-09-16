@@ -11,7 +11,8 @@ export type FaultCode =
     | "INVALID_OUTPUT"
     | "UNDECLARED_CHANNEL"
     | "UNDECLARED_EVENT"
-    | "UNHEARD_EVENT"
+    | "UNKEPT_EVENT"
+    | "SELF_HEARD_EVENT"
     | "UNDECLARED_HOOK"
     | "UNDECLARED_COMMAND"
     | "UNDECLARED_SCOPE"
@@ -28,6 +29,7 @@ export type FaultCode =
     | "DUPLICATE_COMMAND"
     | "DUPLICATE_PERMISSION"
     | "DUPLICATE_GRANTS"
+    | "UNNOMINATED_GRANTS"
     | "UNGRANTABLE_PERMISSION"
     | "DUPLICATE_TABLE"
     | "UNAUTHENTICATED"
@@ -35,7 +37,7 @@ export type FaultCode =
     | "RATE_LIMITED"
     | "NOT_STARTED";
 
-type FaultDetail = {
+export type FaultDetail = {
     plugin?: string;
     detail?: Readonly<Record<string, unknown>>;
     cause?: unknown;

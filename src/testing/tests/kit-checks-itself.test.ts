@@ -31,7 +31,7 @@ test("the structural checks run on a project whose documents are packed away", (
     const root = mkdtempSync(join(tmpdir(), "packed-"));
 
     mkdirSync(join(root, "src", "plugins", "ghost"), { recursive: true });
-    writeFileSync(join(root, "src", "plugins", "ghost", "thing.ts"), "export const thing = 1;\n");
+    writeFileSync(join(root, "src", "plugins", "ghost", "stray.ts"), "export const stray = 1;\n");
 
     const problems = Project.findAll({ root });
 

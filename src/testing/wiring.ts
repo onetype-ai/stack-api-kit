@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
+/** One field an exported type or interface declares that nothing reads: `file` is relative to the scanned root, `shape` the type's name. */
 export type UnusedField = {
     file: string;
     shape: string;
@@ -44,7 +45,7 @@ function otherSources(sources: readonly [string, string][], file: string): [stri
 
     const plugin = file.slice(0, file.indexOf("/", pluginsFolder + "/src/plugins/".length) + 1);
 
-    return sources.filter(([one]) => one.startsWith(plugin));
+    return sources.filter(([path]) => path.startsWith(plugin));
 }
 
 /** Whether a file is a test rather than the code a contract is honoured by. */
@@ -157,7 +158,7 @@ function withoutParameters(body: string): string
     return outside;
 }
 
-function isFieldRead(field: string, sources: readonly [string, string][], where: string): boolean
+function isFieldRead(field: string, sources: readonly [string, string][], declaredIn: string): boolean
 {
     const patterns = [
         new RegExp(`\\.${field}\\b`),
@@ -169,7 +170,7 @@ function isFieldRead(field: string, sources: readonly [string, string][], where:
 
     return sources.some(([file, source]) =>
     {
-        const searched = file === where ? withoutShapes(source) : source;
+        const searched = file === declaredIn ? withoutShapes(source) : source;
 
         return patterns.some((pattern) => pattern.test(searched));
     });

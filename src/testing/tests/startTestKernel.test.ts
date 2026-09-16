@@ -89,7 +89,7 @@ describe("what startTestKernel gives a test", () =>
 
         const answers = [];
 
-        for (let one = 0; one < 7; one += 1)
+        for (let request = 0; request < 7; request += 1)
         {
             answers.push(await api.kernel.handle({ method: "GET", path: "/found", input: {}, from: "1.2.3.4" }));
         }
@@ -258,7 +258,7 @@ describe("a caller whose permissions grants decided", () =>
         return definePlugin("sessions", {
             version: "1.0.0",
             describe: "Says what a role holds.",
-            mayGrant: ["guarded.read"],
+            grantsSupported: ["guarded.read"],
             identifies: () => undefined,
             grants: (_ctx, who) => roles[String(who.claims["role"])] ?? [],
         });

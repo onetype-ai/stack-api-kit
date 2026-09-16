@@ -6,6 +6,7 @@ import { SECRET } from "../plugins/kernel/internal/validate";
 import type { DrizzleDb, Store } from "../plugins/database/api";
 import type { Identity, HttpClient, Kernel, HttpRequest, Plugin, ChannelMessage } from "../plugins/kernel/api";
 
+/** One line a plugin logged, flattened: `level`, `plugin` and `line` are always there, and whatever the call passed as `about` is spread alongside them. */
 export type LogLine = {
     level: string;
     plugin: string;
@@ -81,11 +82,12 @@ export type TestKernel = {
     due: () => Promise<number>;
 
     /** Runs what is due, and what that starts, until nothing is left. */
-    drain: (most?: number) => Promise<void>;
+    drain: (maxRounds?: number) => Promise<void>;
 
     stop: () => Promise<void>;
 };
 
+/** Pulls the table declarations and migration sources out of a list of plugins, for a test building its own store rather than letting `startTestKernel` build one. */
 export const testTables = {
     tables: (plugins: readonly Plugin[]): Readonly<Record<string, Readonly<Record<string, unknown>>>> =>
     {
@@ -103,6 +105,7 @@ export const testTables = {
 /** Every option `startTestKernel` knows. */
 const TAKES: ReadonlySet<string> = new Set(["plugins", "config", "respondWith", "outbox", "schedule", "sockets", "now"]);
 
+/** Boots a kernel on an in-memory database with migrations already applied, recording every event, log line and outbound call; it throws on an option it does not take, and outbound calls answer `{}` unless `respondWith` says otherwise. */
 export async function startTestKernel(options: TestKernelOptions): Promise<TestKernel>
 {
     const unknown = Object.keys(options).filter((key) => !TAKES.has(key));
@@ -203,9 +206,9 @@ export async function startTestKernel(options: TestKernelOptions): Promise<TestK
 
         due: () => kernel.due(),
 
-        drain: async (most = 20): Promise<void> =>
+        drain: async (maxRounds = 20): Promise<void> =>
         {
-            for (let turn = 0; turn < most; turn += 1)
+            for (let round = 0; round < maxRounds; round += 1)
             {
                 if (await kernel.due() === 0)
                 {
@@ -216,7 +219,7 @@ export async function startTestKernel(options: TestKernelOptions): Promise<TestK
 
         flush: async (): Promise<void> =>
         {
-            for (let turn = 0; turn < 4; turn += 1)
+            for (let tick = 0; tick < 4; tick += 1)
             {
                 await new Promise((done) => { setTimeout(done, 0); });
             }
@@ -227,11 +230,11 @@ export async function startTestKernel(options: TestKernelOptions): Promise<TestK
 
             if (failed.length > 0)
             {
-                const named = failed.map((one) =>
+                const named = failed.map((failure) =>
                 {
-                    const why = one.error instanceof Error ? one.error.message : String(one.error);
+                    const reason = failure.error instanceof Error ? failure.error.message : String(failure.error);
 
-                    return `  - ${one.plugin} listening to "${one.event}": ${why}`;
+                    return `  - ${failure.plugin} listening to "${failure.event}": ${reason}`;
                 });
 
                 throw new Error(

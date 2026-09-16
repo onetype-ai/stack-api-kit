@@ -56,6 +56,7 @@ describe("authentication", () =>
             routes: [{
                 method: "GET",
                 path: "/items",
+                requires: [],
                 describe: "Lists items.",
                 input: z.object({}),
                 output: z.object({}),
@@ -74,6 +75,7 @@ describe("authentication", () =>
             routes: [{
                 method: "GET",
                 path: "/health",
+                requires: [],
                 describe: "Says the server is up.",
                 public: true,
                 input: z.object({}),
@@ -94,6 +96,7 @@ describe("authentication", () =>
             routes: [{
                 method: "GET",
                 path: "/items",
+                requires: [],
                 describe: "Lists items.",
                 input: z.object({}),
                 output: z.object({}),
@@ -172,6 +175,7 @@ describe("input", () =>
         routes: [{
             method: "POST",
             path: "/items",
+            requires: [],
             describe: "Creates an item.",
             public: true,
             input: z.object({ title: z.string().min(1).max(20) }),
@@ -197,6 +201,7 @@ describe("input", () =>
             routes: [{
                 method: "POST",
                 path: "/items",
+                requires: [],
                 describe: "Creates an item.",
                 public: true,
                 input: z.object({ title: z.string() }),
@@ -233,6 +238,7 @@ describe("output", () =>
             routes: [{
                 method: "GET",
                 path: "/me",
+                requires: [],
                 describe: "Answers the caller.",
                 public: true,
                 input: z.object({}),
@@ -252,6 +258,7 @@ describe("output", () =>
             routes: [{
                 method: "GET",
                 path: "/broken",
+                requires: [],
                 describe: "Returns the wrong shape.",
                 public: true,
                 input: z.object({}),
@@ -275,6 +282,7 @@ describe("failures", () =>
             routes: [{
                 method: "GET",
                 path: "/items",
+                requires: [],
                 describe: "Lists items.",
                 public: true,
                 input: z.object({}),
@@ -299,6 +307,7 @@ describe("failures", () =>
             routes: [{
                 method: "GET",
                 path: "/items",
+                requires: [],
                 describe: "Lists items.",
                 public: true,
                 input: z.object({}),
@@ -321,6 +330,7 @@ describe("failures", () =>
             routes: [{
                 method: "GET",
                 path: "/items",
+                requires: [],
                 describe: "Lists items.",
                 public: true,
                 input: z.object({}),
@@ -374,9 +384,7 @@ describe("bytes carried beside the parsed body", () =>
     {
         const kernel = await startServer(both);
 
-        // Handed in deliberately: the kernel is the second lock, so a caller
-        // building a KernelRequest itself cannot hand bytes to a route that never
-        // declared it wanted them.
+        // The kernel is the second lock: a caller building a KernelRequest itself cannot hand bytes to a route that never declared it wanted them.
         const answer = await kernel.handle({ method: "POST", path: "/plain", input: { id: "a" }, sent: bytes });
 
         expect(answer.body).toEqual({ saw: "none" });

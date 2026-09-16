@@ -37,8 +37,7 @@ test("a write made outside a transaction survives another transaction's rollback
 
     await wait(5);
 
-    // What the kernel does for every query outside a transaction: without
-    // this the insert lands inside the transaction above and dies with it.
+    // What the kernel does for every query outside a transaction: without this the insert lands inside the transaction above and dies with it.
     await store.write(async () => { await db.insert(rows).values({ id: "outside" }); });
 
     await rolling;
@@ -129,10 +128,7 @@ test("a transaction waiting on something slow does not make the next one nested"
 {
     const db = store.forPlugin("a");
 
-    // The first transaction parks on a real gap. Without the call stack
-    // deciding what is nested, the next one off the queue reads a counter,
-    // believes itself inside this one, and opens a savepoint in a stranger's
-    // transaction: "no such savepoint" for a request that did nothing wrong.
+    // Without the call stack deciding what is nested, the next transaction off the queue opens a savepoint in a stranger's: "no such savepoint" for a request that did nothing wrong.
     const slow = store.tx("a", async (inside) =>
     {
         await (inside as typeof db).insert(rows).values({ id: "slow" });

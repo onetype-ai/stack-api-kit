@@ -4,11 +4,7 @@ import { z } from "zod";
 import { createKernel, definePlugin } from "../api";
 import type { Definition, Plugin, KernelStore } from "../api";
 
-/**
- * A store a test drives, behaving the way the real one does: an inner call
- * becomes a savepoint rather than a second transaction, so only the outermost
- * one commits.
- */
+// A store a test drives: an inner call becomes a savepoint rather than a second transaction, so only the outermost one commits.
 function withStore(): KernelStore & { rollbacks: () => number; commits: () => number; savepoints: () => number }
 {
     let rollbacks = 0;
@@ -64,11 +60,11 @@ describe("services", () =>
 
         await kernel.start();
 
-        const first = kernel.context("items", { id: "u1", permissions: [], claims: {} });
-        const second = kernel.context("items", { id: "u2", permissions: [], claims: {} });
+        const firstContext = kernel.context("items", { id: "u1", permissions: [], claims: {} });
+        const secondContext = kernel.context("items", { id: "u2", permissions: [], claims: {} });
 
-        expect((first.services as { who: () => string }).who()).toBe("u1");
-        expect((second.services as { who: () => string }).who()).toBe("u2");
+        expect((firstContext.services as { who: () => string }).who()).toBe("u1");
+        expect((secondContext.services as { who: () => string }).who()).toBe("u2");
     });
 
     test("builds one plugin's services once per context, so state inside them holds", async () =>
@@ -256,9 +252,7 @@ describe("events", () =>
 
         await new Promise((done) => setImmediate(done));
 
-        // Not the emitter's: an outbox keeps a payload, not a request, so a
-        // listener that inherited one would answer differently after a
-        // restart than before it.
+        // Not the emitter's: an outbox keeps a payload, not a request, so a listener inheriting one would answer differently after a restart.
         expect(seen).toBeUndefined();
     });
 
@@ -518,8 +512,7 @@ describe("allowedHosts", () =>
 
         await kernel.start();
 
-        // Rejects rather than throws: a caller guarding with `.catch()` must
-        // catch the refusal too.
+        // Rejects rather than throws, so a caller guarding with `.catch()` catches the refusal too.
         await expect(kernel.context("billing").fetch({ method: "GET", url: "https://evil.test/steal" }))
             .rejects.toThrow(/does not declare/);
     });
@@ -597,12 +590,12 @@ describe("push", () =>
         return { push: (sending) => sent.push(sending), sent: () => sent };
     }
 
-    const said = { describe: "Said something.", schema: z.object({ text: z.string() }), reach: "everyone" } as const;
+    const saidChannel = { describe: "Said something.", schema: z.object({ text: z.string() }), reach: "everyone" } as const;
 
     test("refuses a channel the plugin never declared", async () =>
     {
         const sockets = withSockets();
-        const kernel = createKernel({ plugins: [participant("chat", { channels: { "chat.said": said } })], sockets });
+        const kernel = createKernel({ plugins: [participant("chat", { channels: { "chat.said": saidChannel } })], sockets });
 
         await kernel.start();
 
@@ -612,7 +605,7 @@ describe("push", () =>
 
     test("refuses when no socket server was given", async () =>
     {
-        const kernel = createKernel({ plugins: [participant("chat", { channels: { "chat.said": said } })] });
+        const kernel = createKernel({ plugins: [participant("chat", { channels: { "chat.said": saidChannel } })] });
 
         await kernel.start();
 
@@ -623,7 +616,7 @@ describe("push", () =>
     test("checks what is pushed against the channel's schema", async () =>
     {
         const sockets = withSockets();
-        const kernel = createKernel({ plugins: [participant("chat", { channels: { "chat.said": said } })], sockets });
+        const kernel = createKernel({ plugins: [participant("chat", { channels: { "chat.said": saidChannel } })], sockets });
 
         await kernel.start();
 
@@ -671,7 +664,7 @@ describe("push", () =>
     test("hands the socket layer the message, its reach and who pushed it", async () =>
     {
         const sockets = withSockets();
-        const kernel = createKernel({ plugins: [participant("chat", { channels: { "chat.said": said } })], sockets });
+        const kernel = createKernel({ plugins: [participant("chat", { channels: { "chat.said": saidChannel } })], sockets });
 
         await kernel.start();
 

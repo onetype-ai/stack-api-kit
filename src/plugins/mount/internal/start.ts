@@ -5,7 +5,7 @@ import { httpClient } from "../../outbound/api";
 import { serve, sockets } from "../../http/api";
 import type { DatabaseOptions, Store } from "../../database/api";
 import type { Plugin } from "../../kernel/api";
-import type { RunningApp, StartOptions } from "../api";
+import type { StartedApp, StartOptions } from "../api";
 
 /** The store to run on: the project's own, one opened here, or none at all. */
 function storeFor(given: StartOptions["database"], withTables: readonly Plugin[]): Store
@@ -37,7 +37,7 @@ type UnmigratedIndex = {
     unique: boolean;
 };
 
-/** RegisteredChannel indexes no migration creates. */
+/** Declared indexes no migration creates. */
 function missingIndexes(plugins: readonly Plugin[], sources: readonly { plugin: string; from: string }[]): UnmigratedIndex[]
 {
     const declared: UnmigratedIndex[] = [];
@@ -73,7 +73,7 @@ function missingIndexes(plugins: readonly Plugin[], sources: readonly { plugin: 
             .map((found) => found[1] ?? ""),
     );
 
-    return declared.filter((one) => !created.has(one.name));
+    return declared.filter((table) => !created.has(table.name));
 }
 
 
@@ -85,14 +85,14 @@ function tableName(table: unknown): string
         return "";
     }
 
-    const key = Object.getOwnPropertySymbols(table).find((one) => one.description === "drizzle:Name");
+    const key = Object.getOwnPropertySymbols(table).find((symbol) => symbol.description === "drizzle:Name");
     const name = key === undefined ? undefined : (table as Record<symbol, unknown>)[key];
 
     return typeof name === "string" ? name : "";
 }
 
 
-/** RegisteredChannel tables no migration creates. */
+/** Declared tables no migration creates. */
 function missingTables(plugins: readonly Plugin[], sources: readonly { plugin: string; from: string }[]): { plugin: string; table: string; name: string }[]
 {
     const declared: { plugin: string; table: string; name: string }[] = [];
@@ -130,7 +130,7 @@ function missingTables(plugins: readonly Plugin[], sources: readonly { plugin: s
             .map((found) => found[1] ?? ""),
     );
 
-    return declared.filter((one) => !created.has(one.name));
+    return declared.filter((table) => !created.has(table.name));
 }
 
 
@@ -197,7 +197,8 @@ function undeclaredReads(plugins: readonly Plugin[], sources: readonly { plugin:
     return crossings;
 }
 
-export async function start(options: StartOptions): Promise<RunningApp>
+/** Boots the whole application, refusing before it serves anything: declared tables or indexes no migration creates, migrations reading another plugin's table without depending on it, tables with no database, and a store missing `migrate` or `close`. */
+export async function start(options: StartOptions): Promise<StartedApp>
 {
     const log = options.log;
 
@@ -219,7 +220,7 @@ export async function start(options: StartOptions): Promise<RunningApp>
     if (typeof store.migrate !== "function" || typeof store.close !== "function")
     {
         throw new TypeError(
-            "The store given to start() answers tx and of, but not migrate and close. start() owns the whole lifetime of a database, so it needs both: migrate before any plugin runs, close after every one has stopped. Add them, or build the kernel yourself with createKernel, which asks only for tx and of.",
+            "The store given to start() answers tx and forPlugin, but not migrate and close. start() owns the whole lifetime of a database, so it needs both: migrate before any plugin runs, close after every one has stopped. Add them, or build the kernel yourself with createKernel, which asks only for tx and forPlugin.",
         );
     }
 
@@ -228,7 +229,7 @@ export async function start(options: StartOptions): Promise<RunningApp>
     if (uncreated.length > 0)
     {
         throw new TypeError(
-            `${uncreated.length} declared ${uncreated.length === 1 ? "table is" : "tables are"} in no migration, so ${uncreated.length === 1 ? "it never reaches" : "they never reach"} the database:\n${uncreated.map((one) => `  - ${one.plugin}: "${one.table}" is declared as "${one.name}" and nothing creates it. The first query answers a table that is not there. Add CREATE TABLE ${one.name} to a migration, or drop the declaration.`).join("\n")}`,
+            `${uncreated.length} declared ${uncreated.length === 1 ? "table is" : "tables are"} in no migration, so ${uncreated.length === 1 ? "it never reaches" : "they never reach"} the database:\n${uncreated.map((table) => `  - ${table.plugin}: "${table.table}" is declared as "${table.name}" and nothing creates it. The first query answers a table that is not there. Add CREATE TABLE ${table.name} to a migration, or drop the declaration.`).join("\n")}`,
         );
     }
 
@@ -237,7 +238,7 @@ export async function start(options: StartOptions): Promise<RunningApp>
     if (unmigrated.length > 0)
     {
         throw new TypeError(
-            `${unmigrated.length} declared ${unmigrated.length === 1 ? "index is" : "indexes are"} in no migration, so ${unmigrated.length === 1 ? "it never reaches" : "they never reach"} the database:\n${unmigrated.map((one) => `  - ${one.plugin}: ${one.unique ? "uniqueIndex" : "index"} "${one.name}" on "${one.table}". A uniqueIndex nothing created accepts the duplicate it was declared to stop. Add CREATE ${one.unique ? "UNIQUE " : ""}INDEX ${one.name} to a migration, or drop the declaration.`).join("\n")}`,
+            `${unmigrated.length} declared ${unmigrated.length === 1 ? "index is" : "indexes are"} in no migration, so ${unmigrated.length === 1 ? "it never reaches" : "they never reach"} the database:\n${unmigrated.map((index) => `  - ${index.plugin}: ${index.unique ? "uniqueIndex" : "index"} "${index.name}" on "${index.table}". A uniqueIndex nothing created accepts the duplicate it was declared to stop. Add CREATE ${index.unique ? "UNIQUE " : ""}INDEX ${index.name} to a migration, or drop the declaration.`).join("\n")}`,
         );
     }
 
@@ -246,7 +247,7 @@ export async function start(options: StartOptions): Promise<RunningApp>
     if (crossings.length > 0)
     {
         throw new TypeError(
-            `${crossings.length} ${crossings.length === 1 ? "migration reaches a table" : "migrations reach tables"} another plugin owns without depending on it:\n${crossings.map((one) => `  - ${one.plugin}: reads "${one.table}", which "${one.owner}" creates. It works only while names happen to sort that way, and refuses the day either is renamed. Add "${one.owner}" to dependsOn, or stop reading its table.`).join("\n")}`,
+            `${crossings.length} ${crossings.length === 1 ? "migration reaches a table" : "migrations reach tables"} another plugin owns without depending on it:\n${crossings.map((crossing) => `  - ${crossing.plugin}: reads "${crossing.table}", which "${crossing.owner}" creates. It works only while names happen to sort that way, and refuses the day either is renamed. Add "${crossing.owner}" to dependsOn, or stop reading its table.`).join("\n")}`,
         );
     }
 
@@ -260,7 +261,7 @@ export async function start(options: StartOptions): Promise<RunningApp>
     if (options.limits === false)
     {
         log?.warn("RATE LIMITS ARE NOT BEING COUNTED", {
-            meaning: "every route's declared rateLimiter is ignored: nothing answers 429, however often it is called",
+            meaning: "every route's declared budget is ignored: nothing answers 429, however often it is called",
             turnOn: "remove limits: false, or leave it out entirely",
         });
     }

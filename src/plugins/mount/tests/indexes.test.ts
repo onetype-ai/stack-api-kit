@@ -1,10 +1,11 @@
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 import { definePlugin } from "../../kernel/api";
 import { start } from "../api";
 
-const from = new URL("./migrations", import.meta.url).pathname;
+const from = fileURLToPath(new URL("./migrations", import.meta.url));
 
 const seats = sqliteTable("seats", {
     id: text("id").primaryKey(),
@@ -43,9 +44,7 @@ describe("an index a table declares", () =>
 
     test("refuses to start when no migration creates it, naming both sides", async () =>
     {
-        // Never a warning: a uniqueIndex nobody created reads as a guarantee
-        // and accepts the duplicate it was declared to stop, with nothing
-        // failing anywhere.
+        // Never a warning: a uniqueIndex nobody created reads as a guarantee and accepts the duplicate it was declared to stop, with nothing failing.
         await expect(start({ plugins: [sitting], database: { file: ":memory:" } }))
             .rejects.toThrow(/uniqueIndex "chairs_email" on "chairs"/);
 

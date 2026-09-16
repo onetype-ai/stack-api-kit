@@ -25,9 +25,7 @@ describe("what a plugin gets without writing a cast", () =>
             config: z.object({ size: z.number().default(10) }),
             services: (ctx) =>
             {
-                // Neither line may need a cast: ctx.db is the handle, and
-                // ctx.config is what the schema parsed. Built lazily, because
-                // this test is about what typechecks rather than what runs.
+                // Neither line may need a cast; built lazily, because this test is about what typechecks rather than what runs.
                 const size: number = ctx.config.size;
 
                 return {

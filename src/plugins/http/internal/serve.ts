@@ -8,18 +8,14 @@ import { readInput } from "./input";
 import { sessionCookie, withSessionKey, type SessionOptions } from "./session";
 import { formBody, type UploadedFile } from "./upload";
 
-/** What options needs to know. */
+/** What `serve` needs to know. */
 export type ServerOptions = {
     kernel: Kernel;
 
     /** Who is calling, where the project answers rather than a plugin. */
     identify?: ((c: HonoContext) => Identity | undefined | Promise<Identity | undefined>) | undefined;
 
-    /**
-     * What to count an anonymous identity by, for a rate limit: an address, an
-     * api key, whatever the deployment can trust. Reading a forwarded header
-     * blindly lets anyone spend anyone's budget, so the project decides.
-     */
+    /** What to count an anonymous identity by for a rate limit; the project decides, because reading a forwarded header blindly lets anyone spend anyone's budget. */
     from?: ((c: HonoContext) => string) | undefined;
 
     origins?: readonly string[];
@@ -40,6 +36,7 @@ export type ServerOptions = {
 /** Which methods a caller may send a body with, and we will read one from. */
 const CARRIES: ReadonlySet<string> = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+/** Answers the caller's `x-request-id` only when it is 1-64 of `[A-Za-z0-9_-]`, and a fresh UUID otherwise, so a caller cannot write arbitrary text into every log line. */
 export function requestId(header: string | undefined): string
 {
     return header !== undefined && /^[A-Za-z0-9_-]{1,64}$/.test(header) ? header : crypto.randomUUID();
@@ -215,11 +212,11 @@ async function requestBody(request: Request, route: { method: string; accepts?: 
         return { body: undefined, uploads: {} };
     }
 
-    const kept = route.keepsRaw === true ? { sent: raw } : {};
+    const rawBody = route.keepsRaw === true ? { sent: raw } : {};
 
     try
     {
-        return { body: JSON.parse(new TextDecoder().decode(raw)) as unknown, uploads: {}, ...kept };
+        return { body: JSON.parse(new TextDecoder().decode(raw)) as unknown, uploads: {}, ...rawBody };
     }
     catch
     {

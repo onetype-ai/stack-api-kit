@@ -20,6 +20,7 @@ step()
 step "types" npx tsc --noEmit
 step "test" npx vitest run
 step "docs" node tools/docs.mjs
+step "schema" node tools/schema.mjs
 step "boundaries" node tools/boundaries.mjs
 
 if [ "$failed" -ne 0 ]

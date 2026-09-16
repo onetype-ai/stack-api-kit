@@ -22,9 +22,27 @@ export function isUploadedFile(value: unknown): value is UploadedFile
 /** The last segment of a claimed filename, and nothing that walks anywhere. */
 export function claimedName(name: string): string
 {
-    const last = name.split(/[/\\]/u).pop() ?? "";
+    // Normalise before splitting, never after: U+FF0F is not a separator here
+    // but becomes one under NFKC, so a name split first walked out of the
+    // upload folder the moment anything downstream normalised it.
+    const settled = name.normalize("NFKC");
+    const last = settled.split(/[/\\]/u).pop() ?? "";
 
-    return last === "." || last === ".." ? "" : last;
+    // A NUL truncates the name at whatever writes it, so "shell.php\0.png"
+    // passes a check for ".png" and lands on disk as shell.php. Control
+    // characters and the bidi overrides that disguise an extension go too.
+    const clean = last
+        .replace(/[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/gu, "")
+
+        // Windows drops a trailing dot or space when it writes, so
+        // "shell.php." arrives as a name and lands as shell.php
+        .replace(/[. ]+$/u, "")
+        .slice(0, 255);
+
+    // CON and LPT1 name a device rather than a file on Windows, whatever follows
+    const device = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/iu.test(clean);
+
+    return clean === "." || clean === ".." || device ? "" : clean;
 }
 
 export type FormBody = {
@@ -60,14 +78,14 @@ export async function formBody(request: Request): Promise<FormBody>
 
 function addField<Value>(into: Record<string, Value | Value[]>, key: string, value: Value): void
 {
-    const already = into[key];
+    const existing = into[key];
 
-    if (already === undefined)
+    if (existing === undefined)
     {
         into[key] = value;
 
         return;
     }
 
-    into[key] = Array.isArray(already) ? [...already, value] : [already, value];
+    into[key] = Array.isArray(existing) ? [...existing, value] : [existing, value];
 }

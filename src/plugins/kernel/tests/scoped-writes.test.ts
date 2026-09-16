@@ -27,8 +27,7 @@ test("a write carries the caller's scope, not the one it asked for", async () =>
             services: (ctx) => ({
                 plant: async (): Promise<void> =>
                 {
-                    // A caller in "acme" trying to write a row for "other".
-                    // What the caller asked for is overwritten by the stamp.
+                    // A caller in "acme" writing a row for "other": what they asked for is overwritten by the stamp.
                     await (ctx.db as { insert: Function })
                         .insert(notes)
                         .values({ id: "x", tenantId: "other", body: "planted", ...ctx.stamped("notes") });

@@ -85,11 +85,11 @@ export function migrationSteps(source: MigrationSource): MigrationStep[]
     for (const name of sql)
     {
         const numbered = NUMBERED.exec(name)?.[1] ?? "";
-        const first = numbers.get(numbered);
+        const claimed = numbers.get(numbered);
 
-        if (first !== undefined)
+        if (claimed !== undefined)
         {
-            throw new MigrationFault(`"${name}" and "${first}" share the number ${numbered}, so which runs first is undefined.`, source.plugin, name);
+            throw new MigrationFault(`"${name}" and "${claimed}" share the number ${numbered}, so which runs first is undefined.`, source.plugin, name);
         }
 
         numbers.set(numbered, name);

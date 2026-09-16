@@ -112,8 +112,7 @@ describe("a table a plugin scoped", () =>
 
         const nobody = kernel.context("billing", shopCaller()).services as { list: () => Promise<string[]> };
 
-        // Never a Refusal: every session hits this, so it is a contract that
-        // never met, not one caller being turned away.
+        // Never a Refusal: every session hits this, so it is a contract that never met, not one caller turned away.
         await expect(nobody.list()).rejects.toThrow(KernelFault);
         await expect(nobody.list()).rejects.toThrow(/scopes by "tenantId".*carries no such claim/s);
 
@@ -133,9 +132,7 @@ describe("a table a plugin scoped", () =>
 
         await kernel.start();
 
-        // A number reads as a tenant nobody has: without this it fell through
-        // to the empty-claim refusal, so every session saw 403 and the cause
-        // was the one thing the message did not mention.
+        // A number reads as a tenant nobody has: without this it fell through to the empty-claim refusal, so every session saw 403 with the cause unmentioned.
         const wrong = kernel.context("billing", { id: "u1", permissions: [], claims: { tenantId: 42 } }).services as { list: () => Promise<string[]> };
 
         await expect(wrong.list()).rejects.toThrow(KernelFault);

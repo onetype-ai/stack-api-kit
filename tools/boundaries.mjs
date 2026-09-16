@@ -35,7 +35,7 @@ function walk(path)
         return [];
     }
 
-    const found = [];
+    const files = [];
 
     for (const name of readdirSync(path))
     {
@@ -43,17 +43,17 @@ function walk(path)
 
         if (statSync(full).isDirectory())
         {
-            found.push(...walk(full));
+            files.push(...walk(full));
             continue;
         }
 
         if (/\.tsx?$/.test(name))
         {
-            found.push(full);
+            files.push(full);
         }
     }
 
-    return found;
+    return files;
 }
 
 // imports lists what one file imports, and whether the import survives to
@@ -65,7 +65,7 @@ function walk(path)
 // teaches everyone to work around the tool.
 function imports(source)
 {
-    const found = [];
+    const imported = [];
     const patterns = [
         /(?:^|\s)(import|export)(\s+type)?\s[^;]*?from\s+["']([^"']+)["']/g,
         /\b(import)()\s*\(\s*["']([^"']+)["']\s*\)/g,
@@ -84,11 +84,11 @@ function imports(source)
                 ? true
                 : /\{[^}]*\}/.test(whole) && /\{\s*type\s/.test(whole) && !/\{[^}]*,\s*[A-Za-z_$]/.test(whole.replace(/type\s+\w+/g, ""));
 
-            found.push({ path, erased });
+            imported.push({ path, erased });
         }
     }
 
-    return found;
+    return imported;
 }
 
 /** Just the specifiers, for a rule that does not care how they are imported. */
@@ -242,11 +242,17 @@ if (existsSync("package.json"))
 
     for (const target of Object.values(exported))
     {
-        const file = typeof target === "string" ? target : target?.default;
+        // Every path an entry offers, not one key: these entries carry
+        // `types` and `import`, never `default`, so reading `default`
+        // alone meant this rule could never fire.
+        const files = typeof target === "string" ? [target] : Object.values(target ?? {});
 
-        if (typeof file === "string" && file.includes("/internal/"))
+        for (const file of files)
         {
-            fault("exports points into internal/");
+            if (typeof file === "string" && file.includes("/internal/"))
+            {
+                fault("exports points into internal/");
+            }
         }
     }
 

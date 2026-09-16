@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { createKernel, definePlugin, Reply } from "../../kernel/api";
 import { serve } from "../api";
-import { cookieFor, cookieIn, sessionCookie, SessionHeaders } from "../internal/session";
+import { cookieFor, cookieIn, sessionCookie, SessionHeaders, withSessionKey } from "../internal/session";
 
 import type { Definition } from "../../kernel/api";
 
@@ -121,9 +121,9 @@ describe("when a session ends", () =>
 {
     test("is a moment, and a lifetime sent instead is refused rather than kept", () =>
     {
-        const now = Date.now();
+        const moment = Date.now();
 
-        expect(() => sessionCookie({ "x-session-key": "abc", "x-session-expires": "2592000" }, settings, now))
+        expect(() => sessionCookie({ "x-session-key": "abc", "x-session-expires": "2592000" }, settings, moment))
             .toThrow(/moment in epoch milliseconds/);
     });
 });
@@ -219,7 +219,7 @@ describe("a plugin that reads the request while identifying", () =>
             },
 
             grants: () => ["auth.write"],
-            mayGrant: ["auth.write"],
+            grantsSupported: ["auth.write"],
 
             routes: [{
                 method: "POST" as const,
@@ -240,5 +240,29 @@ describe("a plugin that reads the request while identifying", () =>
 
         expect(answer.status).toBe(201);
         expect(await answer.json()).toEqual({ echoed: "hello" });
+    });
+});
+
+describe("the key a request is identified by", () =>
+{
+    // A caller sending x-session-key used to name their own session: the header
+    // beat the cookie, and a request with no cookie was identified by whatever
+    // it claimed. HttpOnly means nothing if a header can stand in for it.
+    test("comes from the cookie, never from a header the caller sent", () =>
+    {
+        const forged = new Request("https://example.test/", {
+            headers: { cookie: `${settings.name}=real`, [SessionHeaders.key]: "forged" },
+        });
+
+        expect(withSessionKey(forged, settings).headers.get(SessionHeaders.key)).toBe("real");
+    });
+
+    test("is absent when no cookie carries one, whatever the caller claimed", () =>
+    {
+        const claimed = new Request("https://example.test/", {
+            headers: { [SessionHeaders.key]: "guessed" },
+        });
+
+        expect(withSessionKey(claimed, settings).headers.get(SessionHeaders.key)).toBeNull();
     });
 });

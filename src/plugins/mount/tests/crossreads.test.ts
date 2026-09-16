@@ -1,10 +1,11 @@
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 import { definePlugin } from "../../kernel/api";
 import { start } from "../api";
 
-const from = new URL("./migrations", import.meta.url).pathname;
+const from = fileURLToPath(new URL("./migrations", import.meta.url));
 
 const holders = sqliteTable("holders", { id: text("id").primaryKey() });
 const abbot = sqliteTable("abbot", { id: text("id").primaryKey() });
@@ -16,12 +17,7 @@ const holding = definePlugin("holding", {
     migrations: `${from}/holding`,
 });
 
-/**
- * Reads holding's table and depends on nothing.
- *
- * Named to sort before it on purpose: without the check this boots or
- * refuses depending on nothing but that, which is the defect.
- */
+// Named to sort before holding's table on purpose: without the check this boots or refuses depending on nothing but the name, which is the defect.
 const sneaking = definePlugin("abbot", {
     version: "1.0.0",
     describe: "Reads a table it never declared a dependency on.",

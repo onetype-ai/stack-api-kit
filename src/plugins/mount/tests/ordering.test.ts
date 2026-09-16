@@ -1,13 +1,14 @@
+import { fileURLToPath } from "node:url";
 import { describe, test } from "vitest";
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 import { definePlugin } from "../../kernel/api";
 import { start } from "../api";
 
-const from = new URL("./migrations", import.meta.url).pathname;
+const from = fileURLToPath(new URL("./migrations", import.meta.url));
 
 const holders = sqliteTable("holders", { id: text("id").primaryKey() });
-const held = sqliteTable("held", { id: text("id").primaryKey() });
+const heldTable = sqliteTable("held", { id: text("id").primaryKey() });
 
 /** The one whose table the other reads: it must migrate first. */
 const holding = definePlugin("holding", {
@@ -22,7 +23,7 @@ const heldBy = definePlugin("held", {
     version: "1.0.0",
     describe: "Reads what holding wrote.",
     dependsOn: ["holding"],
-    tables: { held },
+    tables: { held: heldTable },
     migrations: `${from}/held`,
 });
 

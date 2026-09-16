@@ -5,7 +5,11 @@ export function createPermissions(identity: () => Identity | undefined)
 {
     const granted = (): ReadonlySet<string> =>
     {
-        return new Set(identity()?.permissions ?? []);
+        const granted = identity()?.permissions;
+
+        // identifies may be written in JavaScript: a string here becomes a set
+        // of its letters, so "admin" granted "a" and every other single letter
+        return Array.isArray(granted) ? new Set(granted.filter((each) => typeof each === "string")) : new Set<string>();
     };
 
     return {
@@ -21,10 +25,7 @@ export function createPermissions(identity: () => Identity | undefined)
             return wanted.every((permission) => carries.has(permission));
         },
 
-        /**
-         * What the project attached to this identity: a tenant, a role, a
-         * session. Read back as it was given, and never interpreted here.
-         */
+        /** Read back as it was given, and never interpreted here. */
         claims: (): Readonly<Record<string, unknown>> =>
         {
             return identity()?.claims ?? {};

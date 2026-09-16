@@ -15,6 +15,7 @@ function startServer(): ReturnType<typeof createKernel>
             {
                 method: "GET",
                 path: "/users/me",
+                requires: [],
                 describe: "Who is asking.",
                 input: z.object({}),
                 output: z.object({ who: z.string() }),
@@ -30,6 +31,7 @@ function startServer(): ReturnType<typeof createKernel>
             {
                 method: "GET",
                 path: "/users/:id",
+                requires: [],
                 describe: "Anyone by name.",
                 public: true,
                 input: z.object({ id: z.string() }),
@@ -44,8 +46,7 @@ function startServer(): ReturnType<typeof createKernel>
 
 describe("a path a caller wrote encoded", () =>
 {
-    // "%6de" is "me". Decoding only the parameter routes handed this to the
-    // open one, past a route that was closed.
+    // "%6de" is "me": decoding only the parameter routes handed this to the open one, past a route that was closed.
     test("reaches the route it spells, not the open one beside it", async () =>
     {
         const kernel = startServer();
@@ -108,6 +109,7 @@ describe("a name that lives on every object", () =>
                 {
                     method: "GET",
                     path: "/billing/probe",
+                    requires: [],
                     describe: "Asks to stamp a table nobody declared.",
                     input: z.object({}),
                     output: z.object({ logLines: z.string() }),

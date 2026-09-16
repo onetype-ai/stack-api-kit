@@ -200,8 +200,7 @@ describe("migrations", () =>
 
         expect(() => store.migrate([{ plugin: "items", from }])).toThrow(MigrationFault);
 
-        // The database is as it was: 0001 is not applied, so its author can
-        // still correct it. Recorded, the hash guard would refuse the edit.
+        // 0001 is not applied, so its author can still correct it; recorded, the hash guard would refuse the edit.
         expect(() => store.forPlugin("items").select().from(items).all()).toThrow(/no such table/);
 
         store.close();
@@ -226,16 +225,14 @@ describe("migrations", () =>
     {
         const store = database({ file: ":memory:", tables: { items: { items } } });
 
-        // SQLite takes this at CREATE and refuses at the first write, so the
-        // migration would pass and every insert afterwards would fail.
+        // SQLite takes this at CREATE and refuses at the first write, so the migration passes and every insert afterwards fails.
         const from = folder({
             "0001-init.sql": "CREATE TABLE items (id TEXT PRIMARY KEY, title TEXT NOT NULL, count INTEGER NOT NULL, CHECK (count >= 0 OR RAISE(ABORT, 'count must not be negative')))",
         });
 
         expect(() => store.migrate([{ plugin: "items", from }])).toThrow(/nothing can write to it/);
 
-        // Rolled back with it, so the author can correct the file: recorded,
-        // the hash guard would refuse the edit.
+        // Rolled back with it, so the author can correct the file; recorded, the hash guard would refuse the edit.
         expect(() => store.forPlugin("items").select().from(items).all()).toThrow(/no such table/);
 
         writeFileSync(join(from, "0001-init.sql"), CREATE);
@@ -249,9 +246,7 @@ describe("migrations", () =>
     {
         const store = database({ file: ":memory:", tables: { items: { items } } });
 
-        // The word appears in the table's own SQL as a column name and in a
-        // default, which is why compiling an insert is the proof rather than
-        // reading the text.
+        // The word appears in the table's own SQL as a column name and in a default, so compiling an insert is the proof rather than reading the text.
         const from = folder({
             "0001-init.sql": "CREATE TABLE items (id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT 'we RAISE the bar', count INTEGER NOT NULL DEFAULT 0 CHECK (count >= 0))",
             "0002-guard.sql": "CREATE TRIGGER items_guard BEFORE INSERT ON items BEGIN SELECT RAISE(ABORT, 'count must not be negative') WHERE NEW.count < 0; END",
@@ -281,8 +276,7 @@ describe("migrations", () =>
         {
             expect(cause).toBeInstanceOf(MigrationFault);
             expect((cause as MigrationFault).message).toMatch(/another process is migrating/i);
-            // Nobody's fault but the clock's: naming a plugin here would send
-            // its author looking at a file that is not the problem.
+            // Nobody's fault but the clock's: naming a plugin would send its author looking at a file that is not the problem.
             expect((cause as MigrationFault).plugin).toBe("");
         }
 

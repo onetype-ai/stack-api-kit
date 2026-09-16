@@ -40,7 +40,7 @@ function procedure(): string
 {
     return ["version", "describe", "dependsOn", "config", "permissions", "tables", "migrations",
         "allowedHosts", "scope", "services", "routes", "emits", "channels", "listens", "hooks", "participates",
-        "commands", "identifies", "grants", "mayGrant",
+        "commands", "identifies", "grants", "grantsSupported",
         "setup", "teardown"].map((key) => `- \`${key}\``).join("\n");
 }
 
@@ -88,8 +88,7 @@ describe("what a project checks about itself", () =>
 
         writeFileSync(join(at, "#docs", "procedures", "plugin", "contract.md"), procedure());
 
-        // Nothing here points at the kit: a project reaching into
-        // packages/…/internal to check itself is the thing this replaces.
+        // Nothing here points at the kit: a project reaching into packages/…/internal to check itself is what this replaces.
         expect(Project.findAll({ root: at })).toEqual([]);
     });
 

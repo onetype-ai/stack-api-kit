@@ -4,10 +4,7 @@ const PLUGIN_NAME = /^[a-z][a-z0-9-]{0,63}$/;
 
 const NAMESPACED_NAME = /^[a-z][a-z0-9-]{0,63}(\.[a-z][a-z0-9-]{0,63})+$/;
 
-/**
- * Names the character that broke a name, so an author sees the typo rather
- * than a regular expression.
- */
+// Names the character that broke a name, so an author sees the typo rather than a regular expression.
 function whereItBroke(value: string): string
 {
     const badAt = [...value].findIndex((character) => !/[a-z0-9.-]/.test(character));

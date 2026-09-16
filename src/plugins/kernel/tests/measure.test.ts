@@ -32,8 +32,7 @@ describe("a measured number", () =>
 
 describe("the mistake it exists to stop", () =>
 {
-    // One project counted storage in bytes, read a quota in gigabytes, and
-    // refused every caller on their first file. Written out, it is this.
+    // One project counted storage in bytes, read a quota in gigabytes, and refused every caller on their first file.
     const used = (): Bytes => bytes(1000);
     const mayHaveAnother = (many: Gigabytes): boolean => many < gigabytes(5);
 
