@@ -110,6 +110,36 @@ broken on purpose and watched to fail.
 - **The declaration bundle was named by content hash.** `types.d.ts` now, so
   the file worth opening when `reference.md` is not enough can be found.
 
+## Taken from the project that was writing it itself
+
+Every one moved with its tests, and each was broken in its new home before it
+was trusted.
+
+- **`boot`: `Env` and `Log`.** A port parsed, an origin list read, a logger to
+  hand `start`. `Env` refuses rather than repairs, and names the variable when
+  it does: `"1.5"`, `"-1"`, `" "` and a set-but-empty value are each refused
+  by name. `Env.rules` is the same over a value read elsewhere, so a bundler
+  replacing `import.meta.env` holds to one implementation of the rules.
+- **`serve`: putting a started kernel on a port.** `Server.open` listens,
+  installs the signal handlers and starts the watch. `from`, `listen`,
+  `watch`, `closeOnce` and `handleSocketMessage` are each reachable alone.
+  253 lines of `main.ts` became 52.
+- **`Started`.** What a rule needs a running kernel to see. Only one survived
+  writing: a closed route with no budget. The other three a project was
+  checking, `start` already refuses — a permission no plugin declares, one
+  belonging to a plugin nobody depends on, a route reading a credential
+  header. Those three tests could never have failed.
+
+## Found while taking it
+
+- **A clean stop left its own killer running.** `closeOnce` set a timeout to
+  force an exit and never cleared it: after a stop that went well, that timer
+  still fired `exit(1)`. Nothing observed it because the process was already
+  leaving. Cleared now, and a test advances the clock past it.
+- **One bad frame closed the socket.** `handleSocketMessage` parsed JSON
+  without a guard, so a frame that was not JSON threw, and every subscription
+  on that connection went with it. It answers 400 now.
+
 ## Removed
 
 `boot`, `Host`, `offer`/`take` and the six plugin factories. The composition

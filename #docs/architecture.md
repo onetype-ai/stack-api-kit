@@ -16,13 +16,14 @@ tools/               the checks CI runs
 
 A plugin reaches another only through its `api.ts`. `tools/boundaries.mjs`
 resolves import paths rather than matching text: a relative path climbing out
-of a folder reaches the same private file, and a rule reading the specifier
-alone calls it clean.
+of a folder reaches the same private file, which a rule reading the
+specifier alone calls clean.
 
 ## Two kinds of plugin
 
 Ours ship with the package: `kernel`, `database`, `http`, `outbound`, `guard`,
-`mount`. A project's are values passed to `createKernel`, and never live here.
+`mount`, `boot`, `serve`. A project's are values passed to `createKernel`,
+and never live here.
 
 One plugin is one capability: replace the technology behind it and one folder
 changes. Only that folder imports its driver.

@@ -23,6 +23,14 @@ ordering that has to happen in a service because SQL sorts by code point.
 The budget lives in memory, so two processes are two allowances. Fine while
 one process is the deployment; wrong the moment it is not.
 
+## `Server.open` never returns
+
+It listens, installs the signal handlers, and hands control back. A caller
+wanting to serve twice in one process, or to stop without a signal, has no
+way to ask: `closeOnce` is exported and takes what it needs, but `open`
+keeps its own. Nothing needs it yet, and a second server in one process is a
+question nobody has asked.
+
 ## Known and deliberate
 
 - **Table isolation is the compiler's, not the database's.** A plugin

@@ -11,8 +11,8 @@ what a permission means; the kernel enforces what a contract declared.
 ## Two kinds of plugin
 
 Ours live in `src/plugins/` and ship with the package: `kernel`, `database`,
-`http`, `outbound`, `guard`, `mount`. The project's are values it passes to
-`createKernel`, and never live here.
+`http`, `outbound`, `guard`, `mount`, `boot`, `serve`. The project's are
+values it passes to `createKernel`, and never live here.
 
 ## Why a kernel here
 
@@ -29,11 +29,15 @@ leak it. Those are mechanical, not agreed.
 
 ## Where we are
 
-Six plugins work. 354 tests, every one watched to fail before it was trusted,
-and the database ones run against real in-memory SQLite with real migrations.
+Eight plugins work. 551 tests, every one watched to fail before it was
+trusted, and the database ones run against real in-memory SQLite with real
+migrations.
 
 A project declares plugins with `definePlugin`, brings them up with `start`,
-and serves `api.fetch`.
+and hands the result to `Server.open`. `boot` reads its configuration and
+writes its logs. What is left of a composition root is 52 lines, and its whole
+test suite is two tests: it starts, and it holds to what a running kernel is
+checked by.
 
 Seven systems have been built on it by agents reading only the documents, in
 seven domains, from a helpdesk to subscription billing. Every one shipped

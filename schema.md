@@ -41,6 +41,22 @@
 > The same discovery for a project with no bundler to glob for it.
 ### discoverFrom(folder: string): Promise<DiscoveryResult>
 
+> Configuration read from `process.env`, refused by name rather than repaired; `rules` holds the same checks over a value read elsewhere.
+### Env: { rules: { text: (name: string, given: string | undefined, fallback?: string) => string | undefined; number: (name: string, given: string | undefined, fallback: number, min?: number, max?: number) => number; flag: (name: string, given: string | undefined, fallback: boolean) => boolean; list: (given: string | undefined) => readonly string[]; oneOf: <Allowed extends string>(name: string, given: string | undefined, allowed: readonly Allowed[], fallback: Allowed) => Allowed }; text: (name: string, fallback?: string) => string | undefined; required: (name: string) => string; number: (name: string, fallback: number, min?: number, max?: number) => number; flag: (name: string, fallback: boolean) => boolean; list: (name: string) => readonly string[]; oneOf: <Allowed extends string>(name: string, allowed: readonly Allowed[], fallback: Allowed) => Allowed }
+    rules: {
+    text: (name: string, given: string | undefined, fallback?: string) => string | undefined
+    number: (name: string, given: string | undefined, fallback: number, min?: number, max?: number) => number
+    flag: (name: string, given: string | undefined, fallback: boolean) => boolean
+    list: (given: string | undefined) => readonly string[]
+    oneOf: <Allowed extends string>(name: string, given: string | undefined, allowed: readonly Allowed[], fallback: Allowed) => Allowed
+    }
+    text: (name: string, fallback?: string) => string | undefined
+    required: (name: string) => string
+    number: (name: string, fallback: number, min?: number, max?: number) => number
+    flag: (name: string, fallback: boolean) => boolean
+    list: (name: string) => readonly string[]
+    oneOf: <Allowed extends string>(name: string, allowed: readonly Allowed[], fallback: Allowed) => Allowed
+
 > Answers false on a length mismatch before comparing, because `timingSafeEqual` throws on unequal lengths, and that throw is itself a timing signal.
 ### equalsInConstantTime(left: string, right: string): boolean
 
@@ -50,12 +66,23 @@
 > What a schema names a file field as, so `z.custom` can check it.
 ### isUploadedFile(value: unknown): value is UploadedFile
 
+> Every level, in order, for a caller reading one from configuration.
+### LEVELS: readonly ["debug", "info", "warn", "error"]
+
 > An in-process counter: `spend` allows and counts, `refund` gives one back, `sweep` drops expired keys, `size` reports how many are held; it is per-process, so a second server counts its own.
 ### limiter(now?: () => number): { spend: (key: string, window: RateLimitWindow) => RateLimitResult; refund: (key: string) => void; sweep: () => number; size: () => number }
     spend: (key: string, window: RateLimitWindow) => RateLimitResult
     refund: (key: string) => void
     sweep: () => number
     size: () => number
+
+> One JSON object a line, written to stdout; a line never throws while being written.
+### Log: { levels: readonly ["debug", "info", "warn", "error"]; severity: Readonly<Record<Level, number>>; line: (level: Level, message: string, about?: Readonly<Record<string, unknown>>) => string; forJson: (_key: string, value: unknown) => unknown; forLevel: (level?: Level) => Logger }
+    levels: readonly ["debug", "info", "warn", "error"]
+    severity: Readonly<Record<Level, number>>
+    line: (level: Level, message: string, about?: Readonly<Record<string, unknown>>) => string
+    forJson: (_key: string, value: unknown) => unknown
+    forLevel: (level?: Level) => Logger
 
 > Names a unit, and answers the function that marks a number as one.
 ### measure<Unit extends string>(_unit: Unit): (count: number) => Tagged<Unit>
@@ -77,6 +104,13 @@
 
 > Builds the Hono app the kernel's routes are mounted on.
 ### serve(options: ServerOptions): Hono
+
+> A started kernel, put on a port and taken off one cleanly.
+### Server: { from: typeof from; listen: typeof listen; watch: typeof watch; open: (api: StartedApp, options: OpenOptions) => void }
+    from: typeof from
+    listen: typeof listen
+    watch: typeof watch
+    open: (api: StartedApp, options: OpenOptions) => void
 
 > What a route says about the session, and what never reaches the caller.
 ### SessionHeaders: { readonly key: "x-session-key"; /** When the session ends, in epoch milliseconds: `Date.now() + lifetime`. */ readonly expires: "x-session-expires"; readonly end: "x-session-end" }
@@ -560,6 +594,9 @@
     // Whether a transaction is open right now. For diagnosis.
     inTransaction?: () => boolean
 
+> How loud a line is, and how loud a logger listens.
+### Level = "debug" | "info" | "warn" | "error"
+
 > `payload` is `unknown`, never `never`: contravariance lets `(payload: never)` accept any annotation, so the compiler endorses a claim about a different schema.
 ### Listener<Context, Payload = unknown> = Describable &
     handle: (payload: Payload, ctx: Context) => void | Promise<void>
@@ -592,6 +629,17 @@
     name: string
     sql: string
     hash: string
+
+> What putting a kernel on a port takes.
+### OpenOptions
+    port: number
+    log: Logger
+    // Whether something in front sets `x-forwarded-for`; without one, a caller writes their own address.
+    behindProxy?: boolean
+    // How often to report listeners that failed; zero never looks.
+    watchSeconds?: number
+    stopTimeoutMs?: number
+    drainMs?: number
 
 > Where events wait, so one is never lost between a commit and its delivery.
 > Delivery is at least once, not exactly once: one listener failing keeps the row, and the next start hands the event to every listener again. A listener that charges, sends or bills must recognise what it already did.
@@ -874,6 +922,19 @@
     findOversizedDocs: (root: string, limit: number) => ProjectProblem[]
     findUndocumentedKeys: (procedure: string) => ProjectProblem[]
 
+> Checks that need a kernel already started, each answering `StartedProblem[]`.
+> `Project` reads files and says what a plugin declared; this reads what those
+> declarations became once every plugin was brought up together.
+> Most of what a project would check here, `start` already refuses: a
+> permission no plugin declares, one belonging to a plugin nobody depends on,
+> a route reading a header that carries a credential. What is left is the one
+> thing the kit cannot decide for a project, because the right budget for a
+> route is the project's to know.
+### Started: { findAll: (kernel: Kernel, checking?: StartedCheckOptions) => StartedProblem[]; /** Where a closed route carries no budget, so one caller may spend the whole process on it. */ findUnboundedRoutes: (kernel: Kernel, excused?: readonly string[]) => StartedProblem[] }
+    findAll: (kernel: Kernel, checking?: StartedCheckOptions) => StartedProblem[]
+    // Where a closed route carries no budget, so one caller may spend the whole process on it.
+    findUnboundedRoutes: (kernel: Kernel, excused?: readonly string[]) => StartedProblem[]
+
 > Boots a kernel on an in-memory database with migrations already applied, recording every event, log line and outbound call; it throws on an option it does not take, and outbound calls answer `{}` unless `respondWith` says otherwise.
 ### startTestKernel(options: TestKernelOptions): Promise<TestKernel>
 
@@ -981,6 +1042,15 @@
     shared: readonly string[]
     apart: readonly string[]
 
+### StartedCheckOptions
+    // Routes deliberately left without a budget, each named `METHOD /path` on purpose.
+    unbounded?: readonly string[]
+
+> One finding from any `Started` check, written out as a sentence a person can act on; `check` says which check spoke.
+### StartedProblem
+    check: "unbounded"
+    message: string
+
 ### TestKernel
     kernel: Kernel
     store: Store<DrizzleDb>
@@ -1022,52 +1092,3 @@
     file: string
     shape: string
     field: string
-
-# @onetype/stack-api-kit/packing
-
-## Classes
-
-> One folder, folded into one file and back.
-### Packer
-    readonly mark = "==> "
-    readonly ends = "# EXAMPLES END HERE"
-    readonly root: string
-    readonly folder: string
-    readonly file: string
-    readonly whole: boolean
-    readonly demo: readonly string[]
-    readonly name: string
-    readonly at: string
-    readonly tool: string
-    readonly limit: number | ((path: string) => number)
-    constructor({ at, demo, name, into, tool, limit }: Packing)
-    pack(wanted: readonly string[]): void
-    unpack(): void
-    // What a packed file names, in the order it named them.
-    read(packed: string): [string, string][]
-    pathFor(name: string): string
-    // Removes what was folded away, keeping the file it was folded into.
-    clear(names: readonly string[] | undefined, resolve?: (name: string) => string): void
-    walk(folder: string): string[]
-    // What a reader opens first comes first.
-    weigh(path: string): number
-    head(names: readonly string[]): string
-    ran(argv: readonly string[]): void
-    run(argv: readonly string[]): void
-
-## Types
-
-> What a Packer owns, and what it may fold out of it.
-### Packing
-    // The folder it owns, from the working directory.
-    at: string
-    // What may be packed out of it, when nothing is named.
-    demo?: readonly string[]
-    // What one of them is called, for a message a reader reads.
-    name: string
-    // Where the packed file goes. Left out, `example.txt` beside them.
-    into?: string
-    // The file a project runs, named in the usage line.
-    tool: string
-    // The most characters one packed file may hold, or 0 for no limit.
-    limit?: number | ((path: string) => number)

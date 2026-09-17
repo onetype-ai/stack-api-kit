@@ -1,4 +1,6 @@
 export { refusalBodyFor, Reply, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, Refusal } from "./plugins/kernel/api";
+export { Env, Log, LEVELS } from "./plugins/boot/api";
+export { Server } from "./plugins/serve/api";
 export type {
     FailedJob,
     OutboxMessage,
@@ -68,3 +70,5 @@ export type { RateLimitResult, RateLimitWindow } from "./plugins/guard/api";
 export { discover, discoverFrom, start } from "./plugins/mount/api";
 export type { DiscoveryResult, PluginModules, SkippedFolder } from "./plugins/mount/api";
 export type { StartedApp, StartOptions } from "./plugins/mount/api";
+export type { Level } from "./plugins/boot/api";
+export type { OpenOptions } from "./plugins/serve/api";

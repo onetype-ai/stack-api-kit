@@ -190,19 +190,25 @@ for (const name of plugins)
                 }
             }
 
-            // 4. Only the plugin that owns a driver may import it. Every
+            // 4. Only the plugins that own a driver may import it. Every
             //    other plugin goes through the kernel's context.
+            //
+            //    `hono` has two owners: `http` answers a request with it and
+            //    `serve` listens with it. Two is the whole list, and a third
+            //    means the driver has stopped being held anywhere.
             const drivers = {
-                "better-sqlite3": "database",
-                "drizzle-orm": "database",
-                hono: "http",
+                "better-sqlite3": ["database"],
+                "drizzle-orm": ["database"],
+                hono: ["http", "serve"],
+                "@hono/node-server": ["serve"],
+                ws: ["serve"],
             };
 
-            for (const [driver, owner] of Object.entries(drivers))
+            for (const [driver, owners] of Object.entries(drivers))
             {
-                if (!erased && (specifier === driver || specifier.startsWith(`${driver}/`)) && name !== owner && !tested)
+                if (!erased && (specifier === driver || specifier.startsWith(`${driver}/`)) && !owners.includes(name) && !tested)
                 {
-                    fault(`${where} imports ${driver}, which only ${owner} may`);
+                    fault(`${where} imports ${driver}, which only ${owners.join(" and ")} may`);
                 }
             }
 
