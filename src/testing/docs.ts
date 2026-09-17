@@ -1,5 +1,17 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import type { Dirent } from "node:fs";
 import { join, sep } from "node:path";
+
+function entriesOf(folder: string, recursive = false): Dirent[]
+{
+    if (!existsSync(folder))
+    {
+        return [];
+    }
+
+    return readdirSync(folder, { withFileTypes: true, recursive });
+}
+
 
 /** One markdown file over the limit, `size` measured in characters of its whole text rather than lines or bytes. */
 export type OversizedDoc = {
@@ -25,7 +37,7 @@ export function findOversizedDocs(root: string, limit: number = LIMIT): Oversize
         return [];
     }
 
-    return readdirSync(root, { withFileTypes: true, recursive: true })
+    return entriesOf(root, true)
         .filter((entry) =>
         {
             if (!entry.isFile() || !entry.name.endsWith(".md") || entry.parentPath.includes("progress"))
@@ -71,7 +83,7 @@ export function findUnexplainedPlugins(folder: string): string[]
         return [];
     }
 
-    return readdirSync(folder, { withFileTypes: true })
+    return entriesOf(folder)
         .filter((entry) => entry.isDirectory())
         .map((entry) => entry.name)
         .filter((name) =>

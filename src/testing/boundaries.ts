@@ -1,5 +1,17 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import type { Dirent } from "node:fs";
 import { join, relative } from "node:path";
+
+function entriesOf(folder: string, recursive = false): Dirent[]
+{
+    if (!existsSync(folder))
+    {
+        return [];
+    }
+
+    return readdirSync(folder, { withFileTypes: true, recursive });
+}
+
 
 /** One file importing another plugin: `from` is relative to the importing plugin's folder, `to` is the plugin name reached, `specifier` the text as written. */
 export type ImportEdge = {
@@ -38,7 +50,7 @@ const ESCAPES: Readonly<Record<string, string>> = {
 /** Reads every plugin folder under `root` by regex, never by compiling, and answers what crosses a boundary; tests are excused the deep import of a dependency's `plugin.ts`. */
 export function findImportViolations(root: string): ImportViolation[]
 {
-    const names = readdirSync(root, { withFileTypes: true })
+    const names = entriesOf(root)
         .filter((entry) => entry.isDirectory())
         .map((entry) => entry.name);
 
@@ -128,7 +140,7 @@ function sourceFiles(root: string, name: string): { path: string; source: string
 {
     const pluginFolder = join(root, name);
 
-    return readdirSync(pluginFolder, { withFileTypes: true, recursive: true })
+    return entriesOf(pluginFolder, true)
         .filter((entry) => entry.isFile() && /\.tsx?$/.test(entry.name))
         .map((entry) =>
         {
@@ -302,7 +314,7 @@ export function findSharedNames(root: string): DuplicateSignature[]
 {
     const owners = new Map<string, { plugins: Set<string>; files: string[] }>();
 
-    for (const plugin of readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isDirectory()))
+    for (const plugin of entriesOf(root).filter((entry) => entry.isDirectory()))
     {
         const utilsFolder = join(root, plugin.name, "utils");
 
@@ -311,7 +323,7 @@ export function findSharedNames(root: string): DuplicateSignature[]
             continue;
         }
 
-        for (const entry of readdirSync(utilsFolder, { withFileTypes: true, recursive: true }))
+        for (const entry of entriesOf(utilsFolder, true))
         {
             if (!entry.isFile() || !/\.tsx?$/.test(entry.name))
             {
@@ -360,9 +372,9 @@ export function findSplitVocabulary(root: string): SplitVocabulary[]
 {
     const byName = new Map<string, { plugin: string; file: string; values: string[] }[]>();
 
-    for (const plugin of readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isDirectory()))
+    for (const plugin of entriesOf(root).filter((entry) => entry.isDirectory()))
     {
-        for (const entry of readdirSync(join(root, plugin.name), { withFileTypes: true, recursive: true }))
+        for (const entry of entriesOf(join(root, plugin.name), true))
         {
             if (!entry.isFile() || !/\.tsx?$/.test(entry.name) || entry.parentPath.includes("tests"))
             {
@@ -431,9 +443,9 @@ export function findCopiedVocabulary(root: string): CopiedVocabulary[]
     const owners = new Map<string, { name: string; plugin: string }>();
     const inline: { values: string; plugin: string; file: string }[] = [];
 
-    for (const plugin of readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isDirectory()))
+    for (const plugin of entriesOf(root).filter((entry) => entry.isDirectory()))
     {
-        for (const entry of readdirSync(join(root, plugin.name), { withFileTypes: true, recursive: true }))
+        for (const entry of entriesOf(join(root, plugin.name), true))
         {
             if (!entry.isFile() || !/\.tsx?$/.test(entry.name) || entry.parentPath.includes("tests"))
             {
@@ -510,6 +522,12 @@ export type UnscopedReach = {
 /** The calls that narrow a query to one tenant, and the one that declares every tenant was intended. */
 const NARROWING = /\b(scoped|stamped|forScope|unscoped)\s*[<(]/u;
 
+// A condition built and then not passed narrows nothing. `const where =
+// ctx.scoped("notes")` above a `.from(notes)` that never reaches `.where`
+// reads as careful and returns every tenant's rows, which is the shape a
+// check watching only for the word cannot tell from the safe one.
+const APPLIED = /\.(?:where|set)\s*\(|\bvalues\s*\(\s*\{[\s\S]*?\.\.\./u;
+
 /** Reads each plugin's declared scope, then answers where its tables are reached without narrowing: such a query returns every tenant's rows, and nothing at compile time, boot or request says so. */
 export function findUnscopedReach(root: string): UnscopedReach[]
 {
@@ -520,7 +538,7 @@ export function findUnscopedReach(root: string): UnscopedReach[]
 
     const reached: UnscopedReach[] = [];
 
-    for (const entry of readdirSync(root, { withFileTypes: true }))
+    for (const entry of entriesOf(root))
     {
         if (!entry.isDirectory())
         {
@@ -550,7 +568,7 @@ export function findUnscopedReach(root: string): UnscopedReach[]
         // naming the database's spelling can be found as well as the variable.
         let tableSource = "";
 
-        for (const file of readdirSync(join(root, entry.name), { withFileTypes: true, recursive: true }))
+        for (const file of entriesOf(join(root, entry.name), true))
         {
             if (file.isFile() && file.name.endsWith(".ts"))
             {
@@ -558,7 +576,7 @@ export function findUnscopedReach(root: string): UnscopedReach[]
             }
         }
 
-        for (const file of readdirSync(join(root, entry.name), { withFileTypes: true, recursive: true }))
+        for (const file of entriesOf(join(root, entry.name), true))
         {
             if (!file.isFile() || !file.name.endsWith(".ts") || file.name.endsWith(".test.ts"))
             {
@@ -597,8 +615,9 @@ export function findUnscopedReach(root: string): UnscopedReach[]
                 {
                     const opened = source.lastIndexOf("\n    {", query.index);
                     const closed = source.indexOf("\n    }", query.index);
+                    const body = source.slice(opened === -1 ? 0 : opened, closed === -1 ? undefined : closed);
 
-                    return !NARROWING.test(source.slice(opened === -1 ? 0 : opened, closed === -1 ? undefined : closed));
+                    return !NARROWING.test(body) || !APPLIED.test(body);
                 });
 
                 if (unnarrowed.length > 0)

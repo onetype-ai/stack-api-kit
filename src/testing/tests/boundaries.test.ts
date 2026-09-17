@@ -556,6 +556,23 @@ describe("a scoped table reached without narrowing", () =>
         expect(findUnscopedReach(root)).toEqual([]);
     });
 
+    test("is named when the condition is built and then never passed, which reads as careful and leaks", () =>
+    {
+        const root = scoped(`export class Rooms
+{
+    async list()
+    {
+        const where = this.#ctx.scoped<SQL>("rooms");
+
+        return await this.#ctx.db.select().from(rooms);
+    }
+}`);
+
+        const [found] = findUnscopedReach(root);
+
+        expect(found?.table).toBe("rooms");
+    });
+
     test("is not named when a scheduled run narrows by the claim it was given", () =>
     {
         const root = scoped(`export class Rooms
