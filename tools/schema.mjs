@@ -513,6 +513,20 @@ for (const entry of entryPoints())
     written.push(``);
 }
 
-writeFileSync(OUT, `${written.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`);
+const rendered = `${written.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
+
+// --check answers whether schema.md already says what the build exports, so a stale one fails CI instead of misleading a reader
+if (process.argv.includes("--check"))
+{
+    if (!existsSync(OUT) || readFileSync(OUT, "utf8") !== rendered)
+    {
+        console.log(`${OUT} is not what this build exports. Run npm run build and commit it.`);
+        process.exit(1);
+    }
+}
+else
+{
+    writeFileSync(OUT, rendered);
+}
 
 console.log(`${OUT}: ${written.filter((line) => line.startsWith("### ")).length} declarations`);
