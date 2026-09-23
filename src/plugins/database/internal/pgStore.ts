@@ -8,10 +8,11 @@ import { migrateOver } from "./migrate";
 import { outboxOver } from "./outbox";
 import { poolConnections, singleConnection } from "./pgConnections";
 import { pgOn, pgSql } from "./pgSql";
+import { registriesOver } from "./registries";
 import { scheduleOver } from "./schedule";
 import { createScopeFilter } from "./scopeFilter";
 
-import type { Logger, Outbox, Schedule, ScopeFilter } from "../../kernel/api";
+import type { Logger, Outbox, Schedule, ScopeFilter, RegistryStore } from "../../kernel/api";
 import type { MigrationSource, MigrationStep } from "./migrate";
 import type { PgClient, PgConnections } from "./pgConnections";
 import type { Sql } from "./sql";
@@ -38,6 +39,7 @@ export type PostgresStore = {
     close: () => Promise<void>;
     outbox: (settings?: { leaseMs?: number }) => Outbox;
     schedule: (settings?: { leaseMs?: number }) => Schedule;
+    registries: () => RegistryStore;
     createScopeFilter: () => ScopeFilter;
 };
 
@@ -204,6 +206,7 @@ export async function postgres(settings: PostgresOptions): Promise<PostgresStore
         },
         outbox: (leasing = {}) => outboxOver(sql, leasing, around),
         schedule: (leasing = {}) => scheduleOver(sql, leasing, around),
+        registries: () => registriesOver(sql, around),
         createScopeFilter: () => createScopeFilter(settings.tables),
     };
 }

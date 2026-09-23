@@ -65,6 +65,9 @@ export type {
     ExplainedStep,
     Registry,
     RegistryAccess,
+    ScopedRegistryAccess,
+    RegistryStore,
+    StoredEntry,
     RegistryEntry,
 } from "./plugins/kernel/api";
 

@@ -11,9 +11,9 @@ import { DEFAULT_REDIRECTS, FOLLOW_BUDGET_MS, hopOf, nextHop, redirectsOf, type 
 import { publicAddressOf, type Lookup } from "./resolve";
 import type { hooks } from "./hooks";
 import type { pipelines } from "./pipelines";
-import type { registries } from "./registries";
+import { orderedEntries, type registries, type RegistryEntry } from "./registries";
 import { createPermissions } from "./permissions";
-import type { HttpClient, ScopeFilter, Outbox, QueuedJob, Schedule, Sockets, KernelStore, WorkWatch } from "./store";
+import type { HttpClient, ScopeFilter, Outbox, QueuedJob, RegistryStore, Schedule, Sockets, KernelStore, WorkWatch } from "./store";
 
 /** Everything a context is built from. One object, so the shape is one line. */
 export type KernelWiring = {
@@ -28,6 +28,9 @@ export type KernelWiring = {
 
     /** The registries and pipelines plugins declared, with what was added to them. */
     lists: ReturnType<typeof registries>;
+
+    /** Where tenant registries keep their entries, when the project gave a store that holds them. */
+    registryStore: RegistryStore | undefined;
     flows: ReturnType<typeof pipelines>;
 
     /** Commands asked for later inside each open transaction, written by it before it commits. */
@@ -139,6 +142,25 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
     };
 
     const built = new Map<string, unknown>();
+
+    /** Whose entries a tenant registry reads here: the caller's claim the owner scopes by, or what forScope named. */
+    const tenantFor = (owner: string): string =>
+    {
+        const scope = wiring.known.get(owner)?.definition.scope;
+        const tenant = identity === undefined ? acting : scope === undefined ? undefined : identity.claims[scope.claim];
+
+        if (identity === undefined && acting === undefined)
+        {
+            throw new KernelFault("UNSCOPED_CALLER", `"${plugin}" reached a tenant registry of "${owner}" where nobody is calling. Name the scope with ctx.forScope(...).`, { plugin });
+        }
+
+        if (typeof tenant !== "string" || tenant.trim() === "")
+        {
+            throw new Refusal(403, "OUT_OF_SCOPE", "This request carries nothing to say whose rows it may reach.");
+        }
+
+        return tenant;
+    };
 
     /** A registry or pipeline is reached as a service is: its own, or one whose owner this plugin depends on. */
     const reachable = (owner: string | undefined, kind: "registry" | "pipeline", name: string): void =>
@@ -747,9 +769,130 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
         {
             reachable(wiring.lists.ownerOf(name), "registry", name);
 
+            const declared = wiring.lists.declared(name)?.registry;
+
+            if (declared?.scope === "tenant")
+            {
+                throw new KernelFault("INVALID_CALL", `"${plugin}" reached tenant registry "${name}" through ctx.registry, which holds one process's entries. Use ctx.scopedRegistry("${name}").`, { plugin });
+            }
+
             return {
                 list: () => Object.freeze(wiring.lists.list(name).filter((entry) => permissions.all(entry.requires ?? []))),
-                set: (entry) => wiring.lists.add(plugin, name, entry),
+                set: (entry) =>
+                {
+                    // each process would serve its own snapshot: an exposed static registry is what its plugins declared
+                    if (declared?.expose !== undefined)
+                    {
+                        wiring.lists.refuse(name, plugin, "it is exposed to the app, so it holds only what plugins declare in adds. Add the entry there, or declare it scope: \"tenant\".");
+                    }
+
+                    return wiring.lists.add(plugin, name, entry);
+                },
+            };
+        },
+
+        scopedRegistry: (name) =>
+        {
+            reachable(wiring.lists.ownerOf(name), "registry", name);
+
+            const { owner, registry } = wiring.lists.declared(name) ?? { owner: plugin, registry: undefined };
+
+            if (registry?.scope !== "tenant")
+            {
+                throw new KernelFault("INVALID_CALL", `"${plugin}" reached registry "${name}" through ctx.scopedRegistry, and it is not a tenant registry. Use ctx.registry("${name}"), or have "${owner}" declare scope: "tenant".`, { plugin });
+            }
+
+            const stored = wiring.registryStore ?? absentWiring(plugin, "a database store", "scopedRegistry", "registries");
+            const tenant = tenantFor(owner);
+            const visible = (entry: RegistryEntry): boolean => permissions.all(entry.requires ?? []);
+
+            /** A change is written by the transaction it belongs to, with its version and its event, or not at all. */
+            const inTransaction = (what: string): OpenTransaction =>
+            {
+                if (openTransaction === undefined)
+                {
+                    throw new KernelFault("UNKEPT_ENTRY", `"${plugin}" called ${what} on tenant registry "${name}" outside a transaction, so the entry, its version and its event could part. Call it inside ctx.tx.`, { plugin });
+                }
+
+                return openTransaction;
+            };
+
+            const announce = (inside: OpenTransaction, change: { op: "set" | "remove"; key: string; version: number; requires: readonly string[]; before?: readonly string[] | undefined }): void =>
+            {
+                const event = `${name}.changed`;
+                const payload = wiring.bus.checkDeclared(owner, event, { ...change, scope: tenant });
+
+                wiring.pending.get(inside.mark)?.push({ id: crypto.randomUUID(), plugin: owner, name: event, payload });
+            };
+
+            const snapshot = async (): Promise<{ version: number; entries: readonly RegistryEntry[] }> =>
+            {
+                const declaredEntries = wiring.lists.list(name);
+                const taken = new Set(declaredEntries.map((entry) => entry[registry.key]));
+                const { version, entries } = await stored.list(name, tenant);
+                const kept: RegistryEntry[] = [];
+
+                for (const row of entries)
+                {
+                    const answer = registry.entry.safeParse(row.entry);
+
+                    // a row its schema no longer takes is left out and named, never answered as it is
+                    if (!answer.success)
+                    {
+                        wiring.log("warn", owner, `registry "${name}" left out a stored entry its schema refuses`, { key: row.key });
+
+                        continue;
+                    }
+
+                    if (!taken.has(row.key))
+                    {
+                        kept.push(Object.freeze({ ...(answer.data as RegistryEntry) }));
+                    }
+                }
+
+                return { version, entries: Object.freeze(orderedEntries([...declaredEntries, ...kept], registry.key).filter(visible)) };
+            };
+
+            return {
+                snapshot,
+
+                list: async () => (await snapshot()).entries,
+
+                set: async (candidate) =>
+                {
+                    const inside = inTransaction("set");
+                    const { entry, key } = wiring.lists.check(plugin, name, candidate);
+
+                    if (wiring.lists.list(name).some((one) => one[registry.key] === key))
+                    {
+                        wiring.lists.refuse(name, plugin, `"${key}" is added for every scope by a plugin's adds. Pick another ${registry.key}.`);
+                    }
+
+                    if (registry.cap !== undefined && (await stored.get(name, tenant, key)) === undefined && (await stored.list(name, tenant)).entries.length >= registry.cap)
+                    {
+                        wiring.lists.refuse(name, plugin, `it holds its most, ${registry.cap} entries in this scope. Remove one first.`);
+                    }
+
+                    const { version, before } = await stored.save(inside.db, { registry: name, scope: tenant, key, plugin, entry });
+                    const earlier = before === undefined ? undefined : (before.entry as RegistryEntry).requires ?? [];
+
+                    announce(inside, { op: "set", key, version, requires: entry.requires ?? [], before: earlier });
+                },
+
+                remove: async (key) =>
+                {
+                    const inside = inTransaction("remove");
+                    const removed = await stored.remove(inside.db, { registry: name, scope: tenant, key });
+
+                    if (removed === undefined)
+                    {
+                        return false;
+                    }
+
+                    announce(inside, { op: "remove", key, version: removed.version, requires: [], before: (removed.before.entry as RegistryEntry).requires ?? [] });
+
+                    return true;
+                },
             };
         },
 

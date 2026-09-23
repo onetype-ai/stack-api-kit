@@ -204,6 +204,17 @@ function checkOwn(name: string, plugin: Plugin, owned: TableOwners, report: Prob
         {
             report("UNDECLARED_REGISTRY", name, `Registry "${key}" needs entry: z.object({ ... }) and key: "<field>", so every entry is checked and named.`);
         }
+
+        if (shape?.scope === "tenant")
+        {
+            // the kit announces every change, so the name is taken as if the owner declared the event
+            claim("events", `${key}.changed`, "DUPLICATE_EVENT", "Event");
+
+            if (plugin.definition.scope === undefined)
+            {
+                report("UNDECLARED_SCOPE", name, `Registry "${key}" is scope: "tenant", and "${name}" declares no scope, so nothing says whose entries are whose. Declare scope: { claim, ... } on "${name}".`);
+            }
+        }
     }
 
     for (const [key, pipeline] of Object.entries(plugin.definition.pipelines ?? {}))
@@ -537,6 +548,13 @@ function checkPath(name: string, method: string, given: string, owned: TableOwne
         return;
     }
 
+    if (given === "/registries" || given.startsWith("/registries/"))
+    {
+        report("INVALID_ROUTE", name, `Route path "${given}" is under /registries/, where the kit serves exposed registries. Pick another path.`);
+
+        return;
+    }
+
     if (given.includes("//") || (given.length > 1 && given.endsWith("/")))
     {
         report("INVALID_ROUTE", name, `Route path "${given}" has an empty segment. Two paths differing only by a slash are one route to a caller and two to a router.`);
@@ -679,6 +697,14 @@ function checkReferences(name: string, plugin: Plugin, by: ReadonlyMap<string, P
     for (const command of Object.values(plugin.definition.commands ?? {}))
     {
         for (const permission of command.requires ?? [])
+        {
+            reach("permissions", permission, "UNDECLARED_PERMISSION", "Permission");
+        }
+    }
+
+    for (const registry of Object.values(plugin.definition.registries ?? {}))
+    {
+        for (const permission of registry?.expose?.requires ?? [])
         {
             reach("permissions", permission, "UNDECLARED_PERMISSION", "Permission");
         }

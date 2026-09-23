@@ -2,7 +2,7 @@
 
 The same contract as the app kit.
 
-A **registry** is a named list one plugin declares and its dependants fill.
+A **registry** is a named list one plugin declares, dependants fill.
 
 ```ts
 registries: { "editor.blocks": { describe, entry: Block, key: "id",
@@ -15,7 +15,8 @@ ctx.registry("editor.blocks").list();
 - `adds` and `set` get the same checks: schema, key, reserved, cap.
 - Entries list by `order`, then key, minus what the caller lacks the
   `requires` for.
-- A runtime `set` is per process, like presence.
+- A runtime `set` is per process. Per scope, or served to the app:
+  `tenant-registries.md`.
 
 A **pipeline** is ordered steps; dependants add steps beside an anchor.
 
@@ -30,7 +31,7 @@ await ctx.pipeline("posts.publish").run(draft);
   `stop(output)` to end the run early. Each step gets its plugin's
   context, for the same caller.
 - Input and output are checked. `kernel.explain(name)` answers the
-  order; start logs it, and each step logs its outcome, never the state.
+  order; start logs it, each step its outcome, never the state.
 - **No transaction.** A step that writes opens its own `ctx.tx`. A step
   calling a provider never writes in the same one: it would hold locks.
 

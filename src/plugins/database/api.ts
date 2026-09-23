@@ -3,13 +3,14 @@ import { migrateOver, MigrationFault, type MigrationSource, type MigrationStep, 
 import { createScopeFilter } from "./internal/scopeFilter";
 import { noStore } from "./internal/noStore";
 import { outbox, outboxOver } from "./internal/outbox";
+import { registriesOver } from "./internal/registries";
 import { schedule, scheduleOver } from "./internal/schedule";
 import { sqliteSql } from "./internal/sql";
 
 import { tableName } from "../kernel/api";
 import { refuseOtherDialect } from "./internal/dialect";
 
-import type { ScopeFilter, Outbox, Schedule } from "../kernel/api";
+import type { ScopeFilter, Outbox, RegistryStore, Schedule } from "../kernel/api";
 import { store, type DrizzleDb, type TablesByName } from "./internal/store";
 
 /** What building a store needs: where the file is, and who owns what. */
@@ -26,6 +27,9 @@ export type Store<Db = unknown> = {
 
     /** A schedule in this same database, for work asked for later; each claim holds for `leaseMs` (60000 when left out) unless renewed. */
     schedule?: (settings?: { leaseMs?: number }) => Schedule;
+
+    /** Where tenant registries keep their entries, in this same database. */
+    registries?: () => RegistryStore;
 
     /** How a declared scope becomes a condition over the tables it was given. */
     createScopeFilter?: () => ScopeFilter;
@@ -78,6 +82,12 @@ export function database(settings: StoreOptions): Store<DrizzleDb>
         schedule: (settings: { leaseMs?: number } = {}): Schedule =>
         {
             return scheduleOver(sql, settings, { outside: backing.write });
+        },
+
+        /** Where tenant registries keep their entries, in this same database. */
+        registries: (): RegistryStore =>
+        {
+            return registriesOver(sql, { outside: backing.write });
         },
 
         /** How a scope narrows a query, over the tables one plugin declared. */

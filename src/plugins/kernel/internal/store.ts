@@ -69,6 +69,33 @@ export type Outbox = {
     counts?: (now: number) => Promise<{ waiting: number; retrying: number; dead: number }>;
 };
 
+/** One stored entry of a tenant registry, with the version of the change that wrote it. */
+export type StoredEntry = {
+    key: string;
+    plugin: string;
+    entry: unknown;
+    version: number;
+};
+
+/**
+ * Where tenant registries keep their entries, in the same database as the work that changes them. A change writes
+ * the entry and bumps the registry's version for that scope in the caller's transaction, so commit order is version
+ * order, and a rolled-back change leaves neither.
+ */
+export type RegistryStore = {
+    /** This scope's entries of one registry, and its version: 0 before any change. */
+    list: (registry: string, scope: string) => Promise<{ version: number; entries: readonly StoredEntry[] }>;
+
+    /** One entry, as it reads now; undefined when there is none. */
+    get: (registry: string, scope: string, key: string) => Promise<StoredEntry | undefined>;
+
+    /** Writes an entry inside the transaction `db` belongs to, answering the new version and the entry it replaced. */
+    save: (db: unknown, change: { registry: string; scope: string; key: string; plugin: string; entry: unknown }) => Promise<{ version: number; before: StoredEntry | undefined }>;
+
+    /** Removes an entry inside the transaction `db` belongs to; undefined, and no version bump, when there was none. */
+    remove: (db: unknown, change: { registry: string; scope: string; key: string }) => Promise<{ version: number; before: StoredEntry } | undefined>;
+};
+
 /** How scheduled work and the outbox are doing, as an operator sees it: counts, names and times, never a job's input or an event's payload. */
 export type WorkWatch = {
     health: () => Promise<{

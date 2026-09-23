@@ -78,6 +78,27 @@ export type Registry = Describable & {
 
     /** Who may add: the plugins depending on the owner (the default), or the owner alone. */
     set?: "owner" | "dependants" | undefined;
+
+    /** Where runtime entries live: this process (the default), or the database, per scope of the owner's `scope` claim, through `ctx.scopedRegistry`. */
+    scope?: "static" | "tenant" | undefined;
+
+    /** Serves it to the app: a snapshot at `GET /registries/<name>` and pushes on channel `registry.<name>`, to callers holding `requires`. Off when left out. */
+    expose?: { requires: readonly string[] } | undefined;
+};
+
+/** What a plugin reads from, and changes in, one tenant registry: bound to the caller's scope, never to an entry. */
+export type ScopedRegistryAccess = {
+    /** The owner's and dependants' `adds`, then this scope's stored entries, ordered and without what the caller lacks the `requires` for. */
+    list: () => Promise<readonly Readonly<Record<string, unknown>>[]>;
+
+    /** The same entries with this scope's version, read before them: what `GET /registries/<name>` answers. */
+    snapshot: () => Promise<{ version: number; entries: readonly Readonly<Record<string, unknown>>[] }>;
+
+    /** Checks the entry as the owner declared and stores it for this scope. Only inside `ctx.tx`: it commits with the work. */
+    set: (entry: unknown) => Promise<void>;
+
+    /** Takes this scope's stored entry out, answering whether there was one. Only inside `ctx.tx`. */
+    remove: (key: string) => Promise<boolean>;
 };
 
 /** What a plugin reads from, and adds to, one registry. */
@@ -385,6 +406,9 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
 
     /** A registry this plugin owns or depends on the owner of. */
     registry: (name: string) => RegistryAccess;
+
+    /** A tenant registry this plugin owns or depends on the owner of, for the scope this context acts in. */
+    scopedRegistry: (name: string) => ScopedRegistryAccess;
 
     /** Runs a pipeline this plugin owns or depends on the owner of, checking its input and output. */
     pipeline: (name: string) => { run: (input: unknown) => Promise<unknown> };

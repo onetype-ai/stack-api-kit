@@ -9,10 +9,11 @@ import { hooks } from "./hooks";
 import { order } from "./order";
 import { pipelines, type ExplainedStep } from "./pipelines";
 import { registries } from "./registries";
+import { RegistryChange, registryRoute } from "./registryRoute";
 import { createPermissions } from "./permissions";
 import { type RateLimiter, type KernelRequest, type RouteOwner, notServing, type KernelResponse, respond, unknownRoute } from "./request";
 import { systemLookup, type Lookup } from "./resolve";
-import type { FailedEvent, FailedJob, HttpClient, ScopeFilter, Outbox, Schedule, Sockets, KernelStore } from "./store";
+import type { FailedEvent, FailedJob, HttpClient, ScopeFilter, Outbox, Schedule, Sockets, KernelStore, RegistryStore } from "./store";
 import { holdWhileDelivering, keepHeard, OUTBOX_LEASE_MS, retryDelayMs } from "./delivery";
 import type { StreamRegistry } from "./streams";
 import { validate } from "./validate";
@@ -30,6 +31,9 @@ export type KernelOptions = {
     plugins: readonly Plugin[];
     config?: Readonly<Record<string, unknown>>;
     db?: KernelStore;
+
+    /** Where tenant registries keep their entries; a store gives one (`store.registries()`). */
+    registries?: RegistryStore;
 
     /** What holds the open sockets. Without one, ctx.push throws. */
     sockets?: Sockets;
@@ -593,6 +597,7 @@ export function createKernel(options: KernelOptions): Kernel
         pending,
         lists,
         flows,
+        registryStore: options.registries,
         jobs: new Map(),
         outbox: options.outbox,
         isRunning: () => running,
@@ -701,6 +706,33 @@ export function createKernel(options: KernelOptions): Kernel
             for (const key of Object.keys(plugin.definition.pipelines ?? {}))
             {
                 log("debug", plugin.name, `pipeline "${key}" runs ${flows.explain(key).map((step) => step.id).join(" → ")}`, { steps: flows.explain(key) });
+            }
+        }
+    }
+
+    /** Declares what the kit announces and serves for each registry: its change event, and for an exposed one its route. */
+    function serveRegistries(plugins: readonly Plugin[]): void
+    {
+        for (const plugin of plugins)
+        {
+            for (const [name, registry] of Object.entries(plugin.definition.registries ?? {}))
+            {
+                if (registry.scope === "tenant")
+                {
+                    if (options.registries === undefined)
+                    {
+                        throw new KernelFault("INVALID_CONFIG", `Registry "${name}" of "${plugin.name}" is scope: "tenant", and createKernel was given no registries store to keep its entries. Pass registries: store.registries(), which start does for a database.`, { plugin: plugin.name });
+                    }
+
+                    bus.declare(plugin.name, `${name}.changed`, { describe: `An entry of registry "${name}" was set or removed in one scope.`, schema: RegistryChange });
+                }
+
+                if (registry.expose !== undefined)
+                {
+                    const route = registryRoute(name, registry, options.rateLimiter !== undefined);
+
+                    routes.set(`${route.method} ${route.path}`, { plugin: plugin.name, route: route as Route<Context> });
+                }
             }
         }
     }
@@ -820,6 +852,7 @@ export function createKernel(options: KernelOptions): Kernel
             }
 
             placeAdditions(inOrder);
+            serveRegistries(inOrder);
 
             for (const plugin of inOrder)
             {
@@ -989,13 +1022,22 @@ export function createKernel(options: KernelOptions): Kernel
             })),
 
         channels: (): readonly RegisteredChannel[] =>
-            [...known.values()].flatMap((plugin) =>
-                Object.entries(plugin.definition.channels ?? {}).map(([channel, declared]) => ({
+            [...known.values()].flatMap((plugin) => [
+                ...Object.entries(plugin.definition.channels ?? {}).map(([channel, declared]) => ({
                     plugin: plugin.name,
                     channel,
                     reach: declared.reach,
                     requires: declared.requires ?? [],
-                }))),
+                })),
+
+                // an exposed registry's pushes, heard by whoever may read its snapshot
+                ...Object.entries(plugin.definition.registries ?? {}).flatMap(([name, registry]) => registry.expose === undefined ? [] : [{
+                    plugin: plugin.name,
+                    channel: `registry.${name}`,
+                    reach: (registry.scope === "tenant" ? "scope" : "everyone") as ChannelReach,
+                    requires: registry.expose.requires,
+                }]),
+            ]),
 
         // the definitions themselves, so declarationsOf can read them without
         // the kernel having to know what a declaration looks like

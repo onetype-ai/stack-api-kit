@@ -79,6 +79,10 @@
   the other's) and `[dialect]` (`.get()`, `.all()` or `.run()` on a query,
   which only SQLite answers, with what to write instead).
 
+- Tenant and exposed registries (`#docs/procedures/tenant-registries.md`):
+  `scope: "tenant"` keeps entries per scope in the database through
+  `ctx.scopedRegistry(name)`, changed only inside `ctx.tx`, announced as
+  `<registry>.changed`; `expose` serves `GET /registries/<name>`.
 - Registries and pipelines, the same contract as the app kit
   (`#docs/procedures/registries-and-pipelines.md`): `registries`,
   `pipelines` and `adds` on a plugin, `ctx.registry(name)`,

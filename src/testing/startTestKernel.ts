@@ -386,7 +386,12 @@ export async function startTestKernel(asked: TestKernelOptions): Promise<TestKer
             describe: "Records every event, for a test to read.",
             listens: Object.fromEntries(
                 options.plugins.flatMap((plugin) =>
-                    Object.keys(plugin.definition.emits ?? {}).map((event) => [event, {
+                    [
+                        ...Object.keys(plugin.definition.emits ?? {}),
+
+                        // what the kit announces for a tenant registry, as if its owner emitted it
+                        ...Object.entries(plugin.definition.registries ?? {}).flatMap(([name, registry]) => registry.scope === "tenant" ? [`${name}.changed`] : []),
+                    ].map((event) => [event, {
                         describe: `Records ${event}.`,
 
                         handle: (payload: never): void =>
@@ -416,6 +421,7 @@ export async function startTestKernel(asked: TestKernelOptions): Promise<TestKer
     const outbox = options.outbox === true ? store.outbox?.() : undefined;
     const later = options.schedule === true ? store.schedule?.() : undefined;
     const scoping = options.plugins.some((plugin) => plugin.definition.scope !== undefined);
+    const keepsRegistries = options.plugins.some((plugin) => Object.values(plugin.definition.registries ?? {}).some((registry) => registry.scope === "tenant"));
 
     const pushes: ChannelMessage[] = [];
 
@@ -425,6 +431,7 @@ export async function startTestKernel(asked: TestKernelOptions): Promise<TestKer
         ...(outbox !== undefined && { outbox }),
         ...(later !== undefined && { schedule: later }),
         ...(scoping && store.createScopeFilter !== undefined && { scopeFilter: store.createScopeFilter() }),
+        ...(keepsRegistries && store.registries !== undefined && { registries: store.registries() }),
         ...(options.now !== undefined && { now: options.now }),
 
         // a test runs what is due and what failed itself, with due() and kernel.redeliver()

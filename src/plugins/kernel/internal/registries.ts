@@ -26,6 +26,12 @@ function byOrderThenKey(key: string)
     };
 }
 
+/** Entries ordered by `order`, then key, so the answer never depends on which plugin loaded first. */
+export function orderedEntries(entries: readonly RegistryEntry[], key: string): RegistryEntry[]
+{
+    return [...entries].sort((first, second) => (first.order ?? 0) - (second.order ?? 0) || String(first[key]).localeCompare(String(second[key])));
+}
+
 export function registries(warn: (plugin: string, line: string, about: Readonly<Record<string, unknown>>) => void)
 {
     const opened = new Map<string, Opened>();
@@ -35,12 +41,54 @@ export function registries(warn: (plugin: string, line: string, about: Readonly<
         throw new KernelFault("INVALID_ENTRY", `Registry "${name}" refused an entry from "${plugin}": ${message}`, { plugin });
     }
 
+    /** What every entry passes, whenever and wherever it is added: the owner's rules, then the schema, key and reserved keys. */
+    function checked(plugin: string, name: string, candidate: unknown): { one: Opened; entry: RegistryEntry; key: string }
+    {
+        const one = opened.get(name);
+
+        if (one === undefined)
+        {
+            throw new KernelFault("UNDECLARED_REGISTRY", `"${plugin}" added to registry "${name}", which no plugin declares. Declare it, or correct the name.`, { plugin });
+        }
+
+        const { registry, owner } = one;
+
+        if (registry.set === "owner" && plugin !== owner)
+        {
+            refuse(name, plugin, `only "${owner}" may add to it.`);
+        }
+
+        const answer = registry.entry.safeParse(candidate);
+
+        if (!answer.success)
+        {
+            refuse(name, plugin, `it does not match the entry schema: ${answer.error.issues[0]?.message ?? "it was rejected"}.`);
+        }
+
+        const entry = Object.freeze({ ...(answer.data as RegistryEntry) });
+        const key = entry[registry.key];
+
+        if (typeof key !== "string" || key === "")
+        {
+            refuse(name, plugin, `its "${registry.key}" must be a non-empty string, since that is the registry's key.`);
+        }
+
+        if (plugin !== owner && (registry.reserved ?? []).includes(key))
+        {
+            refuse(name, plugin, `"${key}" is reserved by "${owner}". Pick another ${registry.key}.`);
+        }
+
+        return { one, entry, key };
+    }
+
     function changed(one: Opened): void
     {
         one.listed = undefined;
     }
 
     return {
+        refuse,
+
         declare: (owner: string, name: string, registry: Registry): void =>
         {
             opened.set(name, { owner, registry, held: new Map(), listed: undefined });
@@ -56,41 +104,24 @@ export function registries(warn: (plugin: string, line: string, about: Readonly<
             return opened.get(name)?.owner;
         },
 
-        add: (plugin: string, name: string, candidate: unknown): (() => void) =>
+        declared: (name: string): { owner: string; registry: Registry } | undefined =>
         {
             const one = opened.get(name);
 
-            if (one === undefined)
-            {
-                throw new KernelFault("UNDECLARED_REGISTRY", `"${plugin}" added to registry "${name}", which no plugin declares. Declare it, or correct the name.`, { plugin });
-            }
+            return one === undefined ? undefined : { owner: one.owner, registry: one.registry };
+        },
 
+        check: (plugin: string, name: string, candidate: unknown): { entry: RegistryEntry; key: string } =>
+        {
+            const { entry, key } = checked(plugin, name, candidate);
+
+            return { entry, key };
+        },
+
+        add: (plugin: string, name: string, candidate: unknown): (() => void) =>
+        {
+            const { one, entry, key } = checked(plugin, name, candidate);
             const { registry, owner } = one;
-
-            if (registry.set === "owner" && plugin !== owner)
-            {
-                refuse(name, plugin, `only "${owner}" may add to it.`);
-            }
-
-            const answer = registry.entry.safeParse(candidate);
-
-            if (!answer.success)
-            {
-                refuse(name, plugin, `it does not match the entry schema: ${answer.error.issues[0]?.message ?? "it was rejected"}.`);
-            }
-
-            const entry = Object.freeze({ ...(answer.data as RegistryEntry) });
-            const key = entry[registry.key];
-
-            if (typeof key !== "string" || key === "")
-            {
-                refuse(name, plugin, `its "${registry.key}" must be a non-empty string, since that is the registry's key.`);
-            }
-
-            if (plugin !== owner && (registry.reserved ?? []).includes(key))
-            {
-                refuse(name, plugin, `"${key}" is reserved by "${owner}". Pick another ${registry.key}.`);
-            }
 
             const before = one.held.get(key);
 

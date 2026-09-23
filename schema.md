@@ -415,6 +415,8 @@
     use: <Api>(plugin: string) => Api
     // A registry this plugin owns or depends on the owner of.
     registry: (name: string) => RegistryAccess
+    // A tenant registry this plugin owns or depends on the owner of, for the scope this context acts in.
+    scopedRegistry: (name: string) => ScopedRegistryAccess
     // Runs a pipeline this plugin owns or depends on the owner of, checking its input and output.
     pipeline: (name: string) => {
     run: (input: unknown) => Promise<unknown>
@@ -670,6 +672,7 @@
     | "UNDECLARED_PIPELINE"
     | "INVALID_PIPELINE"
     | "PIPELINE_FAILED"
+    | "UNKEPT_ENTRY"
     | "NOT_STARTED"
 
 ### FaultDetail
@@ -783,6 +786,8 @@
     plugins: readonly Plugin[]
     config?: Readonly<Record<string, unknown>>
     db?: KernelStore
+    // Where tenant registries keep their entries; a store gives one (`store.registries()`).
+    registries?: RegistryStore
     // What holds the open sockets. Without one, ctx.push throws.
     sockets?: Sockets
     httpClient?: HttpClient
@@ -1071,19 +1076,7 @@
 ### RegisteredRoute = { plugin: string; method: HttpMethod; path: string; describe: string; requires: readonly string[]; public: boolean; anyOrigin: boolean; limit: { requests: number; seconds: number } | undefined; accepts: "json" | "form" | "urlencoded"; reads: readonly string[]; keepsRaw: boolean }
 
 > A named list one plugin declares and others add to, each entry checked as the owner says.
-### Registry = Describable &
-    // What every entry must match, whoever adds it and whenever.
-    entry: z.ZodType
-    // The entry field naming it: a non-empty string, unique within the registry.
-    key: string
-    // The most entries it holds; an add beyond it is refused.
-    cap?: number | undefined
-    // Keys only the owner may add.
-    reserved?: readonly string[] | undefined
-    // A second entry under a taken key: refused (the default), or it replaces the first with a warning.
-    replace?: "refuse" | "warn" | undefined
-    // Who may add: the plugins depending on the owner (the default), or the owner alone.
-    set?: "owner" | "dependants" | undefined
+### Registry = Describable & { entry: z.ZodType; key: string; cap?: number | undefined; reserved?: readonly string[] | undefined; replace?: "refuse" | "warn" | undefined; set?: "owner" | "dependants" | undefined; scope?: "static" | "tenant" | undefined; expose?: { requires: readonly string[] } | undefined }
 
 > What a plugin reads from, and adds to, one registry.
 ### RegistryAccess
@@ -1096,6 +1089,11 @@
 ### RegistryEntry = Readonly<Record<string, unknown>> &
     readonly order?: number | undefined
     readonly requires?: readonly string[] | undefined
+
+> Where tenant registries keep their entries, in the same database as the work that changes them. A change writes
+> the entry and bumps the registry's version for that scope in the caller's transaction, so commit order is version
+> order, and a rolled-back change leaves neither.
+### RegistryStore = { list: (registry: string, scope: string) => Promise<{ version: number; entries: readonly StoredEntry[] }>; get: (registry: string, scope: string, key: string) => Promise<StoredEntry | undefined>; save: (db: unknown, change: { registry: string; scope: string; key: string; plugin: string; entry: unknown }) => Promise<{ version: number; before: StoredEntry | undefined }>; remove: (db: unknown, change: { registry: string; scope: string; key: string }) => Promise<{ version: number; before: StoredEntry } | undefined> }
 
 > One address a name resolves to.
 ### ResolvedAddress
@@ -1176,6 +1174,20 @@
     // It threw too many times. Stop trying; with `lease`, only if that claim still holds it.
     giveUp: (id: string, lease?: string) => Promise<void>
 
+> What a plugin reads from, and changes in, one tenant registry: bound to the caller's scope, never to an entry.
+### ScopedRegistryAccess
+    // The owner's and dependants' `adds`, then this scope's stored entries, ordered and without what the caller lacks the `requires` for.
+    list: () => Promise<readonly Readonly<Record<string, unknown>>[]>
+    // The same entries with this scope's version, read before them: what `GET /registries/<name>` answers.
+    snapshot: () => Promise<{
+    version: number
+    entries: readonly Readonly<Record<string, unknown>>[]
+    }>
+    // Checks the entry as the owner declared and stores it for this scope. Only inside `ctx.tx`: it commits with the work.
+    set: (entry: unknown) => Promise<void>
+    // Takes this scope's stored entry out, answering whether there was one. Only inside `ctx.tx`.
+    remove: (key: string) => Promise<boolean>
+
 > How a scope becomes a condition the database understands; `plugin` names whose table it is, since two plugins may each name a table alike.
 ### ScopeFilter = (table: string, column: string, value: string, plugin?: string) => unknown
 
@@ -1221,6 +1233,8 @@
     schedule?: (settings?: {
     leaseMs?: number
     }) => Schedule
+    // Where tenant registries keep their entries, in this same database.
+    registries?: () => RegistryStore
     // How a declared scope becomes a condition over the tables it was given.
     createScopeFilter?: () => ScopeFilter
     tx: <Result>(plugin: string, run: (db: unknown) => Promise<Result>) => Promise<Result>
@@ -1228,6 +1242,13 @@
     inTransaction: () => boolean
     migrate: (sources: readonly MigrationSource[]) => Promise<MigrationStep[]>
     close: () => Promise<void>
+
+> One stored entry of a tenant registry, with the version of the change that wrote it.
+### StoredEntry
+    key: string
+    plugin: string
+    entry: unknown
+    version: number
 
 > What building a store needs: where the file is, and who owns what.
 ### StoreOptions = DatabaseOptions &

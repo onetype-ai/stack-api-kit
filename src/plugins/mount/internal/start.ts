@@ -339,6 +339,9 @@ export async function start(options: StartOptions): Promise<StartedApp>
 
     const origin = crypto.randomUUID();
 
+    // the kit's registry tables exist only where a plugin keeps entries per scope
+    const keepsRegistries = options.plugins.some((plugin) => Object.values(plugin.definition.registries ?? {}).some((registry) => registry.scope === "tenant"));
+
     const kernel = createKernel({
         plugins: options.plugins,
         db: store,
@@ -350,6 +353,7 @@ export async function start(options: StartOptions): Promise<StartedApp>
         ...(options.schedule === "enqueue" && { runsSchedule: false }),
         ...(options.jobRunMs !== undefined && { jobRunMs: options.jobRunMs }),
         ...(scoping && store.createScopeFilter !== undefined && { scopeFilter: store.createScopeFilter() }),
+        ...(keepsRegistries && store.registries !== undefined && { registries: store.registries() }),
         rateLimiter,
         httpClient: typeof options.httpClient === "function" ? options.httpClient : httpClient(options.httpClient ?? {}),
         ...(options.lookup !== undefined && { lookup: options.lookup }),

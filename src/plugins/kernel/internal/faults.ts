@@ -48,6 +48,7 @@ export type FaultCode =
     | "UNDECLARED_PIPELINE"
     | "INVALID_PIPELINE"
     | "PIPELINE_FAILED"
+    | "UNKEPT_ENTRY"
     | "NOT_STARTED";
 
 export type FaultDetail = {
