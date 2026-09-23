@@ -158,6 +158,17 @@ export type HttpRequest = {
 
     /** The most bytes this answer may carry, streamed or read whole: a whole number above 0. The client's `maxBytes` when left out; more than its `mostMaxBytes` is clamped to it. */
     maxBytes?: number | undefined;
+
+    /**
+     * What a 301, 302, 303, 307 or 308 does, only under allowedHosts "anywhere". "refuse" (the default) throws NETWORK.
+     * "manual" hands it back: a streamed answer with its `status` and absolute `location`, or, read whole, `HttpRequestError` REDIRECT carrying them.
+     * "follow" dials each hop checked like a first call, turning 303, and a 301 or 302 after a POST, into a GET without a body
+     * as the fetch standard does, and dropping this call's headers on another origin. `timeoutMs` then bounds the whole chain, 30000 when left out.
+     */
+    redirects?: "refuse" | "manual" | "follow" | undefined;
+
+    /** How many hops "follow" takes before throwing TOO_MANY_REDIRECTS: 5 when left out, at most 10. */
+    mostRedirects?: number | undefined;
 };
 
 /** A streamed answer: the body arrives chunk by chunk, still bounded by the call's bytes, time limits and signal; leaving the loop early cancels it. */
@@ -165,8 +176,11 @@ export type StreamedResponse = {
     status: number;
     headers: Readonly<Record<string, string>>;
 
-    /** The address that answered. */
+    /** The address that answered: the last hop's, after redirects "follow". */
     url: string;
+
+    /** Where a redirect handed back by redirects "manual" points, absolute; its body is empty. */
+    location?: string;
 
     body: AsyncIterable<Uint8Array>;
 };

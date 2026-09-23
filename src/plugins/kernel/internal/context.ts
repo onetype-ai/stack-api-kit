@@ -5,6 +5,8 @@ import type { events, PendingDelivery } from "./events";
 import { Refusal } from "./refusal";
 import { KernelFault } from "./faults";
 import { blockedUrlReason, refusalReasonOf } from "./privateAddress";
+import { HttpRequestError } from "./httpError";
+import { DEFAULT_REDIRECTS, FOLLOW_BUDGET_MS, hopOf, nextHop, redirectsOf, type Hop } from "./redirects";
 import { publicAddressOf, type Lookup } from "./resolve";
 import type { hooks } from "./hooks";
 import { createPermissions } from "./permissions";
@@ -331,24 +333,66 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
 
             const allowed = wiring.known.get(plugin)?.definition.allowedHosts ?? [];
             const host = originOf(call.url);
+            const redirects = redirectsOf(plugin, call, allowed === "anywhere");
 
             if (allowed === "anywhere")
             {
-                const blocked = blockedUrlReason(call.url);
+                const client = wiring.httpClient ?? absentWiring(plugin, "httpClient", "fetch", "httpClient");
+                const most = call.mostRedirects ?? DEFAULT_REDIRECTS;
+                const budget = call.timeoutMs ?? FOLLOW_BUDGET_MS;
+                const started = Date.now();
 
-                if (blocked !== undefined)
+                let current = call;
+
+                // every hop is checked as a first call is: the url, the name, every address it resolves to, pinned
+                for (let hops = 0; ; hops += 1)
                 {
-                    throw new KernelFault("UNDECLARED_HOST", `"${plugin}" called an address it may not reach. ${blocked}`, { plugin, detail: { reason: refusalReasonOf(call.url) } });
+                    const left = budget - (Date.now() - started);
+
+                    if (redirects === "follow" && left <= 0)
+                    {
+                        throw new HttpRequestError("TIMEOUT", `The redirects did not end within ${String(budget)}ms.`);
+                    }
+
+                    const blocked = blockedUrlReason(current.url);
+
+                    if (blocked !== undefined)
+                    {
+                        throw new KernelFault("UNDECLARED_HOST", `"${plugin}" called an address it may not reach. ${blocked}`, { plugin, detail: { reason: refusalReasonOf(current.url) } });
+                    }
+
+                    const pin = await publicAddressOf(new URL(current.url.trim()).hostname, wiring.lookup, plugin);
+
+                    let hop: Hop | undefined;
+
+                    try
+                    {
+                        const answer = await client(redirects === "follow" ? { ...current, redirects: "manual", timeoutMs: left } : current, pin);
+
+                        hop = redirects === "follow" ? hopOf(answer) : undefined;
+
+                        if (hop === undefined)
+                        {
+                            return streamedFrom(current, answer);
+                        }
+                    }
+                    catch (cause)
+                    {
+                        if (redirects !== "follow" || !(cause instanceof HttpRequestError) || cause.code !== "REDIRECT" || cause.location === undefined || cause.status === undefined)
+                        {
+                            throw cause;
+                        }
+
+                        hop = { status: cause.status, location: cause.location };
+                    }
+
+                    if (hops + 1 > most)
+                    {
+                        throw new HttpRequestError("TOO_MANY_REDIRECTS", `The call was redirected more than ${String(most)} times.`);
+                    }
+
+                    current = nextHop(current, hop);
                 }
-
-                if (wiring.httpClient === undefined)
-                {
-                    return absentWiring(plugin, "httpClient", "fetch", "httpClient");
-                }
-
-                const pin = await publicAddressOf(new URL(call.url.trim()).hostname, wiring.lookup, plugin);
-
-                return streamedFrom(call, await wiring.httpClient(call, pin));
             }
 
             if (host === undefined)

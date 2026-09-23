@@ -2,12 +2,14 @@ import { refusalBodyFor, Reply, Refusal } from "./internal/refusal";
 import { createKernel } from "./internal/kernel";
 import { defineCommand, defineListener, defineParticipant, definePlugin, defineRoute } from "./internal/define";
 import { KernelFault } from "./internal/faults";
+import { HttpRequestError } from "./internal/httpError";
+import { REDIRECT_STATUSES } from "./internal/redirects";
 import { measure } from "./internal/measure";
 import { order } from "./internal/order";
 import { tableIndexes } from "./internal/tableIndexes";
 import { tableName } from "./internal/tableName";
 
-export { refusalBodyFor, Reply, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, order, Refusal, tableIndexes, tableName };
+export { HttpRequestError, REDIRECT_STATUSES, refusalBodyFor, Reply, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, order, Refusal, tableIndexes, tableName };
 export type { Tagged } from "./internal/measure";
 export type { DeclaredIndex } from "./internal/tableIndexes";
 
@@ -16,6 +18,7 @@ export { isPrivateIp } from "./internal/privateAddress";
 export type { RefusalReason } from "./internal/privateAddress";
 export type { Lookup, ResolvedAddress } from "./internal/resolve";
 export type { FaultCode, FaultDetail } from "./internal/faults";
+export type { HttpRequestErrorCode } from "./internal/httpError";
 
 export type {
     IdentifiedCaller,
