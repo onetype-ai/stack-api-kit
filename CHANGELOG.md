@@ -53,6 +53,12 @@
 
 ### Added
 
+- Several processes on one Postgres server serve one application: `ctx.push`
+  reaches every process's sockets, `ctx.presence` counts them all, and a
+  dead letter put back is delivered by any process at once. They hear each
+  other through LISTEN/NOTIFY (`postgresPubSub`), or `start({ pubsub })`
+  with an exported `PubSub` of a project's own; `inProcessPubSub` for one
+  process.
 - `openApi({ plugins, stands, clock, seed })` in `/testing`, the API twin of
   the app kit's `openApp`: a test kernel with stand-ins by the name they
   replace, a test clock, a seed, and `call(identity, method, path, input)`.

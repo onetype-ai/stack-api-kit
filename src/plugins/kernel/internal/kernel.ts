@@ -60,6 +60,9 @@ export type KernelOptions = {
     /** How often to hand failed events to the listeners that have not heard them, in milliseconds: 5000 when left out. */
     outboxBeatMs?: number;
 
+    /** Told when an event became deliverable at once (a dead letter put back), so the other processes need not wait a beat. */
+    woken?: () => void;
+
     /** How long a scheduled command is held while it runs, in milliseconds: ten leases when left out; past it the lease runs out and the job is taken again, counted. */
     jobRunMs?: number;
 
@@ -384,6 +387,19 @@ export function createKernel(options: KernelOptions): Kernel
         return stop;
     }
 
+    /** Puts one dead letter back, deliverable now; whoever listens is told, so another process need not wait a beat. */
+    async function retryFailed(id: string): Promise<boolean>
+    {
+        const revived = await (options.outbox?.revive?.(id, clock()) ?? Promise.resolve(false));
+
+        if (revived)
+        {
+            options.woken?.();
+        }
+
+        return revived;
+    }
+
     /** Runs what is due, one turn. */
     async function due(): Promise<number>
     {
@@ -608,7 +624,7 @@ export function createKernel(options: KernelOptions): Kernel
             }),
             failedJobs: () => failedJobs.map((job) => ({ plugin: job.plugin, command: job.command, attempts: job.attempts, at: job.at, error: job.error instanceof Error ? job.error.name : "Error" })),
             failedEvents: () => options.outbox?.failed?.() ?? Promise.resolve([]),
-            retryFailed: (id: string) => options.outbox?.revive?.(id, clock()) ?? Promise.resolve(false),
+            retryFailed: (id: string) => retryFailed(id),
         },
     };
 
@@ -1054,7 +1070,7 @@ export function createKernel(options: KernelOptions): Kernel
         work: {
             failed: () => [...failedJobs],
             failedEvents: () => options.outbox?.failed?.() ?? Promise.resolve([]),
-            retryFailed: (id: string) => options.outbox?.revive?.(id, clock()) ?? Promise.resolve(false),
+            retryFailed: (id: string) => retryFailed(id),
         },
 
         redeliver: () => redeliver(clock()),

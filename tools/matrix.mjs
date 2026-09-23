@@ -7,6 +7,7 @@
 
 /** Suites run on SQLite and on Postgres. */
 export const bothDialects = [
+    "src/testing/tests/pubsub.test.ts",
     "src/testing/tests/openApi.test.ts",
     "src/plugins/http/tests/sockets.test.ts",
     "src/plugins/kernel/tests/context.test.ts",
@@ -63,6 +64,7 @@ export const eachDatabaseItself = [
 
 /** Suites against a real Postgres server (`pnpm test:pg`, with KIT_PG_URL), where concurrency between connections shows. */
 export const postgresServer = [
+    "src/plugins/database/tests/pubsub.server.ts",
     "src/plugins/database/tests/workers.server.ts",
 ];
 

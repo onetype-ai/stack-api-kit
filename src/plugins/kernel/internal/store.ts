@@ -178,3 +178,15 @@ export type Sockets = {
     /** Who holding a permission has a socket open in a scope, for `ctx.presence`. */
     connected?: (scope: string, permission: string) => readonly string[];
 };
+
+/**
+ * Messages between the processes serving one application, by topic. What one publishes, every process subscribed to
+ * that topic hears, itself included; at most once, and nothing kept for a process that was not listening. The kit
+ * carries socket pushes and presence on it; a project may bring its own (Redis, NATS) through `start({ pubsub })`.
+ */
+export type PubSub = {
+    publish: (topic: string, text: string) => void;
+    subscribe: (topic: string, hear: (text: string) => void) => () => void;
+    close: () => Promise<void>;
+};
+

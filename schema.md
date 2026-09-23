@@ -76,6 +76,9 @@
 > Builds the outbound caller: it follows no redirects, reads at most `maxBytes`, gives up after `timeoutMs`, dials the address it is pinned to when given one, and throws `HttpRequestError` for every failure including a non-2xx status.
 ### httpClient(options?: HttpClientOptions): HttpClient
 
+> A pub/sub within one process: what is published is heard at once, by this process alone.
+### inProcessPubSub(): PubSub
+
 > What a schema names a file field as, so `z.custom` can check it.
 ### isUploadedFile(value: unknown): value is UploadedFile
 
@@ -153,11 +156,13 @@
     readonly expires: "x-session-expires"
     readonly end: "x-session-end"
 
-> Every open connection, and how far what a plugin pushes travels.
-### sockets(kernel: { channels: () => readonly RegisteredChannel[] }, claim?: string): { push: (message: ChannelMessage) => void; connected: (scope: string, permission: string) => readonly string[]; subscribe: (identity: Identity | undefined, send: (text: string) => void) => Subscription }
+> Every open connection, and how far what a plugin pushes travels; `changed` hears when who is present may have changed.
+### sockets(kernel: { channels: () => readonly RegisteredChannel[] }, claim?: string, changed?: () => void): { push: (message: ChannelMessage) => void; /** This process's sockets as presence counts them: identified, inside a scope. */ present: () => Present[]; connected: (scope: string, permission: string) => readonly string[]; subscribe: (identity: Identity | undefined, send: (text: string) => void) => Subscription }
     channels: () => readonly RegisteredChannel[]
-    }, claim?: string): {
+    }, claim?: string, changed?: () => void): {
     push: (message: ChannelMessage) => void
+    // This process's sockets as presence counts them: identified, inside a scope.
+    present: () => Present[]
     connected: (scope: string, permission: string) => readonly string[]
     subscribe: (identity: Identity | undefined, send: (text: string) => void) => Subscription
 
@@ -793,6 +798,8 @@
     runsSchedule?: boolean
     // How often to hand failed events to the listeners that have not heard them, in milliseconds: 5000 when left out.
     outboxBeatMs?: number
+    // Told when an event became deliverable at once (a dead letter put back), so the other processes need not wait a beat.
+    woken?: () => void
     // How long a scheduled command is held while it runs, in milliseconds: ten leases when left out; past it the lease runs out and the job is taken again, counted.
     jobRunMs?: number
     // How many times a scheduled command may throw before it is abandoned.
@@ -989,6 +996,14 @@
 
 ### PluginModules = Readonly<Record<string,
     default?: Plugin
+
+> Messages between the processes serving one application, by topic. What one publishes, every process subscribed to
+> that topic hears, itself included; at most once, and nothing kept for a process that was not listening. The kit
+> carries socket pushes and presence on it; a project may bring its own (Redis, NATS) through `start({ pubsub })`.
+### PubSub
+    publish: (topic: string, text: string) => void
+    subscribe: (topic: string, hear: (text: string) => void) => () => void
+    close: () => Promise<void>
 
 > One command waiting for its moment.
 ### QueuedJob
@@ -1188,7 +1203,7 @@
 ### StartedApp = { kernel: Kernel; store: Store; app: ReturnType<typeof serve>; fetch: (request: Request) => Response | Promise<Response>; sockets: { subscribe: (identity: Identity | undefined, send: (text: string) => void) => Subscription } | undefined; served: { origins: readonly string[]; session: SessionOptions | undefined; bodyBytes: number; from: ServerOptions["from"] }; stop: () => Promise<void> }
 
 > Everything `start` takes; `outbox` and `schedule` are opt-in, while `sockets` and `limits` are on unless set to false.
-### StartOptions = { plugins: readonly Plugin[]; database?: DatabaseOptions | { dialect: "postgres"; url: string; poolSize?: number } | { dialect: "postgres"; pglite: PGlite; schema?: string } | Store | undefined; config?: Readonly<Record<string, unknown>> | undefined; sockets?: boolean | { claim: string } | undefined; identify?: ((kernel: Kernel) => ServerOptions["identify"]) | undefined; http?: Omit<ServerOptions, "kernel" | "identify" | "log"> | undefined; httpClient?: HttpClientOptions | HttpClient | undefined; lookup?: Lookup | undefined; rateLimiter?: RateLimiter | undefined; mostStreamsPerCaller?: number | undefined; streamDrainMs?: number | undefined; strictReplyHeaders?: boolean | undefined; limits?: boolean | undefined; outbox?: boolean | undefined; schedule?: boolean | "enqueue" | undefined; jobLeaseMs?: number | undefined; jobRunMs?: number | undefined; outboxLeaseMs?: number | undefined; log?: Logger | undefined }
+### StartOptions = { plugins: readonly Plugin[]; database?: DatabaseOptions | { dialect: "postgres"; url: string; poolSize?: number } | { dialect: "postgres"; pglite: PGlite; schema?: string } | Store | undefined; config?: Readonly<Record<string, unknown>> | undefined; sockets?: boolean | { claim: string } | undefined; pubsub?: PubSub | undefined; identify?: ((kernel: Kernel) => ServerOptions["identify"]) | undefined; http?: Omit<ServerOptions, "kernel" | "identify" | "log"> | undefined; httpClient?: HttpClientOptions | HttpClient | undefined; lookup?: Lookup | undefined; rateLimiter?: RateLimiter | undefined; mostStreamsPerCaller?: number | undefined; streamDrainMs?: number | undefined; strictReplyHeaders?: boolean | undefined; limits?: boolean | undefined; outbox?: boolean | undefined; schedule?: boolean | "enqueue" | undefined; jobLeaseMs?: number | undefined; jobRunMs?: number | undefined; outboxLeaseMs?: number | undefined; log?: Logger | undefined }
 
 > What a project holds after opening a database.
 ### Store<Db = unknown> =

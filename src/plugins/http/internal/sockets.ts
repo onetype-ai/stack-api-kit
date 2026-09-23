@@ -29,7 +29,11 @@ type SocketState = {
 };
 
 /** Every open connection, and how far what a plugin pushes travels. */
-export function sockets(kernel: { channels: () => readonly RegisteredChannel[] }, claim?: string)
+/** One open socket as presence counts it: who, in which scope, holding what. */
+export type Present = { id: string; scope: string; permissions: readonly string[] };
+
+/** Every open connection, and how far what a plugin pushes travels; `changed` hears when who is present may have changed. */
+export function sockets(kernel: { channels: () => readonly RegisteredChannel[] }, claim?: string, changed: () => void = () => undefined)
 {
     const open = new Set<SocketState>();
 
@@ -132,6 +136,25 @@ export function sockets(kernel: { channels: () => readonly RegisteredChannel[] }
             }
         },
 
+        /** This process's sockets as presence counts them: identified, inside a scope. */
+        present: (): Present[] =>
+        {
+            const found: Present[] = [];
+
+            for (const listener of open)
+            {
+                const scope = scopeOf(listener.identity);
+                const granted = listener.identity?.permissions;
+
+                if (listener.identity !== undefined && scope !== undefined)
+                {
+                    found.push({ id: listener.identity.id, scope, permissions: Array.isArray(granted) ? [...granted] : [] });
+                }
+            }
+
+            return found;
+        },
+
         connected: (scope: string, permission: string): readonly string[] =>
         {
             const ids = new Set<string>();
@@ -154,6 +177,7 @@ export function sockets(kernel: { channels: () => readonly RegisteredChannel[] }
             const connection: SocketState = { id: crypto.randomUUID(), identity, send, listening: new Set() };
 
             open.add(connection);
+            changed();
 
             return {
                 id: connection.id,
@@ -174,12 +198,17 @@ export function sockets(kernel: { channels: () => readonly RegisteredChannel[] }
 
                 unlisten: (channel: string) => connection.listening.delete(channel),
 
-                close: () => open.delete(connection),
+                close: () =>
+                {
+                    open.delete(connection);
+                    changed();
+                },
 
                 // a channel it may no longer hear is dropped at once, rather than at its next listen
                 reidentify: (next: Identity | undefined): void =>
                 {
                     connection.identity = next;
+                    changed();
 
                     for (const channel of [...connection.listening])
                     {

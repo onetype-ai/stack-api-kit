@@ -96,4 +96,5 @@ export type { Dialect } from "./internal/dialect";
 export type { PortableDb } from "./internal/table";
 export { postgres } from "./internal/pgStore";
 export type { PostgresOptions, PostgresStore } from "./internal/pgStore";
-
+export { postgresPubSub } from "./internal/pgPubSub";
+export type { PostgresPubSubTiming } from "./internal/pgPubSub";

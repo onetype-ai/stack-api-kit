@@ -32,6 +32,15 @@ only; the cause goes to the log.
 failures: bounded, counted per address, written to the log only.
 `http.hsts: { maxAge }` sends HSTS; it cannot be taken back until it ends.
 
+## Several processes
+
+On one Postgres server they hear each other through LISTEN/NOTIFY, three
+connections each beside the store's pool (one listening, two publishing):
+count them against `max_connections`. `ctx.push` reaches every process's
+sockets, at most once. `ctx.presence` counts all of them, eventually: a
+process gone quiet for 30 s is forgotten. `start({ pubsub })` takes another
+transport.
+
 ## Refuses
 
 - `ready: false` for a shared dependency.

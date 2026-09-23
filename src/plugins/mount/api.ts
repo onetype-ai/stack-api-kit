@@ -1,7 +1,7 @@
 import type { PGlite } from "@electric-sql/pglite";
 import type { DatabaseOptions, Store } from "../database/api";
 import type { Subscription, ServerOptions, SessionOptions } from "../http/api";
-import type { RateLimiter, HttpClient, Identity, Kernel, Logger, Lookup, Plugin } from "../kernel/api";
+import type { RateLimiter, HttpClient, Identity, Kernel, Logger, Lookup, Plugin, PubSub } from "../kernel/api";
 import type { HttpClientOptions } from "../outbound/api";
 import { discover, discoverFrom } from "./internal/discover";
 import { start } from "./internal/start";
@@ -18,6 +18,9 @@ export type StartOptions = {
 
     /** Whether the kernel holds open sockets, and what claim keeps them apart. */
     sockets?: boolean | { claim: string } | undefined;
+
+    /** How the processes serving this application hear each other; one within this process when left out. */
+    pubsub?: PubSub | undefined;
 
     /** Who is calling. */
     identify?: ((kernel: Kernel) => ServerOptions["identify"]) | undefined;

@@ -1,9 +1,9 @@
 import { Env } from "../../boot/api";
-import { database, migrationSteps, noStore, postgres } from "../../database/api";
+import { database, migrationSteps, noStore, postgres, postgresPubSub } from "../../database/api";
 import { limiter, unlimited } from "../../guard/api";
 import { createKernel, order, tableIndexes } from "../../kernel/api";
 import { httpClient } from "../../outbound/api";
-import { currentRequestId, serve, sockets } from "../../http/api";
+import { currentRequestId, inProcessPubSub, relay, serve, sockets } from "../../http/api";
 import type { DatabaseOptions, Store } from "../../database/api";
 import type { Logger, Plugin } from "../../kernel/api";
 import type { StartedApp, StartOptions } from "../api";
@@ -325,14 +325,26 @@ export async function start(options: StartOptions): Promise<StartedApp>
 
     const scoping = options.plugins.some((plugin) => plugin.definition.scope !== undefined);
 
+    // how the processes serving this application hear each other: the project's own, LISTEN/NOTIFY on the Postgres
+    // server they share, or one within this process when there is one process
+    const server = options.database !== undefined && "url" in options.database ? options.database.url : undefined;
+    const pubsub = options.pubsub ?? (server === undefined || options.sockets === false ? inProcessPubSub() : await postgresPubSub(server, log));
+    let relayed: ReturnType<typeof relay> | undefined;
+
     const wires = options.sockets === false
         ? undefined
-        : sockets({ channels: () => kernel.channels() }, typeof options.sockets === "object" ? options.sockets.claim : undefined);
+        : sockets({ channels: () => kernel.channels() }, typeof options.sockets === "object" ? options.sockets.claim : undefined, () => relayed?.changed());
+
+    relayed = wires === undefined ? undefined : relay(wires, pubsub, log);
+
+    const origin = crypto.randomUUID();
 
     const kernel = createKernel({
         plugins: options.plugins,
         db: store,
-        ...(wires !== undefined && { sockets: wires }),
+        ...(relayed !== undefined && { sockets: relayed }),
+        // a dead letter put back is deliverable at once: the other processes hear it rather than wait for their beat
+        ...(outbox !== undefined && { woken: () => pubsub.publish("kit.outbox", origin) }),
         ...(outbox !== undefined && { outbox }),
         ...(later !== undefined && { schedule: later }),
         ...(options.schedule === "enqueue" && { runsSchedule: false }),
@@ -352,6 +364,17 @@ export async function start(options: StartOptions): Promise<StartedApp>
             },
         }),
     });
+
+    // another process put a dead letter back: one claim now, rather than at this process's next beat
+    const stopWaking = outbox === undefined
+        ? undefined
+        : pubsub.subscribe("kit.outbox", (from) =>
+        {
+            if (from !== origin && kernel.started())
+            {
+                kernel.redeliver().catch(() => undefined);
+            }
+        });
 
     await kernel.start();
 
@@ -392,7 +415,15 @@ export async function start(options: StartOptions): Promise<StartedApp>
                 clearInterval(sweep);
             }
 
+            stopWaking?.();
             await kernel.stop();
+            relayed?.stop();
+
+            if (options.pubsub === undefined)
+            {
+                await pubsub.close();
+            }
+
             await store.close();
         },
     };

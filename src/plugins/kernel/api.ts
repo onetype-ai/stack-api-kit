@@ -61,7 +61,7 @@ export type { ExplainedStep } from "./internal/pipelines";
 
 export type { ListenerFailure } from "./internal/events";
 export type { RateLimiter, KernelRequest, KernelResponse } from "./internal/request";
-export type { FailedEvent, FailedJob, WorkWatch, OutboxMessage, HttpClient, ScopeFilter, Outbox, ChannelMessage, Schedule, QueuedJob, Sockets, KernelStore } from "./internal/store";
+export type { FailedEvent, FailedJob, WorkWatch, OutboxMessage, HttpClient, ScopeFilter, Outbox, ChannelMessage, Schedule, QueuedJob, Sockets, KernelStore, PubSub } from "./internal/store";
 export type { PermissionEntry, RegisteredChannel, Kernel, LogFn, KernelOptions, RegisteredRoute } from "./internal/kernel";
 export type { ContractProblem } from "./internal/validate";
 

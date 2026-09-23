@@ -574,7 +574,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
         },
 
         presence: {
-            // per process, like the rate limiter: a second server knows its own sockets
+            // every process's sockets, through the pub/sub its store shares: eventually, not at once
             connected: (permission: string): readonly string[] =>
             {
                 if (wiring.sockets === undefined)
