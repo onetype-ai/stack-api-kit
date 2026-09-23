@@ -703,6 +703,8 @@
     mostStreamsPerCaller?: number
     // How long `stop` waits for open streams to send their final RESTARTING event, in milliseconds (5000 when left out).
     streamDrainMs?: number
+    // Holds every reply to the header allow-list (the kit's short list plus a route's `sends`) now; 9.0 makes it the default. Left out, a header the list would drop still goes out, named once in the log.
+    strictReplyHeaders?: boolean
 
 > One request, as it reaches the kernel.
 ### KernelRequest
@@ -1028,7 +1030,7 @@
 ### StartedApp = { kernel: Kernel; store: Store; app: ReturnType<typeof serve>; fetch: (request: Request) => Response | Promise<Response>; sockets: { subscribe: (identity: Identity | undefined, send: (text: string) => void) => Subscription } | undefined; stop: () => Promise<void> }
 
 > Everything `start` takes; `outbox` and `schedule` are opt-in, while `sockets` and `limits` are on unless set to false.
-### StartOptions = { plugins: readonly Plugin[]; database?: DatabaseOptions | Store | undefined; config?: Readonly<Record<string, unknown>> | undefined; sockets?: boolean | { claim: string } | undefined; identify?: ((kernel: Kernel) => ServerOptions["identify"]) | undefined; http?: Omit<ServerOptions, "kernel" | "identify" | "log"> | undefined; httpClient?: HttpClientOptions | HttpClient | undefined; lookup?: Lookup | undefined; rateLimiter?: RateLimiter | undefined; mostStreamsPerCaller?: number | undefined; streamDrainMs?: number | undefined; limits?: boolean | undefined; outbox?: boolean | undefined; schedule?: boolean | "enqueue" | undefined; jobLeaseMs?: number | undefined; jobRunMs?: number | undefined; outboxLeaseMs?: number | undefined; log?: Logger | undefined }
+### StartOptions = { plugins: readonly Plugin[]; database?: DatabaseOptions | Store | undefined; config?: Readonly<Record<string, unknown>> | undefined; sockets?: boolean | { claim: string } | undefined; identify?: ((kernel: Kernel) => ServerOptions["identify"]) | undefined; http?: Omit<ServerOptions, "kernel" | "identify" | "log"> | undefined; httpClient?: HttpClientOptions | HttpClient | undefined; lookup?: Lookup | undefined; rateLimiter?: RateLimiter | undefined; mostStreamsPerCaller?: number | undefined; streamDrainMs?: number | undefined; strictReplyHeaders?: boolean | undefined; limits?: boolean | undefined; outbox?: boolean | undefined; schedule?: boolean | "enqueue" | undefined; jobLeaseMs?: number | undefined; jobRunMs?: number | undefined; outboxLeaseMs?: number | undefined; log?: Logger | undefined }
 
 > What a project holds after opening a database.
 ### Store<Db = unknown> =
@@ -1124,10 +1126,11 @@
 
 ## Functions
 
-> Registers, once per test process (a setup file), where missing dependencies come from. `resolve` runs only when a kernel names a
-> dependency the test did not pass, and once: a test that passes every plugin it needs boots exactly as before.
-### configureTestKernels(configuring: { resolve: () => Promise<TestKernelFixture> }): void
-    resolve: () => Promise<TestKernelFixture>
+> Registers, once per test process (a setup file), where missing dependencies come from. `resolve` is given the names
+> nothing passed provides, in waves as their own dependencies turn up, and each name is asked for once: a resolver
+> may load only those plugins, or answer every plugin it holds. A test that passes every plugin it needs never calls it.
+### configureTestKernels(configuring: { resolve: (missing: readonly string[]) => Promise<TestKernelFixture> }): void
+    resolve: (missing: readonly string[]) => Promise<TestKernelFixture>
 
 > An identity a test controls.
 ### createIdentity(permissions?: readonly string[], id?: string, claims?: Readonly<Record<string, unknown>>): Identity
@@ -1354,8 +1357,10 @@
     plugins: readonly Plugin[]
     config?: Readonly<Record<string, unknown>>
     respondWith?: (request: HttpRequest) => unknown
-    // Whether events are kept until a listener has recorded them, as `start({ outbox: true })` does; on unless `false`, as a deployment runs.
+    // Whether events are kept until a listener has recorded them, as `start({ outbox: true })` does. Left out it is off, and 9.0 turns it on: pass `true` to test as a deployment with an outbox runs.
     outbox?: boolean
+    // Holds every reply to the header allow-list, as `start({ strictReplyHeaders: true })` does.
+    strictReplyHeaders?: boolean
     // Whether a plugin may ask for work later, as `start({ schedule: true })`.
     schedule?: boolean
     // Whether a plugin may push, as `start({ sockets: true })` does.
