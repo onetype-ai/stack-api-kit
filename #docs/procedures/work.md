@@ -8,7 +8,7 @@ later. Both are at least once, so both must be safe to repeat.
 ```ts
 await ctx.tx(async (inside) =>
 {
-    await inside.db.insert(items).values(row);
+    await inside.db.insert(items).values({ ...row, ...inside.stamped("items") });
     inside.events.emit("items.item.created", { id: row.id });
 });
 ```
@@ -17,8 +17,8 @@ With `start({ outbox: true })` the event is written in the transaction and
 delivered after the commit. A listener that throws is retried with
 backoff, and only the listeners that have not heard it are called again.
 After `mostAttempts` (8) it waits as a dead letter. Emitting outside `tx`
-is refused while an outbox is on, and a test kernel has one unless
-`outbox: false`.
+is refused while an outbox is on; give a test kernel `outbox: true` to
+prove it.
 
 A listener recognises what it already did, by the event's id or its own
 unique key: it may hear an event twice.

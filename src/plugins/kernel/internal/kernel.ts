@@ -78,6 +78,9 @@ export type KernelOptions = {
 
     /** How long `stop` waits for open streams to send their final RESTARTING event, in milliseconds (5000 when left out). */
     streamDrainMs?: number;
+
+    /** Holds every reply to the header allow-list (the kit's short list plus a route's `sends`) now; 9.0 makes it the default. Left out, a header the list would drop still goes out, named once in the log. */
+    strictReplyHeaders?: boolean;
 };
 
 /** One channel a plugin declared, as a reader of the api sees it. */
@@ -278,6 +281,7 @@ export function createKernel(options: KernelOptions): Kernel
     });
     const points = hooks<Context>(options.hookTimeoutMs);
     const openStreams: StreamRegistry = { perCaller: new Map(), active: new Set(), most: options.mostStreamsPerCaller ?? 4 };
+    const headerPolicy = { strict: options.strictReplyHeaders === true, warned: new Set<string>() };
     const settings = new Map<string, unknown>();
     const pending = new Map<object, PendingDelivery[]>();
 
@@ -453,13 +457,23 @@ export function createKernel(options: KernelOptions): Kernel
 
     const clock = (): number => (options.now ?? Date.now)();
 
-    /** The scope a dead letter belonged to, when its plugin's scope claim names a field of the payload. */
+    /**
+     * The tenant a dead letter belonged to, read from the payload by the names the emitting plugin's own scope
+     * gives it: the column each of its tables carries the scope in, then the claim. Never a fixed field name.
+     */
     function scopeOfPayload(plugin: string, payload: unknown): Readonly<Record<string, string>>
     {
-        const claim = known.get(plugin)?.definition.scope?.claim;
-        const value = claim !== undefined && payload !== null && typeof payload === "object" ? (payload as Record<string, unknown>)[claim] : undefined;
+        const scope = known.get(plugin)?.definition.scope;
 
-        return claim !== undefined && typeof value === "string" ? { [claim]: value } : {};
+        if (scope === undefined || payload === null || typeof payload !== "object")
+        {
+            return {};
+        }
+
+        const fields = [...new Set([...Object.values(scope.tables), scope.claim])];
+        const found = fields.find((field) => typeof (payload as Record<string, unknown>)[field] === "string");
+
+        return found === undefined ? {} : { [found]: (payload as Record<string, string>)[found] as string };
     }
 
     /**
@@ -887,6 +901,7 @@ export function createKernel(options: KernelOptions): Kernel
                 log,
                 options.rateLimiter,
                 openStreams,
+                headerPolicy,
             );
 
             inFlight.add(answer);

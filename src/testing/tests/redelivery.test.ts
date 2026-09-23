@@ -31,8 +31,8 @@ const orders = definePlugin("orders", {
     describe: "Announces an order.",
     tables: { deskNotes: notes },
     migrations: "./src/testing/tests/fixtures/desk/migrations",
-    // the claim names a payload field, so a dead letter's log line can say whose it was
-    scope: { describe: "A workspace's orders.", claim: "workspaceId", tables: { deskNotes: "workspaceId" } },
+    // the claim is not the payload's field name: the log finds the tenant by the scope's own column name
+    scope: { describe: "A workspace's orders.", claim: "workspace", tables: { deskNotes: "workspaceId" } },
     emits: { [EVENT]: { describe: "An order was placed.", schema: z.object({ id: z.string(), workspaceId: z.string(), note: z.string() }) } },
 });
 
@@ -116,7 +116,7 @@ afterEach(async () =>
 
 const boot = async (): Promise<TestKernel> =>
 {
-    api = await startTestKernel({ plugins: [orders, mailer, ledger], now: () => time });
+    api = await startTestKernel({ plugins: [orders, mailer, ledger], now: () => time, outbox: true });
 
     return api;
 };

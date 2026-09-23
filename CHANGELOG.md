@@ -4,16 +4,19 @@
 
 ### Changes you may notice
 
-- A test kernel keeps an outbox unless `outbox: false`, as a deployment
-  does: an event emitted outside `ctx.tx` is now refused in tests too.
+- A test kernel asked for no outbox runs without one, as in 8.0, and says
+  once per process (a `STACK_API_KIT_TEST_OUTBOX` warning) that 9.0 turns
+  it on. Pass `outbox: true` to test as a deployment with an outbox runs.
 - Every GET answering 200 carries a weak `etag`, and a matching
   `If-None-Match` answers 304. A test comparing a GET's whole answer sees
   the header.
-- A reply may set only location, retry-after, content-disposition, vary,
-  etag, cache-control and the session headers, plus what its route names in
-  `sends`; any other header is dropped with a warning. A `public`,
-  `s-maxage` or `proxy-revalidate` cache-control passes only on a public
-  route.
+- A reply still sends every header 8.0 sent, and each one the allow-list
+  will drop in 9.0 is named once in the log. `strictReplyHeaders: true`
+  (on `start`, `createKernel` or a test kernel) holds replies to it now:
+  location, retry-after, content-disposition, vary, etag, cache-control and
+  the session headers, plus what a route names in `sends`.
+- A reply's own cache-control now reaches the wire; a `public`, `s-maxage`
+  or `proxy-revalidate` one passes only on a public route.
 - A redirect answered to `ctx.fetch` is still refused, now as NETWORK with
   the status; the built-in client asks fetch for redirects by hand.
 - `Route.output` is optional in the type, and a route declaring none of
@@ -43,8 +46,9 @@
   `outboxLeaseMs`, `outboxBeatMs`.
 - `watchesWork: true` and `ctx.work`.
 - `GET /health` and `ServerOptions.readiness`.
-- `configureTestKernels({ resolve })` and `withDependencies` in `./testing`.
-- `procedures/answers.md` and `procedures/work.md`.
+- `configureTestKernels({ resolve })` and `withDependencies` in `./testing`;
+  `resolve` is given the names missing, wave by wave, each asked once.
+- `procedures/answers.md`, `procedures/work.md` and `procedures/operations.md`.
 
 ### Fixed
 

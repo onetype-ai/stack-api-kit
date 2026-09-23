@@ -43,8 +43,11 @@ export type TestKernelOptions = {
     config?: Readonly<Record<string, unknown>>;
     respondWith?: (request: HttpRequest) => unknown;
 
-    /** Whether events are kept until a listener has recorded them, as `start({ outbox: true })` does; on unless `false`, as a deployment runs. */
+    /** Whether events are kept until a listener has recorded them, as `start({ outbox: true })` does. Left out it is off, and 9.0 turns it on: pass `true` to test as a deployment with an outbox runs. */
     outbox?: boolean;
+
+    /** Holds every reply to the header allow-list, as `start({ strictReplyHeaders: true })` does. */
+    strictReplyHeaders?: boolean;
 
     /** Whether a plugin may ask for work later, as `start({ schedule: true })`. */
     schedule?: boolean;
@@ -109,7 +112,10 @@ export const testTables = {
 };
 
 /** Every option `startTestKernel` knows. */
-const TAKES: ReadonlySet<string> = new Set(["plugins", "config", "respondWith", "outbox", "schedule", "sockets", "now", "lookup"]);
+const TAKES: ReadonlySet<string> = new Set(["plugins", "config", "respondWith", "outbox", "schedule", "sockets", "now", "lookup", "strictReplyHeaders"]);
+
+/** Whether this process was already told that the outbox default changes in 9.0. */
+let toldOfOutbox = false;
 
 // example.com's address: public, so the check passes, and never dialled, since the test kernel answers calls itself.
 const PUBLIC_ADDRESS: readonly ResolvedAddress[] = [{ address: "93.184.215.14", family: 4 }];
@@ -120,35 +126,104 @@ export type TestKernelFixture = {
     config: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
 };
 
-let resolving: (() => Promise<TestKernelFixture>) | undefined;
-let resolved: Promise<TestKernelFixture> | undefined;
+let resolving: ((missing: readonly string[]) => Promise<TestKernelFixture>) | undefined;
+
+/** Every plugin the fixture has handed over in this process, and the config it named for each, by name. */
+const discovered = new Map<string, Plugin>();
+const discoveredConfig = new Map<string, Readonly<Record<string, unknown>>>();
+const asked = new Set<string>();
 
 /**
- * Registers, once per test process (a setup file), where missing dependencies come from. `resolve` runs only when a kernel names a
- * dependency the test did not pass, and once: a test that passes every plugin it needs boots exactly as before.
+ * Registers, once per test process (a setup file), where missing dependencies come from. `resolve` is given the names
+ * nothing passed provides, in waves as their own dependencies turn up, and each name is asked for once: a resolver
+ * may load only those plugins, or answer every plugin it holds. A test that passes every plugin it needs never calls it.
  */
-export function configureTestKernels(configuring: { resolve: () => Promise<TestKernelFixture> }): void
+export function configureTestKernels(configuring: { resolve: (missing: readonly string[]) => Promise<TestKernelFixture> }): void
 {
     resolving = configuring.resolve;
-    resolved = undefined;
+    discovered.clear();
+    discoveredConfig.clear();
+    asked.clear();
 }
 
-/** The registered fixture, read once and kept; a failed read is tried again next time. */
-function fixture(): Promise<TestKernelFixture> | undefined
+/** The names a closure over these plugins needs that neither they nor the fixture's answers so far provide. */
+function missingFrom(plugins: readonly Plugin[]): string[]
 {
-    if (resolving === undefined)
+    const chosen = new Map(plugins.map((plugin) => [plugin.name, plugin]));
+    const missing = new Set<string>();
+    const seen = new Set<string>();
+    const walk = (plugin: Plugin): void =>
     {
-        return undefined;
+        if (seen.has(plugin.name))
+        {
+            return;
+        }
+
+        seen.add(plugin.name);
+
+        for (const name of plugin.definition.dependsOn ?? [])
+        {
+            const next = chosen.get(name) ?? discovered.get(name);
+
+            if (next === undefined)
+            {
+                missing.add(name);
+            }
+            else
+            {
+                walk(next);
+            }
+        }
+    };
+
+    plugins.forEach(walk);
+
+    return [...missing];
+}
+
+/** Asks the fixture for what is missing, wave by wave, until nothing new can be found. */
+async function discover(plugins: readonly Plugin[]): Promise<void>
+{
+    for (;;)
+    {
+        const wanted = missingFrom(plugins).filter((name) => !asked.has(name));
+
+        if (resolving === undefined || wanted.length === 0)
+        {
+            return;
+        }
+
+        wanted.forEach((name) => asked.add(name));
+
+        let answered: TestKernelFixture;
+
+        try
+        {
+            answered = await resolving(wanted);
+        }
+        catch (cause)
+        {
+            // a failed read is tried again next time
+            wanted.forEach((name) => asked.delete(name));
+
+            throw cause;
+        }
+
+        for (const plugin of answered.plugins)
+        {
+            if (!discovered.has(plugin.name))
+            {
+                discovered.set(plugin.name, plugin);
+
+                const config = answered.config[plugin.name];
+
+                if (config !== undefined)
+                {
+                    discoveredConfig.set(plugin.name, config);
+                }
+            }
+        }
     }
-
-    resolved ??= resolving().catch((cause: unknown) =>
-    {
-        resolved = undefined;
-
-        throw cause;
-    });
-
-    return resolved;
 }
 
 /** Whether any plugin names a dependency the list does not hold. */
@@ -166,14 +241,13 @@ function isMissingAny(plugins: readonly Plugin[]): boolean
  */
 export async function withDependencies(plugins: readonly Plugin[]): Promise<Plugin[]>
 {
-    const known = isMissingAny(plugins) ? await fixture() : undefined;
-
-    if (known === undefined)
+    if (resolving === undefined || !isMissingAny(plugins))
     {
         return [...plugins];
     }
 
-    const discovered = new Map(known.plugins.map((plugin) => [plugin.name, plugin]));
+    await discover(plugins);
+
     const chosen = new Map(plugins.map((plugin) => [plugin.name, plugin]));
     const ordered: Plugin[] = [];
     const placed = new Set<string>();
@@ -225,13 +299,12 @@ async function closedOver(options: TestKernelOptions): Promise<TestKernelOptions
         return options;
     }
 
-    const known = await fixture();
     const config: Record<string, unknown> = { ...options.config };
 
     for (const plugin of plugins)
     {
         const added = !options.plugins.includes(plugin);
-        const base = added && known?.plugins.includes(plugin) === true ? known.config[plugin.name] : undefined;
+        const base = added && discovered.get(plugin.name) === plugin ? discoveredConfig.get(plugin.name) : undefined;
         const given = options.config?.[plugin.name];
 
         if (base !== undefined)
@@ -292,9 +365,14 @@ export async function startTestKernel(asked: TestKernelOptions): Promise<TestKer
         return Promise.resolve(options.respondWith?.(call) ?? {});
     };
 
-    // on unless a test says otherwise, as a deployment runs it: an event emitted
-    // outside a transaction is then refused here, not first in production
-    const outbox = options.outbox === false ? undefined : store.outbox?.();
+    // off unless asked until 9.0: with one, an event emitted outside a transaction is refused here, not first in production
+    if (options.outbox === undefined && !toldOfOutbox)
+    {
+        toldOfOutbox = true;
+        process.emitWarning("startTestKernel runs without an outbox when none is asked for, and 9.0 turns it on. Pass outbox: true to test as a deployment with an outbox runs, or outbox: false to keep testing without one.", { code: "STACK_API_KIT_TEST_OUTBOX" });
+    }
+
+    const outbox = options.outbox === true ? store.outbox?.() : undefined;
     const later = options.schedule === true ? store.schedule?.() : undefined;
     const scoping = options.plugins.some((plugin) => plugin.definition.scope !== undefined);
 
@@ -314,6 +392,7 @@ export async function startTestKernel(asked: TestKernelOptions): Promise<TestKer
         db: store,
         httpClient: answering,
         lookup: options.lookup ?? (() => Promise.resolve(PUBLIC_ADDRESS)),
+        ...(options.strictReplyHeaders !== undefined && { strictReplyHeaders: options.strictReplyHeaders }),
         rateLimiter: limiter(),
         config: options.config ?? {},
         log: (level, plugin, line, about) =>

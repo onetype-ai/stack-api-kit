@@ -18,7 +18,8 @@ assertion: a reader sees what is claimed without opening another file.
 ## The database is real
 
 `startTestKernel({ plugins })` opens an in-memory SQLite with the real
-migrations, an outbox, a rate limiter and an http client the test reads.
+migrations, a rate limiter and an http client the test reads; pass
+`outbox: true` to test as a deployment with an outbox runs.
 A fake accepting what SQLite rejects is where bugs hide.
 
 `configureTestKernels({ resolve })` in a setup file adds what a plugin

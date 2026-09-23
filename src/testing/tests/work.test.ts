@@ -44,7 +44,7 @@ describe("a plugin watching the work", () =>
 {
     test("reads how many jobs are due and waiting, and how the outbox is doing", async () =>
     {
-        api = await startTestKernel({ plugins: [operations, reminders], schedule: true });
+        api = await startTestKernel({ plugins: [operations, reminders], schedule: true, outbox: true });
 
         const scheduling = api.kernel.context("reminders");
 
@@ -60,7 +60,7 @@ describe("a plugin watching the work", () =>
     {
         let now = Date.now();
 
-        api = await startTestKernel({ plugins: [operations, reminders], schedule: true, now: () => now });
+        api = await startTestKernel({ plugins: [operations, reminders], schedule: true, outbox: true, now: () => now });
 
         api.kernel.context("reminders").commands.later("reminders.send", { secret: "never-shown" }, 0);
 

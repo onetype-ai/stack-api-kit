@@ -460,7 +460,7 @@ describe("a reply's own headers", () =>
 {
     test.each(Object.keys(WEAKENING))("drops %s from a route that is not a document", async (name) =>
     {
-        api = await startTestKernel({ plugins: [headers] });
+        api = await startTestKernel({ plugins: [headers], strictReplyHeaders: true });
 
         const answer = await api.kernel.handle({ method: "GET", path: "/weaken", input: {}, identity: createIdentity([], "ana") });
 
@@ -469,7 +469,7 @@ describe("a reply's own headers", () =>
 
     test("keeps what a reply may say about itself", async () =>
     {
-        api = await startTestKernel({ plugins: [headers] });
+        api = await startTestKernel({ plugins: [headers], strictReplyHeaders: true });
 
         const answer = await api.kernel.handle({ method: "GET", path: "/weaken", input: {}, identity: createIdentity([], "ana") });
 
@@ -478,7 +478,7 @@ describe("a reply's own headers", () =>
 
     test("lets only a public route hand its answer to a shared cache", async () =>
     {
-        api = await startTestKernel({ plugins: [headers] });
+        api = await startTestKernel({ plugins: [headers], strictReplyHeaders: true });
 
         const personal = await api.kernel.handle({ method: "GET", path: "/weaken", input: {}, identity: createIdentity([], "ana") });
         const shared = await api.kernel.handle({ method: "GET", path: "/shared", input: {} });
@@ -489,7 +489,7 @@ describe("a reply's own headers", () =>
 
     test("keeps a header the route names in sends", async () =>
     {
-        api = await startTestKernel({ plugins: [headers] });
+        api = await startTestKernel({ plugins: [headers], strictReplyHeaders: true });
 
         const answer = await api.kernel.handle({ method: "POST", path: "/replay", input: {} });
 
@@ -512,7 +512,7 @@ describe("over HTTP, a route that is not a document", () =>
 {
     const serveHeaders = async (): Promise<string> =>
     {
-        app = await start({ plugins: [headers], database: { file: ":memory:" }, sockets: false, identify: () => () => createIdentity([], "ana") });
+        app = await start({ plugins: [headers], database: { file: ":memory:" }, sockets: false, strictReplyHeaders: true, identify: () => () => createIdentity([], "ana") });
         const server = Server.listen(app, 0) as HttpServer;
 
         if (!server.listening)

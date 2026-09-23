@@ -117,9 +117,9 @@ describe("a test kernel's outbox", () =>
         emits: { "notes.note.created": { describe: "A note was made.", schema: z.object({ id: z.string() }) } },
     });
 
-    test("refuses an event emitted outside a transaction, as a deployment with an outbox does", async () =>
+    test("refuses an event emitted outside a transaction when asked for one, as a deployment with an outbox does", async () =>
     {
-        const started = await startTestKernel({ plugins: [notes] });
+        const started = await startTestKernel({ plugins: [notes], outbox: true });
 
         api = started;
 
@@ -128,7 +128,7 @@ describe("a test kernel's outbox", () =>
 
     test("lets a plugin with no tables emit inside a transaction", async () =>
     {
-        const started = await startTestKernel({ plugins: [notes] });
+        const started = await startTestKernel({ plugins: [notes], outbox: true });
 
         api = started;
 
@@ -148,5 +148,32 @@ describe("a test kernel's outbox", () =>
         api = started;
 
         expect(() => started.kernel.context("notes").events.emit("notes.note.created", { id: "1" })).not.toThrow();
+    });
+});
+
+describe("a fixture that loads plugins by name", () =>
+{
+    test("is asked only for the names missing, wave by wave, and each name once in a process", async () =>
+    {
+        const byName = new Map<string, Plugin>([accounts, catalog, items].map((plugin) => [plugin.name, plugin]));
+        const waves: string[][] = [];
+
+        configureTestKernels({
+            resolve: (missing) =>
+            {
+                waves.push([...missing]);
+
+                return Promise.resolve({ plugins: missing.flatMap((name) => byName.get(name) ?? []), config: { accounts: { region: "eu", currency: "EUR" } } });
+            },
+        });
+
+        const shop = definePlugin("shop", { version: "1.0.0", describe: "Sells items.", dependsOn: ["items"] });
+
+        api = await startTestKernel({ plugins: [shop] });
+        await api.stop();
+        api = await startTestKernel({ plugins: [shop] });
+
+        expect(waves).toEqual([["items"], ["catalog", "accounts"]]);
+        expect(api.kernel.context("accounts").config).toEqual({ region: "eu", currency: "EUR" });
     });
 });

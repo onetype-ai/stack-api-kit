@@ -317,6 +317,7 @@ export async function start(options: StartOptions): Promise<StartedApp>
         ...(options.lookup !== undefined && { lookup: options.lookup }),
         ...(options.mostStreamsPerCaller !== undefined && { mostStreamsPerCaller: options.mostStreamsPerCaller }),
         ...(options.streamDrainMs !== undefined && { streamDrainMs: options.streamDrainMs }),
+        ...(options.strictReplyHeaders !== undefined && { strictReplyHeaders: options.strictReplyHeaders }),
         ...(options.config !== undefined && { config: options.config }),
         ...(log !== undefined && {
             log: (level, plugin, line, about) =>

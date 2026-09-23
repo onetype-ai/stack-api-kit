@@ -34,8 +34,8 @@ export default { fetch: app.fetch, port: 3000 };
 - `accepts: "form"` reads `multipart/form-data`: file parts become
   `UploadedFile`s, a filename stripped of a path. `"urlencoded"` reads string
   fields, a repeated name as a list; `keepsRaw` keeps the bytes to verify.
-- `/live` and `/health` answer 200; `/ready` answers `readiness()` once the
-  kernel started, 503 when not ready or when it throws.
+- `/live`, `/health` answer 200; `/ready` answers `readiness()`, 503 when
+  not ready or it throws (`procedures/operations.md`).
 - Each response carries `x-request-id`, as does every log line for it.
 
 ## Refuses

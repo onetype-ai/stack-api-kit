@@ -25,10 +25,10 @@ function answering(headers: Readonly<Record<string, string>>, route: Record<stri
     } as Definition);
 }
 
-async function headersOf(plugin: Plugin): Promise<{ headers: Readonly<Record<string, string>>; lines: Line[] }>
+async function headersOf(plugin: Plugin, strict = true): Promise<{ headers: Readonly<Record<string, string>>; lines: Line[] }>
 {
     const lines: Line[] = [];
-    const kernel = createKernel({ plugins: [plugin], log: (level, _plugin, line) => lines.push({ level, line }) });
+    const kernel = createKernel({ plugins: [plugin], strictReplyHeaders: strict, log: (level, _plugin, line) => lines.push({ level, line }) });
 
     await kernel.start();
 
@@ -91,5 +91,32 @@ describe("a route naming what it sends", () =>
         const kernel = createKernel({ plugins: [answering({}, { sends: [name] })] });
 
         await expect(kernel.start()).rejects.toThrow(`sends "${name}"`);
+    });
+});
+
+describe("a kernel not yet held to the allow-list", () =>
+{
+    test("still sends a header the list would drop, and names it once with how to keep it", async () =>
+    {
+        const lines: Line[] = [];
+        const kernel = createKernel({ plugins: [answering({ "x-trace": "abc" })], log: (level, _plugin, line) => lines.push({ level, line }) });
+
+        await kernel.start();
+
+        const asking = { method: "GET" as const, path: "/items", input: {}, identity: { id: "someone", permissions: [], claims: {} } };
+        const first = await kernel.handle(asking);
+        const second = await kernel.handle(asking);
+
+        expect(first.headers?.["x-trace"]).toBe("abc");
+        expect(second.headers?.["x-trace"]).toBe("abc");
+        expect(lines.filter((line) => line.line.includes("which 9.0 drops"))).toHaveLength(1);
+    });
+
+    test("still refuses what the kit always answered for", async () =>
+    {
+        const { headers } = await headersOf(answering({ "set-cookie": "a=1", "content-security-policy": "none" }), false);
+
+        expect(headers["set-cookie"]).toBeUndefined();
+        expect(headers["content-security-policy"]).toBeUndefined();
     });
 });

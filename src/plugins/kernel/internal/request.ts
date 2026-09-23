@@ -8,7 +8,7 @@ import type { z } from "zod";
 import type { Identity, Context, HttpMethod, Route } from "./contract";
 import { KernelFault } from "./faults";
 import { createPermissions } from "./permissions";
-import { filterHeaders } from "./replyHeaders";
+import { replyHeaders, type ReplyHeaderPolicy } from "./replyHeaders";
 import { logRecord } from "./logRecord";
 
 /** What decides whether one identity has any allowance left on one route. */
@@ -91,6 +91,7 @@ export async function respond(
     log: RequestLog,
     rateLimiter?: RateLimiter,
     streams?: StreamRegistry,
+    headerPolicy: ReplyHeaderPolicy = { strict: true, warned: new Set() },
 ): Promise<KernelResponse>
 {
     const { plugin, route } = mounted;
@@ -284,12 +285,12 @@ export async function respond(
                 log("warn", plugin, `${route.method} ${route.path} answered ${String(status)} with a body, which that status never carries; it was dropped`);
             }
 
-            return { status, body: null, ...(reply !== undefined && { headers: filterHeaders(reply.headers, plugin, route, log) }) };
+            return { status, body: null, ...(reply !== undefined && { headers: replyHeaders(reply.headers, plugin, route, log, headerPolicy) }) };
         }
 
         if (reply !== undefined)
         {
-            return tagged({ status, body: filtered.data, headers: filterHeaders(reply.headers, plugin, route, log) }, route, incoming);
+            return tagged({ status, body: filtered.data, headers: replyHeaders(reply.headers, plugin, route, log, headerPolicy) }, route, incoming);
         }
 
         return tagged({ status, body: filtered.data }, route, incoming);
