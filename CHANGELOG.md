@@ -40,6 +40,8 @@
   it carries `requestId`; `accessLog: false` turns the line off.
 - `Log.line` never writes a credential, by key or by shape.
 - `flush()` waits for every listener an emit started.
+- `commands.later` outside a transaction still stores the job, and warns
+  once per command: 9.0 refuses it. Call it inside `ctx.tx`.
 
 ### Added
 

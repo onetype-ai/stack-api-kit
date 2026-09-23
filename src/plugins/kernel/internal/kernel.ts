@@ -567,6 +567,7 @@ export function createKernel(options: KernelOptions): Kernel
         pending,
         outbox: options.outbox,
         isRunning: () => running,
+        warned: new Set<string>(),
         track: (delivery) =>
         {
             const settling = delivery.catch(() => undefined).finally(() =>

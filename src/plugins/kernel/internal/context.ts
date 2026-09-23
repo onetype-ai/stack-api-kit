@@ -40,6 +40,9 @@ export type KernelWiring = {
     /** Keeps a delivery in flight until it settles, for whoever waits on every one. */
     track: (delivery: Promise<unknown>) => void;
 
+    /** What the kernel already warned about once, so a warning repeated per call does not drown the log. */
+    warned: Set<string>;
+
     /** How scheduled work and the outbox are doing, for the plugin that watches them. */
     work: WorkWatch;
 
@@ -595,6 +598,16 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
                         `"${plugin}" scheduled "${command}", which it does not declare. A plugin schedules only its own commands.`,
                         { plugin },
                     );
+                }
+
+                const inside = openTransaction !== undefined || wiring.open.getStore() !== undefined;
+                const once = `later-outside:${plugin}:${command}`;
+
+                // 9.0 refuses this: an async store could lose the job with nobody told, so it is written with the transaction
+                if (!inside && !wiring.warned.has(once))
+                {
+                    wiring.warned.add(once);
+                    wiring.log("warn", plugin, `scheduled "${command}" outside a transaction, which 9.0 refuses. Call commands.later inside ctx.tx, with the work it belongs to.`);
                 }
 
                 wiring.schedule.save(openTransaction?.db, {
