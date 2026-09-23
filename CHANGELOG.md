@@ -79,6 +79,11 @@
   the other's) and `[dialect]` (`.get()`, `.all()` or `.run()` on a query,
   which only SQLite answers, with what to write instead).
 
+- Durable pipelines (`#docs/procedures/durable-pipelines.md`):
+  `flavour: "durable"` runs each step as scheduled work with its `result`
+  stored, resumes after a crash, dedupes a run by `key`, hands each step an
+  `idempotencyKey`, and fails past `retries` with `<pipeline>.failed`.
+  `ctx.pipeline(name)` gains `status` and `retry`.
 - Tenant and exposed registries (`#docs/procedures/tenant-registries.md`):
   `scope: "tenant"` keeps entries per scope in the database through
   `ctx.scopedRegistry(name)`, changed only inside `ctx.tx`, announced as

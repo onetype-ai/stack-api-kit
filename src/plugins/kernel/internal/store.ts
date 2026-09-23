@@ -96,6 +96,46 @@ export type RegistryStore = {
     remove: (db: unknown, change: { registry: string; scope: string; key: string }) => Promise<{ version: number; before: StoredEntry } | undefined>;
 };
 
+/** One durable pipeline run, as stored: never its input or results, which a caller reads through the pipeline. */
+export type PipelineRun = {
+    id: string;
+    pipeline: string;
+    scope: string;
+    status: "running" | "done" | "failed";
+
+    /** The step it failed at, when it failed. */
+    step: string | undefined;
+    attempts: number;
+    output: unknown;
+};
+
+/**
+ * Where durable pipeline runs keep their input and each step's result, in the same database as the schedule that
+ * runs them: a step's result is written with the enqueue of the next, so a crash redoes a step or finds it done.
+ */
+export type PipelineStore = {
+    /** Starts a run inside the transaction `db` belongs to; a run with the same key in this scope is answered instead. */
+    begin: (db: unknown, run: { id: string; pipeline: string; scope: string; key: string; input: unknown }) => Promise<{ id: string; isNew: boolean }>;
+
+    get: (id: string) => Promise<(PipelineRun & { input: unknown }) | undefined>;
+
+    /** The results stored so far, by step id. */
+    results: (id: string) => Promise<ReadonlyMap<string, unknown>>;
+
+    /** Stores one step's result inside the transaction `db` belongs to; false when it was stored already. */
+    keep: (db: unknown, id: string, step: string, result: unknown) => Promise<boolean>;
+
+    finish: (db: unknown, id: string, output: unknown) => Promise<void>;
+
+    /** Counts one failed attempt, outside any transaction, answering how many there have been. */
+    attempted: (id: string) => Promise<number>;
+
+    fail: (db: unknown, id: string, step: string) => Promise<void>;
+
+    /** Puts a failed run back to running, its attempts reset; false when it had not failed. */
+    revive: (db: unknown, id: string) => Promise<boolean>;
+};
+
 /** How scheduled work and the outbox are doing, as an operator sees it: counts, names and times, never a job's input or an event's payload. */
 export type WorkWatch = {
     health: () => Promise<{

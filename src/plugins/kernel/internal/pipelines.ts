@@ -10,13 +10,26 @@ export type ExplainedStep = {
 
 type Step = PipelineStep<Context>;
 
-type Placed = ExplainedStep & { run: Step["run"] };
+/** A step where it runs, with what a durable run checks its answer against. */
+export type Placed = ExplainedStep & { run: Step["run"]; result?: Step["result"]; retries?: number | undefined };
 
 type Added = { plugin: string; step: Step };
 
 const stopped = Symbol("stopped");
 
 type Stopped = { [stopped]: true; result: unknown };
+
+/** What a step hands `stop`: the output it ends the run with. */
+export function stop(result: unknown): unknown
+{
+    return { [stopped]: true, result } satisfies Stopped;
+}
+
+/** Whether a step's answer ended the run, and with what. */
+export function stoppedWith(answer: unknown): { stopped: boolean; value: unknown }
+{
+    return typeof answer === "object" && answer !== null && stopped in answer ? { stopped: true, value: (answer as Stopped).result } : { stopped: false, value: answer };
+}
 
 function anchorOf(step: Step): { before: string } | { after: string } | undefined
 {
@@ -30,7 +43,7 @@ function anchorOf(step: Step): { before: string } | { after: string } | undefine
 
 export function resolve(name: string, owner: string, pipeline: Pipeline<Context>, added: readonly Added[]): { placed: Placed[]; problems: string[] }
 {
-    const placed: Placed[] = pipeline.steps.map((step) => ({ id: step.id, owner, run: step.run }));
+    const placed: Placed[] = pipeline.steps.map((step) => ({ id: step.id, owner, run: step.run, result: step.result, retries: step.retries }));
     const problems: string[] = [];
     const ids = new Set<string>();
 
@@ -84,7 +97,7 @@ export function resolve(name: string, owner: string, pipeline: Pipeline<Context>
                 continue;
             }
 
-            placed.splice("before" in (anchor ?? {}) ? at : at + 1, 0, { id: step.id, owner: plugin, anchor, run: step.run });
+            placed.splice("before" in (anchor ?? {}) ? at : at + 1, 0, { id: step.id, owner: plugin, anchor, run: step.run, result: step.result, retries: step.retries });
 
             if ("after" in (anchor ?? {}))
             {
@@ -142,6 +155,15 @@ export function pipelines()
             }
 
             return problems;
+        },
+
+        /** A pipeline as declared, with its steps in the order they run. */
+        declared: (name: string): { owner: string; pipeline: Pipeline<Context>; steps: readonly Placed[] } | undefined =>
+        {
+            const one = declared.get(name);
+            const steps = resolved.get(name);
+
+            return one === undefined || steps === undefined ? undefined : { owner: one.owner, pipeline: one.pipeline, steps };
         },
 
         explain: (name: string): readonly ExplainedStep[] =>

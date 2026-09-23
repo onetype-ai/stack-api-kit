@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
-import type { Identity, Context, HttpRequest, Plugin } from "./contract";
+import type { Identity, Context, HttpRequest, PipelineAccess, Plugin } from "./contract";
 import type { events, PendingDelivery } from "./events";
 import { Refusal } from "./refusal";
 import { KernelFault } from "./faults";
@@ -10,10 +10,11 @@ import { HttpRequestError } from "./httpError";
 import { DEFAULT_REDIRECTS, FOLLOW_BUDGET_MS, hopOf, nextHop, redirectsOf, type Hop } from "./redirects";
 import { publicAddressOf, type Lookup } from "./resolve";
 import type { hooks } from "./hooks";
-import type { pipelines } from "./pipelines";
+import { stop, stoppedWith, type pipelines } from "./pipelines";
 import { orderedEntries, type registries, type RegistryEntry } from "./registries";
+import { ADVANCE, FAIL, KEEP, type DurableSteps } from "./durable";
 import { createPermissions } from "./permissions";
-import type { HttpClient, ScopeFilter, Outbox, QueuedJob, RegistryStore, Schedule, Sockets, KernelStore, WorkWatch } from "./store";
+import type { HttpClient, ScopeFilter, Outbox, PipelineStore, QueuedJob, RegistryStore, Schedule, Sockets, KernelStore, WorkWatch } from "./store";
 
 /** Everything a context is built from. One object, so the shape is one line. */
 export type KernelWiring = {
@@ -31,6 +32,9 @@ export type KernelWiring = {
 
     /** Where tenant registries keep their entries, when the project gave a store that holds them. */
     registryStore: RegistryStore | undefined;
+
+    /** Where durable pipeline runs keep their input and results. */
+    runs: PipelineStore | undefined;
     flows: ReturnType<typeof pipelines>;
 
     /** Commands asked for later inside each open transaction, written by it before it commits. */
@@ -900,14 +904,191 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
         {
             reachable(wiring.flows.ownerOf(name), "pipeline", name);
 
+            const declared = wiring.flows.declared(name);
+
+            if (declared?.pipeline.flavour === "durable")
+            {
+                return durableAccess(name, declared);
+            }
+
+            const notDurable = (): never =>
+            {
+                throw new KernelFault("INVALID_CALL", `"${plugin}" asked pipeline "${name}" for a run's status, and it runs in the request, keeping no runs. Declare flavour: "durable" to keep them.`, { plugin });
+            };
+
             return {
                 run: (input) => wiring.flows.run(name, input, (owner) => contextFor(owner), (step, ms, outcome) =>
                 {
                     wiring.log("debug", plugin, `pipeline "${name}" step "${step}" ${outcome}`, { ms });
                 }),
+                status: notDurable,
+                retry: notDurable,
             };
         },
     };
+
+    /** Runs as a durable pipeline does: each step one scheduled command, its result stored with the enqueue of the next. */
+    function durableAccess(name: string, declared: NonNullable<ReturnType<typeof wiring.flows.declared>>): PipelineAccess & DurableSteps
+    {
+        const { owner, pipeline, steps } = declared;
+        const runs = wiring.runs ?? absentWiring(plugin, "a database store", "a durable pipeline", "runs");
+        const scopeOf = (): string => wiring.known.get(owner)?.definition.scope === undefined ? "" : tenantFor(owner);
+
+        const inTransaction = (what: string): OpenTransaction =>
+        {
+            if (openTransaction === undefined)
+            {
+                throw new KernelFault("UNKEPT_JOB", `"${plugin}" called ${what} on durable pipeline "${name}" outside a transaction, so the run and its first step could part from the work that asked for it. Call it inside ctx.tx.`, { plugin });
+            }
+
+            return openTransaction;
+        };
+
+        const enqueue = (inside: OpenTransaction, runId: string): void =>
+        {
+            wiring.jobs.get(inside.mark)?.push({ id: crypto.randomUUID(), plugin: owner, command: `${name}.step`, input: { runId }, at: wiring.now(), attempts: 0 });
+        };
+
+        /** A run of this scope, or nothing: another scope's run id answers as if it did not exist. */
+        const ours = async (runId: string): Promise<Awaited<ReturnType<PipelineStore["get"]>>> =>
+        {
+            const run = await runs.get(runId);
+
+            return run === undefined || run.pipeline !== name || run.scope !== scopeOf() ? undefined : run;
+        };
+
+        /** What the kernel's step command does for one run: the first step with no stored result, and what follows it. */
+        const advance = async (runId: string): Promise<void> =>
+        {
+            const run = await runs.get(runId);
+
+            if (run === undefined || run.status !== "running")
+            {
+                return;
+            }
+
+            const results = await runs.results(runId);
+            const at = steps.findIndex((step) => !results.has(step.id));
+            const step = steps[at];
+
+            if (step === undefined)
+            {
+                return;
+            }
+
+            const acting = run.scope === "" ? undefined : run.scope;
+            const state = at === 0 ? run.input : results.get(steps[at - 1]?.id ?? "");
+            let kept: unknown;
+            let isLast = at === steps.length - 1;
+
+            try
+            {
+                const answer = stoppedWith(await step.run(state as never, context(wiring, step.owner, undefined, undefined, {}, acting), { stop, idempotencyKey: `${runId}:${step.id}` }));
+
+                isLast ||= answer.stopped;
+                kept = answer.stopped ? pipeline.output.parse(answer.value) : step.result?.parse(answer.value);
+
+                if (isLast && !answer.stopped)
+                {
+                    pipeline.output.parse(kept);
+                }
+            }
+            catch (cause)
+            {
+                const attempts = await runs.attempted(runId);
+
+                wiring.log("error", step.owner, `pipeline "${name}" step "${step.id}" failed`, { runId, attempts, error: cause instanceof Error ? cause.name : "Error" });
+
+                if (attempts < (step.retries ?? 3))
+                {
+                    throw cause;
+                }
+
+                await context(wiring, owner, undefined, undefined, {}, acting).tx(async (inside) => (inside.pipeline(name) as unknown as DurableSteps)[FAIL](runId, step.id));
+
+                return;
+            }
+
+            await context(wiring, owner, undefined, undefined, {}, acting).tx(async (inside) => (inside.pipeline(name) as unknown as DurableSteps)[KEEP](runId, step.id, kept, isLast));
+        };
+
+        return {
+            run: async (input, options = {}) =>
+            {
+                const inside = inTransaction("run");
+                const entered = pipeline.input.safeParse(input);
+
+                if (!entered.success)
+                {
+                    throw new KernelFault("INVALID_PAYLOAD", `The input for pipeline "${name}" does not match its schema: ${entered.error.issues[0]?.message ?? "it was rejected"}.`, { plugin: owner });
+                }
+
+                const started = await runs.begin(inside.db, { id: crypto.randomUUID(), pipeline: name, scope: scopeOf(), key: options.key ?? crypto.randomUUID(), input: entered.data });
+
+                if (started.isNew)
+                {
+                    enqueue(inside, started.id);
+                }
+
+                return { runId: started.id, isNew: started.isNew };
+            },
+
+            status: async (runId) =>
+            {
+                const run = await ours(runId);
+
+                return run === undefined ? undefined : { status: run.status, ...(run.step !== undefined && { step: run.step }), ...(run.status === "done" && { output: run.output }) };
+            },
+
+            retry: async (runId) =>
+            {
+                const inside = inTransaction("retry");
+
+                if ((await ours(runId)) === undefined || !(await runs.revive(inside.db, runId)))
+                {
+                    return false;
+                }
+
+                enqueue(inside, runId);
+
+                return true;
+            },
+
+            [ADVANCE]: advance,
+
+            [KEEP]: async (runId, step, kept, isLast) =>
+            {
+                const inside = inTransaction("keep");
+
+                // another attempt stored it first: this one's answer is not the run's
+                if (!(await runs.keep(inside.db, runId, step, kept)))
+                {
+                    return;
+                }
+
+                if (isLast)
+                {
+                    await runs.finish(inside.db, runId, kept);
+
+                    return;
+                }
+
+                enqueue(inside, runId);
+            },
+
+            [FAIL]: async (runId, step) =>
+            {
+                const inside = inTransaction("fail");
+
+                await runs.fail(inside.db, runId, step);
+
+                const event = `${name}.failed`;
+                const run = await runs.get(runId);
+
+                wiring.pending.get(inside.mark)?.push({ id: crypto.randomUUID(), plugin: owner, name: event, payload: wiring.bus.checkDeclared(owner, event, { runId, step, scope: run?.scope ?? "" }) });
+            },
+        };
+    }
 
     return ctx;
 }

@@ -10,10 +10,11 @@ import { order } from "./order";
 import { pipelines, type ExplainedStep } from "./pipelines";
 import { registries } from "./registries";
 import { RegistryChange, registryRoute } from "./registryRoute";
+import { ADVANCE, PipelineFailure, StepJob, type DurableSteps } from "./durable";
 import { createPermissions } from "./permissions";
 import { type RateLimiter, type KernelRequest, type RouteOwner, notServing, type KernelResponse, respond, unknownRoute } from "./request";
 import { systemLookup, type Lookup } from "./resolve";
-import type { FailedEvent, FailedJob, HttpClient, ScopeFilter, Outbox, Schedule, Sockets, KernelStore, RegistryStore } from "./store";
+import type { FailedEvent, FailedJob, HttpClient, ScopeFilter, Outbox, Schedule, Sockets, KernelStore, PipelineStore, RegistryStore } from "./store";
 import { holdWhileDelivering, keepHeard, OUTBOX_LEASE_MS, retryDelayMs } from "./delivery";
 import type { StreamRegistry } from "./streams";
 import { validate } from "./validate";
@@ -34,6 +35,9 @@ export type KernelOptions = {
 
     /** Where tenant registries keep their entries; a store gives one (`store.registries()`). */
     registries?: RegistryStore;
+
+    /** Where durable pipeline runs keep their input and results; a store gives one (`store.runs()`). */
+    runs?: PipelineStore;
 
     /** What holds the open sockets. Without one, ctx.push throws. */
     sockets?: Sockets;
@@ -598,6 +602,7 @@ export function createKernel(options: KernelOptions): Kernel
         lists,
         flows,
         registryStore: options.registries,
+        runs: options.runs,
         jobs: new Map(),
         outbox: options.outbox,
         isRunning: () => running,
@@ -755,6 +760,44 @@ export function createKernel(options: KernelOptions): Kernel
         });
     }
 
+    /** Gives each durable pipeline the command its steps run as, and the event its failure is told by. */
+    function scheduleDurableSteps(plugins: readonly Plugin[]): void
+    {
+        for (const plugin of plugins)
+        {
+            for (const name of Object.keys(plugin.definition.pipelines ?? {}))
+            {
+                const declared = flows.declared(name);
+
+                if (declared?.pipeline.flavour !== "durable")
+                {
+                    continue;
+                }
+
+                if (options.schedule === undefined || options.runs === undefined)
+                {
+                    throw new KernelFault("INVALID_CONFIG", `Pipeline "${name}" of "${plugin.name}" is durable, and createKernel was given no ${options.schedule === undefined ? "schedule" : "runs store"} to run its steps. Start with a database and schedule: true.`, { plugin: plugin.name });
+                }
+
+                const unkept = declared.steps.filter((step) => typeof (step.result as { safeParse?: unknown } | undefined)?.safeParse !== "function");
+
+                if (unkept.length > 0)
+                {
+                    throw new KernelFault("INVALID_PIPELINE", `Pipeline "${name}" is durable, and ${unkept.map((step) => `step "${step.id}" from "${step.owner}"`).join(", ")} declares no result, so what it answers could not be stored and read back. Give each a result: z.object({ ... }).`, { plugin: unkept[0]?.owner ?? plugin.name });
+                }
+
+                bus.declare(plugin.name, `${name}.failed`, { describe: `A run of pipeline "${name}" failed at a step, past its retries.`, schema: PipelineFailure });
+
+                commands.set(`${name}.step`, {
+                    plugin: plugin.name,
+                    requires: [],
+                    schema: StepJob,
+                    run: ((input: { runId: string }, ctx: Context) => (ctx.pipeline(name) as unknown as DurableSteps)[ADVANCE](input.runId)) as never,
+                });
+            }
+        }
+    }
+
     /** Declares what the kit announces and serves for each registry: its change event, and for an exposed one its route. */
     function serveRegistries(plugins: readonly Plugin[]): void
     {
@@ -903,6 +946,7 @@ export function createKernel(options: KernelOptions): Kernel
 
             placeAdditions(inOrder);
             serveRegistries(inOrder);
+            scheduleDurableSteps(inOrder);
 
             for (const plugin of inOrder)
             {

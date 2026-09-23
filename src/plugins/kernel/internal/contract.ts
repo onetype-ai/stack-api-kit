@@ -118,7 +118,14 @@ export type PipelineStep<Context> = {
     before?: string | undefined;
     after?: string | undefined;
 
-    run: (state: never, ctx: Context, step: { stop: (result: unknown) => unknown }) => unknown;
+    /** In a durable pipeline, what this step answers: stored as JSON, and read back by the next step after a crash. Required there. */
+    result?: z.ZodType | undefined;
+
+    /** In a durable pipeline, how many attempts before the run fails at this step: 3 when left out. */
+    retries?: number | undefined;
+
+    /** `idempotencyKey` is set in a durable pipeline, `<runId>:<stepId>`, the same on every attempt: hand it to a provider so a replay never charges or sends twice. */
+    run: (state: never, ctx: Context, step: { stop: (result: unknown) => unknown; idempotencyKey?: string | undefined }) => unknown;
 };
 
 /**
@@ -129,6 +136,32 @@ export type Pipeline<Context> = Describable & {
     input: z.ZodType;
     output: z.ZodType;
     steps: readonly PipelineStep<Context>[];
+
+    /** "request" (the default) runs in the caller's context now; "durable" runs each step as scheduled work, its result stored, resumed after a crash. */
+    flavour?: "request" | "durable" | undefined;
+};
+
+/** Where a durable run stands, for the scope that started it. */
+export type PipelineRunStatus = {
+    status: "running" | "done" | "failed";
+
+    /** The step it failed at. */
+    step?: string | undefined;
+
+    /** What it answered, once done. */
+    output?: unknown;
+};
+
+/** What a plugin does with one pipeline. */
+export type PipelineAccess = {
+    /** A request pipeline answers its output. A durable one starts a run, only inside `ctx.tx`, and answers its id; a second run with the same key in this scope answers the first. */
+    run: (input: unknown, options?: { key?: string | undefined }) => Promise<unknown>;
+
+    /** A durable run of this scope; undefined for another scope's or none. */
+    status: (runId: string) => Promise<PipelineRunStatus | undefined>;
+
+    /** Continues a failed durable run of this scope from the step it failed at, only inside `ctx.tx`; false when it had not failed. */
+    retry: (runId: string) => Promise<boolean>;
 };
 
 /** The verbs a route may answer. */
@@ -411,7 +444,7 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
     scopedRegistry: (name: string) => ScopedRegistryAccess;
 
     /** Runs a pipeline this plugin owns or depends on the owner of, checking its input and output. */
-    pipeline: (name: string) => { run: (input: unknown) => Promise<unknown> };
+    pipeline: (name: string) => PipelineAccess;
 };
 
 // Blocks a second inference site: a callback taking a context would be one, and two candidates for one parameter resolve to unknown.

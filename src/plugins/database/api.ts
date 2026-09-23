@@ -4,13 +4,14 @@ import { createScopeFilter } from "./internal/scopeFilter";
 import { noStore } from "./internal/noStore";
 import { outbox, outboxOver } from "./internal/outbox";
 import { registriesOver } from "./internal/registries";
+import { runsOver } from "./internal/runs";
 import { schedule, scheduleOver } from "./internal/schedule";
 import { sqliteSql } from "./internal/sql";
 
 import { tableName } from "../kernel/api";
 import { refuseOtherDialect } from "./internal/dialect";
 
-import type { ScopeFilter, Outbox, RegistryStore, Schedule } from "../kernel/api";
+import type { ScopeFilter, Outbox, PipelineStore, RegistryStore, Schedule } from "../kernel/api";
 import { store, type DrizzleDb, type TablesByName } from "./internal/store";
 
 /** What building a store needs: where the file is, and who owns what. */
@@ -30,6 +31,9 @@ export type Store<Db = unknown> = {
 
     /** Where tenant registries keep their entries, in this same database. */
     registries?: () => RegistryStore;
+
+    /** Where durable pipeline runs keep their input and results, in this same database. */
+    runs?: () => PipelineStore;
 
     /** How a declared scope becomes a condition over the tables it was given. */
     createScopeFilter?: () => ScopeFilter;
@@ -88,6 +92,12 @@ export function database(settings: StoreOptions): Store<DrizzleDb>
         registries: (): RegistryStore =>
         {
             return registriesOver(sql, { outside: backing.write });
+        },
+
+        /** Where durable pipeline runs keep their input and results, in this same database. */
+        runs: (): PipelineStore =>
+        {
+            return runsOver(sql, { outside: backing.write });
         },
 
         /** How a scope narrows a query, over the tables one plugin declared. */

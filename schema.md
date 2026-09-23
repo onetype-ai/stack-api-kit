@@ -418,9 +418,7 @@
     // A tenant registry this plugin owns or depends on the owner of, for the scope this context acts in.
     scopedRegistry: (name: string) => ScopedRegistryAccess
     // Runs a pipeline this plugin owns or depends on the owner of, checking its input and output.
-    pipeline: (name: string) => {
-    run: (input: unknown) => Promise<unknown>
-    }
+    pipeline: (name: string) => PipelineAccess
 
 > One thing wrong, and everything needed to fix it.
 ### ContractProblem
@@ -788,6 +786,8 @@
     db?: KernelStore
     // Where tenant registries keep their entries; a store gives one (`store.registries()`).
     registries?: RegistryStore
+    // Where durable pipeline runs keep their input and results; a store gives one (`store.runs()`).
+    runs?: PipelineStore
     // What holds the open sockets. Without one, ctx.push throws.
     sockets?: Sockets
     httpClient?: HttpClient
@@ -988,6 +988,38 @@
     input: z.ZodType
     output: z.ZodType
     steps: readonly PipelineStep<Context>[]
+    // "request" (the default) runs in the caller's context now; "durable" runs each step as scheduled work, its result stored, resumed after a crash.
+    flavour?: "request" | "durable" | undefined
+
+> What a plugin does with one pipeline.
+### PipelineAccess
+    // A request pipeline answers its output. A durable one starts a run, only inside `ctx.tx`, and answers its id; a second run with the same key in this scope answers the first.
+    run: (input: unknown, options?: {
+    key?: string | undefined
+    }) => Promise<unknown>
+    // A durable run of this scope; undefined for another scope's or none.
+    status: (runId: string) => Promise<PipelineRunStatus | undefined>
+    // Continues a failed durable run of this scope from the step it failed at, only inside `ctx.tx`; false when it had not failed.
+    retry: (runId: string) => Promise<boolean>
+
+> One durable pipeline run, as stored: never its input or results, which a caller reads through the pipeline.
+### PipelineRun
+    id: string
+    pipeline: string
+    scope: string
+    status: "running" | "done" | "failed"
+    // The step it failed at, when it failed.
+    step: string | undefined
+    attempts: number
+    output: unknown
+
+> Where a durable run stands, for the scope that started it.
+### PipelineRunStatus
+    status: "running" | "done" | "failed"
+    // The step it failed at.
+    step?: string | undefined
+    // What it answered, once done.
+    output?: unknown
 
 > One step of a pipeline: it answers the next state, or `stop(result)` to end the run with that output.
 ### PipelineStep<Context>
@@ -995,9 +1027,43 @@
     // Where an added step sits: beside one step, before or after it. The owner's own steps need neither.
     before?: string | undefined
     after?: string | undefined
+    // In a durable pipeline, what this step answers: stored as JSON, and read back by the next step after a crash. Required there.
+    result?: z.ZodType | undefined
+    // In a durable pipeline, how many attempts before the run fails at this step: 3 when left out.
+    retries?: number | undefined
+    // `idempotencyKey` is set in a durable pipeline, `<runId>:<stepId>`, the same on every attempt: hand it to a provider so a replay never charges or sends twice.
     run: (state: never, ctx: Context, step: {
     stop: (result: unknown) => unknown
+    idempotencyKey?: string | undefined
     }) => unknown
+
+> Where durable pipeline runs keep their input and each step's result, in the same database as the schedule that
+> runs them: a step's result is written with the enqueue of the next, so a crash redoes a step or finds it done.
+### PipelineStore
+    // Starts a run inside the transaction `db` belongs to; a run with the same key in this scope is answered instead.
+    begin: (db: unknown, run: {
+    id: string
+    pipeline: string
+    scope: string
+    key: string
+    input: unknown
+    }) => Promise<{
+    id: string
+    isNew: boolean
+    }>
+    get: (id: string) => Promise<(PipelineRun & {
+    input: unknown
+    }) | undefined>
+    // The results stored so far, by step id.
+    results: (id: string) => Promise<ReadonlyMap<string, unknown>>
+    // Stores one step's result inside the transaction `db` belongs to; false when it was stored already.
+    keep: (db: unknown, id: string, step: string, result: unknown) => Promise<boolean>
+    finish: (db: unknown, id: string, output: unknown) => Promise<void>
+    // Counts one failed attempt, outside any transaction, answering how many there have been.
+    attempted: (id: string) => Promise<number>
+    fail: (db: unknown, id: string, step: string) => Promise<void>
+    // Puts a failed run back to running, its attempts reset; false when it had not failed.
+    revive: (db: unknown, id: string) => Promise<boolean>
 
 > A plugin: its name, and what it declared.
 ### Plugin
@@ -1235,6 +1301,8 @@
     }) => Schedule
     // Where tenant registries keep their entries, in this same database.
     registries?: () => RegistryStore
+    // Where durable pipeline runs keep their input and results, in this same database.
+    runs?: () => PipelineStore
     // How a declared scope becomes a condition over the tables it was given.
     createScopeFilter?: () => ScopeFilter
     tx: <Result>(plugin: string, run: (db: unknown) => Promise<Result>) => Promise<Result>

@@ -32,8 +32,8 @@ await ctx.pipeline("posts.publish").run(draft);
   context, for the same caller.
 - Input and output are checked. `kernel.explain(name)` answers the
   order; start logs it, each step its outcome, never the state.
-- **No transaction.** A step that writes opens its own `ctx.tx`. A step
-  calling a provider never writes in the same one: it would hold locks.
+- **No transaction.** A step writing opens its own `ctx.tx`, never with
+  a provider call. Scheduled and resumable: `durable-pipelines.md`.
 
 ## Refuses
 

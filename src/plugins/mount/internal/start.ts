@@ -342,6 +342,8 @@ export async function start(options: StartOptions): Promise<StartedApp>
     // the kit's registry tables exist only where a plugin keeps entries per scope
     const keepsRegistries = options.plugins.some((plugin) => Object.values(plugin.definition.registries ?? {}).some((registry) => registry.scope === "tenant"));
 
+    const keepsRuns = options.plugins.some((plugin) => Object.values(plugin.definition.pipelines ?? {}).some((pipeline) => pipeline.flavour === "durable"));
+
     const kernel = createKernel({
         plugins: options.plugins,
         db: store,
@@ -354,6 +356,7 @@ export async function start(options: StartOptions): Promise<StartedApp>
         ...(options.jobRunMs !== undefined && { jobRunMs: options.jobRunMs }),
         ...(scoping && store.createScopeFilter !== undefined && { scopeFilter: store.createScopeFilter() }),
         ...(keepsRegistries && store.registries !== undefined && { registries: store.registries() }),
+        ...(keepsRuns && store.runs !== undefined && { runs: store.runs() }),
         rateLimiter,
         httpClient: typeof options.httpClient === "function" ? options.httpClient : httpClient(options.httpClient ?? {}),
         ...(options.lookup !== undefined && { lookup: options.lookup }),

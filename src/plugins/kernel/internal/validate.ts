@@ -221,6 +221,13 @@ function checkOwn(name: string, plugin: Plugin, owned: TableOwners, report: Prob
     {
         checkNamespaced(name, key, "pipeline", report) && claim("registries", key, "DUPLICATE_REGISTRY", "Registry or pipeline");
 
+        // the kit runs each step as this command and tells a failure as this event, as if the owner declared both
+        if ((pipeline as { flavour?: unknown } | undefined)?.flavour === "durable")
+        {
+            claim("commands", `${key}.step`, "DUPLICATE_COMMAND", "Command");
+            claim("events", `${key}.failed`, "DUPLICATE_EVENT", "Event");
+        }
+
         const shape = pipeline as Partial<typeof pipeline> | undefined;
 
         if (typeof (shape?.input as { safeParse?: unknown } | undefined)?.safeParse !== "function" || typeof (shape?.output as { safeParse?: unknown } | undefined)?.safeParse !== "function" || !Array.isArray(shape?.steps))
