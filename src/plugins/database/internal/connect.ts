@@ -3,6 +3,8 @@ import { dirname } from "node:path";
 
 import Database from "better-sqlite3";
 
+import { KernelFault } from "../../kernel/api";
+
 /** What opening a database needs to know. */
 export type DatabaseOptions = {
     /** A path, or ":memory:" for one that lives as long as the process. */
@@ -59,6 +61,10 @@ export function refuseOldSqlite(version: string): void
 
     if (major < 3 || (major === 3 && minor < 39))
     {
-        throw new Error(`SQLite ${version} is older than 3.39, which the kit needs. Install better-sqlite3 13 or later, which bundles a newer one.`);
+        throw new KernelFault(
+            "UNSUPPORTED_DATABASE",
+            `database: SQLite ${version} is older than 3.39, which the kit's schedule needs. Install better-sqlite3 13 or later, which bundles a newer one.`,
+            { plugin: "database" },
+        );
     }
 }

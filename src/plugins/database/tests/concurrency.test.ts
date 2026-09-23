@@ -240,9 +240,38 @@ test("a job claimed while a transaction is open keeps its claim when that transa
     expect(await jobs?.counts?.(now)).toMatchObject({ due: 0, running: 1 });
 });
 
+test("work a finished transaction left running waits for the next one instead of joining it", async () =>
+{
+    let lateWrite: Promise<unknown> = Promise.resolve();
+
+    await store.tx("a", () =>
+    {
+        // started inside the transaction, still running after it commits
+        lateWrite = (async () =>
+        {
+            await wait(50);
+            await store.write(() => (store.forPlugin("a") as Db).insert(rows).values({ id: "late" }));
+        })();
+
+        return Promise.resolve();
+    });
+
+    const other = store.tx("a", async () =>
+    {
+        await wait(100);
+
+        throw new Error("the other work failed");
+    });
+
+    await expect(other).rejects.toThrow("the other work failed");
+    await lateWrite;
+
+    expect(await store.forPlugin("a").select().from(rows)).toEqual([{ id: "late" }]);
+});
+
 test("SQLite older than 3.39 is refused by name, and newer ones are taken", () =>
 {
-    expect(() => refuseOldSqlite("3.38.5")).toThrow("SQLite 3.38.5 is older than 3.39");
+    expect(() => refuseOldSqlite("3.38.5")).toThrow(expect.objectContaining({ code: "UNSUPPORTED_DATABASE", message: expect.stringContaining("SQLite 3.38.5 is older than 3.39") }));
     expect(() => refuseOldSqlite("3.39.0")).not.toThrow();
     expect(() => refuseOldSqlite("4.0.0")).not.toThrow();
 });

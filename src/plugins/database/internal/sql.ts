@@ -192,6 +192,9 @@ export function sqliteSql(connection: Database.Database): Sql
 /**
  * The same SQL, each statement run through `outside`: the store's queue for work that must never land inside a
  * transaction someone else opened, where that one's rollback would undo it (a lease taken, a row marked sent).
+ *
+ * Each statement is queued on its own, so this holds only while every claim, renewal and mark is one atomic
+ * statement. Splitting one into a SELECT and an UPDATE would let another write land between them.
  */
 export function serialized(sql: Sql, outside: <Result>(run: () => Promise<Result>) => Promise<Result>): Sql
 {

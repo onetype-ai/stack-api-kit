@@ -26,6 +26,17 @@ export function store(holding: StoreInternals)
     /** Which transaction the running code is inside, if any. */
     const inside = new AsyncLocalStorage<number>();
 
+    /** The transactions open right now. Work started inside one carries its turn past the commit, so a turn counts only while it is here. */
+    const live = new Set<number>();
+
+    /** The open transaction the running code belongs to, or undefined: a turn whose transaction has ended belongs to none. */
+    const current = (): number | undefined =>
+    {
+        const turn = inside.getStore();
+
+        return turn !== undefined && live.has(turn) ? turn : undefined;
+    };
+
     let open = true;
     let counter = 0;
 
@@ -62,7 +73,7 @@ export function store(holding: StoreInternals)
     {
         // a plugin with no tables still opens one, to emit through the outbox; it is handed no handle
         const db = holding.tables[plugin] === undefined ? undefined : forPlugin(plugin);
-        const nested = inside.getStore() !== undefined;
+        const nested = current() !== undefined;
 
         counter += 1;
 
@@ -77,6 +88,8 @@ export function store(holding: StoreInternals)
         {
             await beginImmediate(holding.connection);
         }
+
+        live.add(turn);
 
         try
         {
@@ -98,6 +111,10 @@ export function store(holding: StoreInternals)
 
             throw cause;
         }
+        finally
+        {
+            live.delete(turn);
+        }
     }
 
     return {
@@ -106,19 +123,19 @@ export function store(holding: StoreInternals)
         /** Runs work in one transaction, rolled back if it throws. */
         tx: <Result,>(plugin: string, run: (db: unknown) => Promise<Result>): Promise<Result> =>
         {
-            return inside.getStore() === undefined ? writes.run(() => inTx(plugin, run)) : inTx(plugin, run);
+            return current() === undefined ? writes.run(() => inTx(plugin, run)) : inTx(plugin, run);
         },
 
         /** Runs work outside a transaction, but never during someone else's. */
         write: <Result,>(run: () => Promise<Result>): Promise<Result> =>
         {
-            return inside.getStore() === undefined ? writes.run(run) : run();
+            return current() === undefined ? writes.run(run) : run();
         },
 
         /** Whether the running code is inside a transaction. For diagnosis. */
         inTransaction: (): boolean =>
         {
-            return inside.getStore() !== undefined;
+            return current() !== undefined;
         },
 
         close: (): Promise<void> =>

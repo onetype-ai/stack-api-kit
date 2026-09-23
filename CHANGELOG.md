@@ -15,7 +15,8 @@
   transaction needs a store.
 - `store.migrate` inside an open transaction is refused
   (`JOINED_TRANSACTION`) rather than silently joining it.
-- SQLite older than 3.39 is refused when the database opens.
+- SQLite older than 3.39 is refused when the database opens
+  (`UNSUPPORTED_DATABASE`).
 
 ### How to convert
 

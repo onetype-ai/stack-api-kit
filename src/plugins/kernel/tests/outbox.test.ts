@@ -155,6 +155,59 @@ describe("an event kept in an outbox", () =>
         await store.close();
     });
 
+    test("stays delivered when another transaction, open while it was delivered, rolls back", async () =>
+    {
+        const rows = sqliteTable("orders_rows", { id: text("id").primaryKey() });
+        const store = database({ file: ":memory:", tables: { orders: { rows }, ledger: { rows } } });
+        const kept: Outbox = store.outbox?.() ?? expect.unreachable("a SQLite store keeps an outbox");
+        let release: () => void = () => undefined;
+        const listening = new Promise<void>((resolve) =>
+        {
+            release = resolve;
+        });
+        const slowLedger = definePlugin("ledger", {
+            version: "1.0.0",
+            describe: "Hears the order, slowly.",
+            tables: { rows },
+            listens: {
+                "orders.placed": {
+                    describe: "Takes a while to record it.",
+                    handle: async () =>
+                    {
+                        release();
+                        await new Promise((resolve) => setTimeout(resolve, 30));
+                    },
+                },
+            },
+        });
+
+        const kernel = createKernel({ plugins: [emitter(), slowLedger], db: store, outbox: kept });
+
+        await kernel.start();
+
+        await kernel.context("orders").tx((inside) =>
+        {
+            inside.events.emit("orders.placed", { id: "order-6" });
+
+            return Promise.resolve();
+        });
+        await listening;
+
+        // opened while the delivery runs, and still open when it marks the event sent
+        await kernel.context("ledger").tx(async () =>
+        {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+
+            throw new Error("the other work failed");
+        }).catch(() => undefined);
+        await kernel.settled();
+
+        expect(await kept.pending()).toEqual([]);
+
+        await kernel.stop();
+        await store.close();
+    });
+
     test("and never once a listener threw, so the next start tries again", async () =>
     {
         const connection = new Database(":memory:");
