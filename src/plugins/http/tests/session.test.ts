@@ -304,3 +304,58 @@ describe("a request carrying the session cookie and a body", () =>
         expect(await response.json()).toEqual({ name: "Ada" });
     });
 });
+
+describe("a request riding on the session cookie from another site", () =>
+{
+    async function writing(): Promise<ReturnType<typeof serve>>
+    {
+        const kernel = createKernel({
+            plugins: [definePlugin("auth", {
+                version: "1.0.0",
+                describe: "Knows who a session belongs to.",
+                identifies: (_ctx, request) => request.headers.get(SessionHeaders.key) === "abc123" ? { id: "11111111-1111-4111-8111-111111111111", claims: {} } : undefined,
+                routes: [{
+                    method: "POST",
+                    path: "/notes",
+                    describe: "Writes a note.",
+                    requires: [],
+                    input: z.object({ text: z.string().optional() }),
+                    output: z.object({ ok: z.boolean() }),
+                    handle: () => ({ ok: true }),
+                }],
+            } as Definition)],
+        });
+
+        await kernel.start();
+
+        return serve({ kernel, session: settings, origins: ["https://app.example.test"] });
+    }
+
+    const posting = (headers: Record<string, string>, body?: string): Request => new Request("http://localhost/notes", { method: "POST", headers: { cookie: "app_session=abc123", ...headers }, ...(body !== undefined && { body }) });
+
+    test.each([
+        ["a text/plain body from another origin", { "content-type": "text/plain", origin: "https://evil.test" }, "{\"text\":\"x\"}"],
+        ["a form post with no origin", { "content-type": "application/x-www-form-urlencoded" }, "text=x"],
+        ["an empty post from another origin", { origin: "https://evil.test" }, undefined],
+    ])("is refused 403 for %s, before anything runs", async (_what, headers, body) =>
+    {
+        const app = await writing();
+
+        const response = await app.fetch(posting(headers, body));
+
+        expect(response.status).toBe(403);
+        expect(await response.json()).toMatchObject({ code: "FORBIDDEN_ORIGIN" });
+    });
+
+    test.each([
+        ["JSON, which another site cannot send without a preflight", { "content-type": "application/json", origin: "https://evil.test" }],
+        ["any body from an allowed origin", { "content-type": "application/json", origin: "https://app.example.test" }],
+    ])("passes for %s", async (_what, headers) =>
+    {
+        const app = await writing();
+
+        const response = await app.fetch(posting(headers, "{}"));
+
+        expect(response.status).toBe(201);
+    });
+});

@@ -7,7 +7,7 @@ import { chunkStream } from "./download";
 import { eventStream } from "./events";
 import { cors, type CorsPolicy } from "./origin";
 import { readInput, UNSAFE } from "./input";
-import { sessionCookie, withSessionKey, type SessionOptions } from "./session";
+import { cookieIn, sessionCookie, withSessionKey, type SessionOptions } from "./session";
 import { formBody, type UploadedFile } from "./upload";
 
 /** What `serve` needs to know. */
@@ -154,6 +154,24 @@ type BodyResult =
     | { refused: { code: string; message: string }; status: number };
 
 const TOO_LARGE = { refused: { code: "TOO_LARGE", message: "The request body is too large." }, status: 413 } as const;
+
+/**
+ * Whether a request could have been sent by another site riding on the caller's session cookie: an unsafe
+ * method carrying the cookie, in a content type a page may send without asking (anything but JSON, which a
+ * cross-site page cannot send without a preflight the CORS policy answers), from an origin not allowed.
+ */
+function isForgeable(request: Request, method: string, session: SessionOptions | undefined, origins: readonly string[]): boolean
+{
+    if (session === undefined || !CARRIES.has(method) || cookieIn(request.headers.get("cookie") ?? undefined, session.name) === undefined)
+    {
+        return false;
+    }
+
+    const contentType = (request.headers.get("content-type") ?? "").toLowerCase();
+    const origin = request.headers.get("origin");
+
+    return !/^application\/(?:[\w.+-]+\+)?json\s*(?:;|$)/u.test(contentType) && (origin === null || !origins.includes(origin));
+}
 
 /** The most fields a URL-encoded form may carry, so one request of repeated names costs as much to read as its size. */
 const MOST_FIELDS = 1000;
@@ -436,6 +454,14 @@ export function serve(options: ServerOptions): Hono
             const requestId = requestIds.get(c.req.raw) ?? "";
 
             let identity: Identity | undefined;
+
+            // the caller's own cookie cannot vouch for a request another page may have sent
+            if (isForgeable(c.req.raw, route.method, options.session, policy.origins))
+            {
+                options.log?.("warn", "refused a cookie request from an origin not allowed", { requestId, origin: c.req.header("origin") ?? "" });
+
+                return c.json({ code: "FORBIDDEN_ORIGIN", message: "This request may not use the session cookie from this origin." }, 403);
+            }
 
             if (route.anyOrigin)
             {

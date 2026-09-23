@@ -7,10 +7,8 @@ headers, request ids, sessions, forms, one error shape.
 
 ## Purpose
 
-Everything reaching the server crosses here, so the limits belong here rather
-than in each route: a plugin that had to bound a body will forget once. It
-carries no auth model: `identify` turns a request into an identity, and the
-kernel enforces what it may do.
+Everything reaching the server crosses here, so the limits live here, not in
+each route. No auth model: `identify` turns a request into an identity.
 
 ## Usage
 
@@ -26,7 +24,7 @@ export default { fetch: app.fetch, port: 3000 };
 ```
 
 - A body over `bodyBytes` (1 MB) is refused before anything parses it.
-- `identify` runs once per request; throwing answers 401, not 500.
+- `identify` runs once per request; throwing answers 401.
 - `session` turns a route's `x-session-key` (with `x-session-expires`) into a
   `HttpOnly` cookie, `x-session-end` clears it. Left out, they pass as sent.
 - Query and path parameters reach the route as one object over the body,
@@ -36,10 +34,11 @@ export default { fetch: app.fetch, port: 3000 };
   fields, a repeated name as a list; `keepsRaw` keeps the bytes to verify.
 - `/live`, `/health` answer 200; `/ready` answers `readiness()`, 503 when
   not ready or it throws (`procedures/operations.md`).
-- Each response carries `x-request-id`, as does every log line for it.
+- Each response carries `x-request-id`.
 
 ## Refuses
 
-- An origin not in `origins`, with no CORS headers rather than permissive.
+- An origin not in `origins`, with no CORS headers; a non-JSON write carrying
+  the session cookie from such an origin, 403 (another page could send it).
 - A body of the wrong kind, 415; one claiming JSON and not, 400.
 - Anything the kernel refuses, in its own shape: `code`, `message`, `fields`.
