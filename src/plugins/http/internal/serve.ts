@@ -33,6 +33,9 @@ export type ServerOptions = {
 
     /** Where a line goes. */
     log?: ((level: "info" | "warn" | "error", line: string, about?: Readonly<Record<string, unknown>>) => void) | undefined;
+
+    /** What GET /ready answers once the kernel has started: 200 when `ready`, 503 otherwise, the object as the body, so it names only coarse states. Left out, /ready answers whether the kernel started. GET /live and GET /health always answer 200 while the process serves. */
+    readiness?: (() => Promise<{ ready: boolean } & Readonly<Record<string, unknown>>>) | undefined;
 };
 
 /** Which methods a caller may send a body with, and we will read one from. */
@@ -363,11 +366,33 @@ export function serve(options: ServerOptions): Hono
 
     app.get("/live", (c) => c.json({ live: true }));
 
-    app.get("/ready", (c) =>
-    {
-        const ready = options.kernel.started();
+    app.get("/health", (c) => c.json({ live: true }));
 
-        return c.json({ ready }, ready ? 200 : 503);
+    app.get("/ready", async (c) =>
+    {
+        const readiness = options.readiness;
+
+        if (!options.kernel.started() || readiness === undefined)
+        {
+            const ready = options.kernel.started();
+
+            return c.json({ ready }, ready ? 200 : 503);
+        }
+
+        // what the project checks is its own; a check that throws is a component that is not ready, and says nothing more
+        let answer: { ready: boolean } & Readonly<Record<string, unknown>>;
+
+        try
+        {
+            answer = await readiness();
+        }
+        catch (cause)
+        {
+            options.log?.("warn", "the readiness check threw", { error: cause instanceof Error ? cause.message : String(cause) });
+            answer = { ready: false };
+        }
+
+        return c.json(answer, answer.ready ? 200 : 503);
     });
 
     for (const route of options.kernel.routes())
