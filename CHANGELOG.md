@@ -70,7 +70,8 @@
   test kernel in the process where a test does not say.
 - `procedures/answers.md`, `procedures/work.md` and `procedures/operations.md`.
 - `Server.from({ trustedProxies })`, `Server.closeOnce`, `Server.socketsOf`,
-  and `sockets` limits on `Server.open`.
+  and `sockets` limits and `trustedProxies` on `Server.open`; a socket's
+  caller is resolved by the http side's `from` first, so both count alike.
 - `ctx.scope`; a plugin without tables may declare a scope naming none.
 - `new Refusal(…, { retryAfter })`; `limit.key`.
 - `access-control-expose-headers` (retry-after, x-request-id, etag,

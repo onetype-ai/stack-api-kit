@@ -25,7 +25,7 @@ export function trustedList(proxies: readonly string[]): BlockList
         const [address = "", prefix] = proxy.split("/");
         const family = isIP(address);
 
-        if (family === 0 || (prefix !== undefined && !/^\d{1,3}$/u.test(prefix)))
+        if (family === 0 || (prefix !== undefined && (!/^\d{1,3}$/u.test(prefix) || Number(prefix) > (family === 6 ? 128 : 32))))
         {
             throw new TypeError(`trustedProxies: "${proxy}" is not an address or a range. Name each proxy as an address (10.0.0.1) or a range (10.0.0.0/8).`);
         }

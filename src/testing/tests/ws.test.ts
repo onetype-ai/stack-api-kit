@@ -226,6 +226,30 @@ describe("the socket at /ws", () =>
         expect(second.frames).toEqual([{ channel: "$backoff", ms: 7000 }]);
     });
 
+    test("counts sockets per caller behind named proxies, not as the proxy", async () =>
+    {
+        app = await start({ plugins: [desk], sockets: true, http: { origins: [APP], session: { name: "sid", secure: true } } });
+
+        const running = app;
+        const opened = await new Promise<Listening>((resolve) =>
+        {
+            const listening = Server.listen(running, 0, { mostSocketsPerCaller: 1, from: Server.from({ trustedProxies: ["127.0.0.1"] }) });
+
+            listening.once("listening", () => resolve(listening));
+        });
+
+        server = opened;
+
+        const url = `ws://127.0.0.1:${String((opened.address() as AddressInfo).port)}/ws`;
+        const signedOut = { origin: APP };
+        const first = await opening(url, { ...signedOut, "x-forwarded-for": "203.0.113.1" });
+        const second = await opening(url, { ...signedOut, "x-forwarded-for": "203.0.113.2" });
+
+        await until(() => first.frames.length > 0 && second.frames.length > 0);
+
+        expect(second.frames[0]).toMatchObject({ channel: "$ready" });
+    });
+
     test("closes 1012 every socket when the server stops", async () =>
     {
         const url = await serving();

@@ -65,5 +65,6 @@ describe("the address of a caller behind proxies the deployment names", () =>
     test("refuses a proxy named as neither an address nor a range", () =>
     {
         expect(() => from({ trustedProxies: ["proxy.internal"] })).toThrow("\"proxy.internal\" is not an address or a range");
+        expect(() => from({ trustedProxies: ["10.0.0.0/99"] })).toThrow("\"10.0.0.0/99\" is not an address or a range");
     });
 });

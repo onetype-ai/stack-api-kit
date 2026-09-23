@@ -842,8 +842,10 @@
 ### OpenOptions
     port: number
     log: Logger
-    // Whether something in front sets `x-forwarded-for`; without one, a caller writes their own address.
+    // Whether something in front sets `x-forwarded-for`; without one, a caller writes their own address. Kept for 8.x: name `trustedProxies` instead.
     behindProxy?: boolean
+    // The proxies in front, as addresses or ranges: a socket's caller is the rightmost hop none of them wrote, as `Server.from` reads it.
+    trustedProxies?: readonly string[]
     // How often to report listeners that failed; zero never looks.
     watchSeconds?: number
     stopTimeoutMs?: number

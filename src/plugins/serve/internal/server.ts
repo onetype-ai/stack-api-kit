@@ -11,8 +11,11 @@ export type OpenOptions = {
     port: number;
     log: Logger;
 
-    /** Whether something in front sets `x-forwarded-for`; without one, a caller writes their own address. */
+    /** Whether something in front sets `x-forwarded-for`; without one, a caller writes their own address. Kept for 8.x: name `trustedProxies` instead. */
     behindProxy?: boolean;
+
+    /** The proxies in front, as addresses or ranges: a socket's caller is the rightmost hop none of them wrote, as `Server.from` reads it. */
+    trustedProxies?: readonly string[];
 
     /** How often to report listeners that failed; zero never looks. */
     watchSeconds?: number;
@@ -38,7 +41,7 @@ export const Server = {
     open: (api: StartedApp, options: OpenOptions): void =>
     {
         const { port, log } = options;
-        const server = listen(api, port, { ...options.sockets, from: from(options.behindProxy ?? false), log: (level, line, about) => log[level](line, about) });
+        const server = listen(api, port, { ...options.sockets, from: from(options.trustedProxies === undefined ? options.behindProxy ?? false : { trustedProxies: options.trustedProxies }), log: (level, line, about) => log[level](line, about) });
 
         if ((options.watchSeconds ?? 0) > 0)
         {
