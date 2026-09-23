@@ -100,6 +100,14 @@ export function outbox(connection: Database.Database, settings: { leaseMs?: numb
     );
 
     const selectFailed = connection.prepare("SELECT id, plugin, name, heard, attempts, failedAt FROM kit_outbox WHERE failedAt IS NOT NULL ORDER BY failedAt");
+    const countRows = connection.prepare(`
+        SELECT
+            SUM(CASE WHEN failedAt IS NULL AND attempts = 0 THEN 1 ELSE 0 END) AS waiting,
+            SUM(CASE WHEN failedAt IS NULL AND attempts > 0 THEN 1 ELSE 0 END) AS retrying,
+            SUM(CASE WHEN failedAt IS NOT NULL THEN 1 ELSE 0 END) AS dead
+        FROM kit_outbox
+    `);
+
     const revive = connection.prepare("UPDATE kit_outbox SET failedAt = NULL, attempts = 0, retryAt = ? WHERE id = ? AND failedAt IS NOT NULL");
 
     return {
@@ -198,6 +206,13 @@ export function outbox(connection: Database.Database, settings: { leaseMs?: numb
             const rows = selectFailed.all() as { id: string; plugin: string; name: string; heard: string | null; attempts: number; failedAt: number }[];
 
             return Promise.resolve(rows.map((row): FailedEvent => ({ id: row.id, plugin: row.plugin, name: row.name, heard: heardOf(row.heard), attempts: row.attempts, failedAt: row.failedAt })));
+        },
+
+        counts: () =>
+        {
+            const row = countRows.get() as { waiting: number | null; retrying: number | null; dead: number | null };
+
+            return Promise.resolve({ waiting: row.waiting ?? 0, retrying: row.retrying ?? 0, dead: row.dead ?? 0 });
         },
 
         revive: (id: string, now: number) =>

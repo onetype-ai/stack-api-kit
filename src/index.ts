@@ -2,7 +2,9 @@ export { refusalBodyFor, Reply, ServerEvent, createKernel, defineCommand, define
 export { Env, Log, LEVELS } from "./plugins/boot/api";
 export { Server } from "./plugins/serve/api";
 export type {
+    FailedEvent,
     FailedJob,
+    WorkWatch,
     OutboxMessage,
     RefusalBody,
     RateLimiter,

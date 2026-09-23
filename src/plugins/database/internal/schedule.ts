@@ -70,6 +70,15 @@ export function schedule(connection: Database.Database, settings: { leaseMs?: nu
     `);
 
     const renew = connection.prepare("UPDATE kit_schedule SET takenAt = ? WHERE id = ? AND takenBy = ?");
+
+    const countJobs = connection.prepare(`
+        SELECT
+            SUM(CASE WHEN takenAt IS NULL AND runAt <= ? THEN 1 ELSE 0 END) AS due,
+            SUM(CASE WHEN takenAt IS NULL AND runAt > ? THEN 1 ELSE 0 END) AS later,
+            SUM(CASE WHEN takenAt IS NOT NULL AND takenAt >= ? THEN 1 ELSE 0 END) AS running,
+            SUM(CASE WHEN takenAt IS NOT NULL AND takenAt < ? THEN 1 ELSE 0 END) AS abandoned
+        FROM kit_schedule
+    `);
     const remove = connection.prepare("DELETE FROM kit_schedule WHERE id = ? AND takenBy IS ?");
     const again = connection.prepare(
         "UPDATE kit_schedule SET takenAt = NULL, takenBy = NULL, runAt = ?, attempts = attempts + 1 WHERE id = ? AND takenBy IS ?",
@@ -105,6 +114,13 @@ export function schedule(connection: Database.Database, settings: { leaseMs?: nu
                 attempts: row.attempts,
                 lease: row.takenBy,
             })));
+        },
+
+        counts: (now: number) =>
+        {
+            const row = countJobs.get(now, now, now - leaseMs, now - leaseMs) as { due: number | null; later: number | null; running: number | null; abandoned: number | null };
+
+            return Promise.resolve({ due: row.due ?? 0, later: row.later ?? 0, running: row.running ?? 0, abandoned: row.abandoned ?? 0 });
         },
 
         renew: (id: string, now: number, lease?: string) =>

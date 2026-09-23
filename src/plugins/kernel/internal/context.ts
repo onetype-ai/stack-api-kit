@@ -11,7 +11,7 @@ import { DEFAULT_REDIRECTS, FOLLOW_BUDGET_MS, hopOf, nextHop, redirectsOf, type 
 import { publicAddressOf, type Lookup } from "./resolve";
 import type { hooks } from "./hooks";
 import { createPermissions } from "./permissions";
-import type { HttpClient, ScopeFilter, Outbox, Schedule, Sockets, KernelStore } from "./store";
+import type { HttpClient, ScopeFilter, Outbox, Schedule, Sockets, KernelStore, WorkWatch } from "./store";
 
 /** Everything a context is built from. One object, so the shape is one line. */
 export type KernelWiring = {
@@ -36,6 +36,9 @@ export type KernelWiring = {
 
     /** Whether the kernel is running, so a late failure after a stop is not reported as one. */
     isRunning: () => boolean;
+
+    /** How scheduled work and the outbox are doing, for the plugin that watches them. */
+    work: WorkWatch;
 
     httpClient: HttpClient | undefined;
 
@@ -556,6 +559,16 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
         },
 
         permissions,
+
+        get work(): WorkWatch
+        {
+            if (wiring.known.get(plugin)?.definition.watchesWork !== true)
+            {
+                throw new KernelFault("UNDECLARED_PERMISSION", `"${plugin}" read ctx.work, which only a plugin declaring watchesWork: true may. Declare it, and guard what it answers to platform operators.`, { plugin });
+            }
+
+            return wiring.work;
+        },
 
         commands: {
             run: (command, input) =>

@@ -64,6 +64,23 @@ export type Outbox = {
 
     /** Puts one dead letter back to be delivered now; false when no dead letter has that id. */
     revive?: (id: string, now: number) => Promise<boolean>;
+
+    /** How many rows wait for their first delivery, are being retried, or are dead letters. */
+    counts?: (now: number) => Promise<{ waiting: number; retrying: number; dead: number }>;
+};
+
+/** How scheduled work and the outbox are doing, as an operator sees it: counts, names and times, never a job's input or an event's payload. */
+export type WorkWatch = {
+    health: () => Promise<{
+        jobs: { due?: number; later?: number; running?: number; abandoned?: number; failed: number };
+        outbox: { waiting?: number; retrying?: number; dead?: number };
+    }>;
+
+    /** Scheduled commands given up in this process, newest last, without their input. */
+    failedJobs: () => readonly { plugin: string; command: string; attempts: number; at: number; error: string }[];
+
+    failedEvents: () => Promise<readonly FailedEvent[]>;
+    retryFailed: (id: string) => Promise<boolean>;
 };
 
 /** An event a listener kept refusing, as an operator sees it. */
@@ -111,6 +128,9 @@ export type Schedule = {
 
     /** How long a claim holds without `renew`; the kernel renews every third of it while the command runs. */
     leaseMs?: number;
+
+    /** How many jobs are due, waiting for later, running within their lease, and held by a lease that ran out. */
+    counts?: (now: number) => Promise<{ due: number; later: number; running: number; abandoned: number }>;
 
     /** Keeps a claim; false when the lease was taken since, and this run should stop counting on it. */
     renew?: (id: string, now: number, lease?: string) => Promise<boolean>;

@@ -556,6 +556,16 @@ export function createKernel(options: KernelOptions): Kernel
         lookup: options.lookup ?? systemLookup,
         log,
         run: (command, input, identity) => run(command, input, identity),
+
+        work: {
+            health: async () => ({
+                jobs: { ...(await options.schedule?.counts?.(clock()) ?? {}), failed: failedJobs.length },
+                outbox: await options.outbox?.counts?.(clock()) ?? {},
+            }),
+            failedJobs: () => failedJobs.map((job) => ({ plugin: job.plugin, command: job.command, attempts: job.attempts, at: job.at, error: job.error instanceof Error ? job.error.name : "Error" })),
+            failedEvents: () => options.outbox?.failed?.() ?? Promise.resolve([]),
+            retryFailed: (id: string) => options.outbox?.revive?.(id, clock()) ?? Promise.resolve(false),
+        },
     };
 
     const contextFor = (plugin: string, identity?: Identity, headers?: Readonly<Record<string, string>>, sent?: Uint8Array, signal?: AbortSignal): Context =>

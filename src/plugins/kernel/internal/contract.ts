@@ -1,5 +1,7 @@
 import type { z } from "zod";
 
+import type { WorkWatch } from "./store";
+
 /** Anything declared carries a sentence saying what it is for. */
 export type Describable = {
     describe: string;
@@ -240,6 +242,9 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
     /** The bytes of the request body exactly as they arrived, present only where the route declared `keepsRaw`. */
     sent: Uint8Array | undefined;
 
+    /** How scheduled work and the outbox are doing: counts, names and times, never a job's input or an event's payload. Only for a plugin declaring `watchesWork: true`. */
+    work: WorkWatch;
+
     /** Aborts when the caller goes away, as a client closing a stream does. Absent outside a request. */
     signal: AbortSignal | undefined;
 
@@ -353,6 +358,9 @@ export type Definition<
     /** Hosts this plugin may call, anything else refused before it dials; `"anywhere"` is for a plugin whose hosts are a row rather than a constant. */
     /** `"anywhere"` relaxes nothing else: private address, non-https scheme, off-port and credential-in-url stay refused, and the resolved address is checked rather than the name. */
     allowedHosts?: readonly string[] | "anywhere";
+
+    /** This plugin reads `ctx.work`: how scheduled work and the outbox are doing. Any other plugin reading it is refused; guard what it answers to platform operators. */
+    watchesWork?: boolean;
 
     services?: (ctx: Context<z.infer<Schema>, never, Db>) => Services;
 
