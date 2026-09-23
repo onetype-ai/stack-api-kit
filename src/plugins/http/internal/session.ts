@@ -174,5 +174,6 @@ export function withSessionKey(request: Request, options: SessionOptions | undef
         headers.set(SessionHeaders.key, key);
     }
 
-    return new Request(request, { headers });
+    // never `new Request(request, …)`: that takes over the body stream, and the route reading it next finds it locked
+    return new Request(request.url, { method: request.method, headers });
 }

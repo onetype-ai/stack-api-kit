@@ -266,3 +266,41 @@ describe("the key a request is identified by", () =>
         expect(withSessionKey(claimed, settings).headers.get(SessionHeaders.key)).toBeNull();
     });
 });
+
+describe("a request carrying the session cookie and a body", () =>
+{
+    test("reaches a route that reads its body, where the identify copy once locked the stream", async () =>
+    {
+        const kernel = createKernel({
+            plugins: [definePlugin("auth", {
+                version: "1.0.0",
+                describe: "Knows who a session belongs to.",
+                identifies: (_ctx, request) => request.headers.get(SessionHeaders.key) === "abc123"
+                    ? { id: "11111111-1111-4111-8111-111111111111", claims: {} }
+                    : undefined,
+                routes: [{
+                    method: "PATCH",
+                    path: "/me",
+                    describe: "Renames the caller.",
+                    requires: [],
+                    input: z.object({ name: z.string() }),
+                    output: z.object({ name: z.string() }),
+                    handle: (input: { name: string }) => ({ name: input.name }),
+                }],
+            } as Definition)],
+        });
+
+        await kernel.start();
+
+        const app = serve({ kernel, session: settings });
+
+        const response = await app.fetch(new Request("http://localhost/me", {
+            method: "PATCH",
+            headers: { cookie: "app_session=abc123", "content-type": "application/json" },
+            body: JSON.stringify({ name: "Ada" }),
+        }));
+
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({ name: "Ada" });
+    });
+});
