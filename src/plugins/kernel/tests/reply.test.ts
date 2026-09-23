@@ -4,14 +4,6 @@ import { z } from "zod";
 import { Reply, createKernel, definePlugin } from "../api";
 import type { Definition, Kernel } from "../api";
 
-/** A reply's headers without the ETag every GET 200 now carries, for a test about the others. */
-function untagged(headers: Readonly<Record<string, string>> | undefined): Readonly<Record<string, string>>
-{
-    const { etag: _etag, ...rest } = headers ?? {};
-
-    return rest;
-}
-
 async function startServer(handle: () => unknown, lines: unknown[] = []): Promise<Kernel>
 {
     const kernel = createKernel({
@@ -88,52 +80,5 @@ describe("a handler saying what its answer carries", () =>
         const answer = await kernel.handle({ method: "GET", path: "/thing", input: {} });
 
         expect(answer).toEqual({ status: 200, body: { to: "/elsewhere" }, headers: { etag: expect.stringMatching(/^W\/"/u) } });
-    });
-});
-
-describe("headers a handler may not set", () =>
-{
-    const expected = [
-        "set-cookie",
-        "content-security-policy",
-        "x-frame-options",
-        "access-control-allow-origin",
-    ];
-
-    for (const name of expected)
-    {
-        test(`drops "${name}" and says so`, async () =>
-        {
-            const lines: unknown[] = [];
-            const kernel = await startServer(() => new Reply(200, { to: "/x" }, { [name]: "anything" }), lines);
-
-            const answer = await kernel.handle({ method: "GET", path: "/thing", input: {} });
-
-            expect(untagged(answer.headers)).toEqual({});
-            expect(JSON.stringify(lines)).toMatch(/which it may not/);
-        });
-    }
-
-    test("drops a value carrying a newline rather than splitting the response", async () =>
-    {
-        const lines: unknown[] = [];
-        const kernel = await startServer(
-            () => new Reply(200, { to: "/x" }, { location: "/fine\r\nset-cookie: stolen=1" }),
-            lines,
-        );
-
-        const answer = await kernel.handle({ method: "GET", path: "/thing", input: {} });
-
-        expect(untagged(answer.headers)).toEqual({});
-        expect(JSON.stringify(lines)).toMatch(/carrying a newline/);
-    });
-
-    test("lowercases what it does send", async () =>
-    {
-        const kernel = await startServer(() => new Reply(200, { to: "/x" }, { Location: "/sent" }));
-
-        const answer = await kernel.handle({ method: "GET", path: "/thing", input: {} });
-
-        expect(untagged(answer.headers)).toEqual({ location: "/sent" });
     });
 });

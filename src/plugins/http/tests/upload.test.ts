@@ -2,8 +2,7 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 
 import { createKernel, definePlugin } from "../../kernel/api";
-import { serve, isUploadedFile } from "../api";
-import { claimedName } from "../internal/upload";
+import { claimedName, serve, isUploadedFile } from "../api";
 
 import type { Definition } from "../../kernel/api";
 import type { UploadedFile } from "../api";

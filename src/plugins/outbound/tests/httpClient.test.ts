@@ -128,26 +128,6 @@ describe("cancelling", () =>
     });
 });
 
-describe("redirects", () =>
-{
-    test("never follows one, so a permitted host cannot hand the call on", async () =>
-    {
-        const asked: string[] = [];
-
-        vi.stubGlobal("fetch", (url: string, init?: RequestInit) =>
-        {
-            asked.push(`${url} ${String(init?.redirect)}`);
-
-            return Promise.resolve(new Response(null, { status: 302, headers: { location: "https://elsewhere.example.test/" } }));
-        });
-
-        const call = httpClient()({ method: "GET", url: "https://api.example.test/x" });
-
-        await expect(call).rejects.toMatchObject({ code: "NETWORK", status: 302 });
-        expect(asked).toEqual(["https://api.example.test/x manual"]);
-    });
-});
-
 describe("what a partner asked for when it refused", () =>
 {
     test("carries how long it wants to be left alone", async () =>

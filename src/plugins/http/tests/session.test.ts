@@ -2,8 +2,7 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 
 import { createKernel, definePlugin, Reply } from "../../kernel/api";
-import { serve } from "../api";
-import { cookieFor, cookieIn, sessionCookie, SessionHeaders, withSessionKey } from "../internal/session";
+import { cookieIn, serve, SessionHeaders, withSessionKey } from "../api";
 
 import type { Definition } from "../../kernel/api";
 
@@ -117,41 +116,43 @@ describe("a plugin that only ever learned about headers", () =>
     });
 });
 
-describe("when a session ends", () =>
+describe("the cookie a route's session headers become", () =>
 {
-    test("is a moment, and a lifetime sent instead is refused rather than kept", () =>
-    {
-        const moment = Date.now();
-
-        expect(() => sessionCookie({ "x-session-key": "abc", "x-session-expires": "2592000" }, settings, moment))
-            .toThrow(/moment in epoch milliseconds/);
-    });
-});
-
-describe("what a cookie carries", () =>
-{
-    test("is marked Secure only where a browser would keep it", () =>
-    {
-        expect(cookieFor("k", 60, { name: "s", secure: true })).toContain("Secure");
-        expect(cookieFor("k", 60, { name: "s", secure: false })).not.toContain("Secure");
+    const answering = (headers: Readonly<Record<string, string>>) => ({
+        routes: [{
+            method: "POST" as const,
+            path: "/sign-in",
+            describe: "Starts a session.",
+            public: true,
+            input: z.object({}),
+            output: z.object({ ok: z.boolean() }),
+            handle: () => new Reply(200, { ok: true }, headers),
+        }],
     });
 
-    test("and is marked Secure anyway for SameSite=None, which needs it", () =>
+    const later = (): string => String(Date.now() + 3_600_000);
+
+    test.each([
+        ["is Secure where a browser keeps it", { "x-session-key": "k", "x-session-expires": later() }, { name: "s", secure: true }, "Secure", true],
+        ["is not Secure over plain http", { "x-session-key": "k", "x-session-expires": later() }, { name: "s", secure: false }, "Secure", false],
+        ["is Secure anyway for SameSite=None, which needs it", { "x-session-key": "k", "x-session-expires": later() }, { name: "s", secure: false, sameSite: "None" as const }, "Secure", true],
+        ["escapes a key holding what would end the cookie", { "x-session-key": "a;b c=d", "x-session-expires": later() }, { name: "s", secure: false }, "s=a%3Bb%20c%3Dd", true],
+        ["closes at once for an expiry that is not a number", { "x-session-key": "k", "x-session-expires": "not a number" }, { name: "s", secure: false }, "Max-Age=0", true],
+        ["closes at once for an expiry already past", { "x-session-key": "k", "x-session-expires": String(Date.now() - 60_000) }, { name: "s", secure: false }, "Max-Age=0", true],
+    ])("%s", async (_case, headers, session, part, present) =>
     {
-        expect(cookieFor("k", 60, { name: "s", secure: false, sameSite: "None" })).toContain("Secure");
+        const app = await startServer(answering(headers), session);
+
+        const cookie = (await app.fetch(new Request("http://localhost/sign-in", { method: "POST" }))).headers.get("set-cookie") ?? "";
+
+        expect(cookie.includes(part)).toBe(present);
     });
 
-    test("escapes a key holding what would otherwise end the cookie", () =>
+    test("refuses a lifetime sent where a moment belongs, rather than keeping it", async () =>
     {
-        const cookie = cookieFor("a;b c=d", 60, { name: "s", secure: false });
+        const app = await startServer(answering({ "x-session-key": "k", "x-session-expires": "2592000" }), settings);
 
-        expect(cookie).toContain("s=a%3Bb%20c%3Dd");
-        expect(cookie.split(";").length).toBe(5);
-    });
-
-    test("never a negative age, whatever the clock says", () =>
-    {
-        expect(cookieFor("k", -900, { name: "s", secure: false })).toContain("Max-Age=0");
+        expect((await app.fetch(new Request("http://localhost/sign-in", { method: "POST" }))).status).toBe(500);
     });
 });
 
@@ -176,31 +177,6 @@ describe("reading one back", () =>
     test("never matches a name that merely ends the same way", () =>
     {
         expect(cookieIn("evil_app_session=stolen", "app_session")).toBeUndefined();
-    });
-});
-
-describe("an expiry that makes no sense", () =>
-{
-    test("closes the session rather than opening an endless one", () =>
-    {
-        const answer = sessionCookie(
-            { "x-session-key": "k", "x-session-expires": "not a number" },
-            { name: "s", secure: false },
-            Date.now(),
-        );
-
-        expect(answer.cookie).toContain("Max-Age=0");
-    });
-
-    test("and one already past does the same", () =>
-    {
-        const answer = sessionCookie(
-            { "x-session-key": "k", "x-session-expires": String(Date.now() - 60_000) },
-            { name: "s", secure: false },
-            Date.now(),
-        );
-
-        expect(answer.cookie).toContain("Max-Age=0");
     });
 });
 
