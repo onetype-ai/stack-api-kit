@@ -37,6 +37,9 @@ export type KernelWiring = {
     /** Whether the kernel is running, so a late failure after a stop is not reported as one. */
     isRunning: () => boolean;
 
+    /** Keeps a delivery in flight until it settles, for whoever waits on every one. */
+    track: (delivery: Promise<unknown>) => void;
+
     /** How scheduled work and the outbox are doing, for the plugin that watches them. */
     work: WorkWatch;
 
@@ -319,7 +322,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
                         });
                     });
 
-                    void delivered.then(({ heard, failed }) =>
+                    wiring.track(delivered.then(({ heard, failed }) =>
                     {
                         clearInterval(holding);
 
@@ -330,7 +333,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
                         {
                             wiring.log("error", announcement.plugin, `could not record the delivery of "${announcement.name}" in the outbox; it will be delivered again`, { cause: cause instanceof Error ? cause.message : String(cause) });
                         });
-                    });
+                    }));
                 }
 
                 return returned;
@@ -472,7 +475,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
                     );
                 }
 
-                wiring.bus.deliver(plugin, event, payloadChecked, (to) => listenerContext(to));
+                wiring.track(wiring.bus.deliver(plugin, event, payloadChecked, (to) => listenerContext(to)));
             },
         },
 

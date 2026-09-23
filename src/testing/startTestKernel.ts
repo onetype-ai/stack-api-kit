@@ -84,7 +84,7 @@ export type TestKernel = {
     /** An identity whose permissions `grants` decided, from claims a test names. */
     granted: (claims: Readonly<Record<string, unknown>>, id?: string) => Promise<Identity>;
 
-    /** Waits until every listener an emit started has finished. */
+    /** Waits until every listener an emit started has finished, however long its work takes, outbox or not. */
     flush: () => Promise<void>;
 
     /** Runs whatever the schedule says is due, once. */
@@ -454,6 +454,9 @@ export async function startTestKernel(asked: TestKernelOptions): Promise<TestKer
             {
                 await new Promise((done) => { setTimeout(done, 0); });
             }
+
+            // every delivery an emit started, and those its listeners started in turn, however long their work takes
+            await kernel.settled();
 
             const failed = kernel.events.failures().slice(seen);
 

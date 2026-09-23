@@ -160,6 +160,9 @@ export type Kernel = {
     /** Hands what the outbox says is due to the listeners that have not heard it, once, and waits for it. */
     redeliver: () => Promise<number>;
 
+    /** Waits until every event delivery under way has settled, and those they started. */
+    settled: () => Promise<void>;
+
     /** Runs whatever the schedule says is due, once, and waits for it. */
     due: () => Promise<number>;
     run: (command: string, input: unknown, identity?: Identity) => Promise<void>;
@@ -551,6 +554,7 @@ export function createKernel(options: KernelOptions): Kernel
     }
 
     const inFlight = new Set<Promise<unknown>>();
+    const deliveries = new Set<Promise<unknown>>();
     let inOrder: Plugin[] = [];
 
     const wiring: KernelWiring = {
@@ -563,6 +567,15 @@ export function createKernel(options: KernelOptions): Kernel
         pending,
         outbox: options.outbox,
         isRunning: () => running,
+        track: (delivery) =>
+        {
+            const settling = delivery.catch(() => undefined).finally(() =>
+            {
+                deliveries.delete(settling);
+            });
+
+            deliveries.add(settling);
+        },
         now: options.now ?? Date.now,
         schedule: options.schedule,
         scopeFilter: options.scopeFilter,
@@ -942,6 +955,15 @@ export function createKernel(options: KernelOptions): Kernel
         },
 
         redeliver: () => redeliver(clock()),
+
+        settled: async (): Promise<void> =>
+        {
+            // a listener may emit in turn: wait until a round starts nothing new
+            while (deliveries.size > 0)
+            {
+                await Promise.allSettled([...deliveries]);
+            }
+        },
 
         due,
 

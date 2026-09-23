@@ -176,3 +176,46 @@ test("a failure already read is not raised again", async () =>
 
     await api.stop();
 });
+
+test("waits for a listener whose work takes a while, with an outbox as without", async () =>
+{
+    for (const outbox of [true, false])
+    {
+        const written: string[] = [];
+
+        const api = await startTestKernel({
+            outbox,
+            plugins: [
+                definePlugin("source", {
+                    version: "1.0.0",
+                    describe: "Emits.",
+                    emits: { "source.happened": { describe: "Happened.", schema: z.object({ id: z.string() }) } },
+                }),
+                definePlugin("slow", {
+                    version: "1.0.0",
+                    describe: "Writes after a while, as a call to another server would.",
+                    listens: {
+                        "source.happened": {
+                            describe: "Records late.",
+                            handle: async (payload) =>
+                            {
+                                await new Promise((resolve) => setTimeout(resolve, 80));
+                                written.push((payload as { id: string }).id);
+                            },
+                        },
+                    },
+                }),
+            ],
+        });
+
+        await api.kernel.context("source").tx(async (inside) =>
+        {
+            inside.events.emit("source.happened", { id: "late" });
+        });
+
+        await api.flush();
+        await api.stop();
+
+        expect(written).toEqual(["late"]);
+    }
+});
