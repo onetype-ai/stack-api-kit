@@ -18,6 +18,10 @@
 - SQLite older than 3.39 is refused when the database opens
   (`UNSUPPORTED_DATABASE`).
 
+- A plugin's migrations live in `migrations/sqlite/` and `migrations/postgres/`,
+  chosen by the deployment's dialect. One folder of files runs on SQLite
+  alone; Postgres refuses it with the fix.
+
 ### How to convert
 
 - A `later` outside a transaction, in a route, a listener, a command or
@@ -37,8 +41,23 @@
 - A test calling `store.migrate(...)` or `store.close()` awaits it.
 - A kernel of your own with a `schedule` passes `db` too; in a test, a store
   whose `tx` only runs the work will do.
+- Tables: `sqliteTable(...)` becomes `table(...)` from `./tables`, each
+  column made with `column.*`; a time in ms is `column.timeMs`, a boolean
+  `column.boolean`, JSON `column.json<Shape>()`. Then move the migration
+  files into `migrations/sqlite/` and generate `migrations/postgres/` with
+  drizzle-kit. A query ending in `.get()` becomes `const [row] = await ...`,
+  `.all()` and `.run()` become a plain `await`.
 
 ### Added
+
+- `@onetype/stack-api-kit/tables`: `table`, `column`, `index`,
+  `uniqueIndex`, `dialect` and `PortableDb`. One definition for SQLite and
+  Postgres, built for the dialect the process uses (`KIT_DIALECT`, else a
+  Postgres `DATABASE_URL`, else SQLite).
+- Migration file names drizzle-kit generates, `NNNN_name.sql`.
+- `Project` checks `[migrations]` (a step in one dialect's folder and not
+  the other's) and `[dialect]` (`.get()`, `.all()` or `.run()` on a query,
+  which only SQLite answers, with what to write instead).
 
 - Registries and pipelines, the same contract as the app kit
   (`#docs/procedures/registries-and-pipelines.md`): `registries`,

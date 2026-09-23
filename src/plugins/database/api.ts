@@ -7,6 +7,7 @@ import { schedule, scheduleOver } from "./internal/schedule";
 import { sqliteSql } from "./internal/sql";
 
 import { tableName } from "../kernel/api";
+import { refuseOtherDialect } from "./internal/dialect";
 
 import type { ScopeFilter, Outbox, Schedule } from "../kernel/api";
 import { store, type DrizzleDb, type TablesByName } from "./internal/store";
@@ -48,6 +49,8 @@ function declaredTables(owned: Readonly<Record<string, Readonly<Record<string, u
 /** Opens a database and holds one handle per plugin over it. */
 export function database(settings: StoreOptions): Store<DrizzleDb>
 {
+    refuseOtherDialect("sqlite");
+
     const connection = connect(settings);
     const backing = store({ connection, tables: settings.tables });
     const sql = sqliteSql(connection, backing.write);
@@ -84,3 +87,11 @@ export function database(settings: StoreOptions): Store<DrizzleDb>
         },
     };
 }
+
+export { column } from "./internal/column";
+export { dialect, refuseOtherDialect } from "./internal/dialect";
+export { index, uniqueIndex } from "./internal/indexes";
+export { table } from "./internal/table";
+export type { Dialect } from "./internal/dialect";
+export type { PortableDb } from "./internal/table";
+

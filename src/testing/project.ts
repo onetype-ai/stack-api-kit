@@ -4,11 +4,12 @@ import { fileURLToPath } from "node:url";
 
 import { findCopiedVocabulary, findImportViolations, findSharedNames, findSplitVocabulary, findUnscopedReach } from "./boundaries";
 import { findMissingDocs, findOversizedDocs, findUndocumentedKeys, findUnexplainedPlugins } from "./docs";
+import { findMigrationDrift, findSqliteOnlyCalls } from "./dialects";
 import { findUnusedFields } from "./wiring";
 
 /** One finding from any `Project` check, already written out as a sentence a person can act on; `check` says which check spoke. */
 export type ProjectProblem = {
-    check: "boundaries" | "wiring" | "oversized" | "missing" | "unexplained" | "undocumented" | "twice" | "split" | "unscoped";
+    check: "boundaries" | "wiring" | "oversized" | "missing" | "unexplained" | "undocumented" | "twice" | "split" | "unscoped" | "migrations" | "dialect";
     message: string;
 };
 
@@ -59,6 +60,8 @@ export const Project = {
             ...Project.findImportViolations(checking.plugins ?? join(root, "src", "plugins"), checking.leaving ?? []),
             ...Project.findUnusedFields(checking.plugins ?? join(root, "src", "plugins")),
             ...Project.findUnscopedReach(checking.plugins ?? join(root, "src", "plugins")),
+            ...Project.findMigrationDrift(checking.plugins ?? join(root, "src", "plugins")),
+            ...Project.findSqliteOnlyCalls(checking.plugins ?? join(root, "src", "plugins")),
 
             ...Project.findUnusedFields(checking.utils ?? join(root, "src", "utils"), false),
             ...Project.findUnexplainedPlugins(checking.plugins ?? join(root, "src", "plugins")),
@@ -87,6 +90,18 @@ export const Project = {
     findUnscopedReach: (root: string): ProjectProblem[] =>
     {
         return findUnscopedReach(root).map((reached) => ({ check: "unscoped" as const, message: reached.message }));
+    },
+
+    /** Where a plugin's SQLite and Postgres migrations went apart: a numbered step in one dialect's folder and not the other's. */
+    findMigrationDrift: (root: string): ProjectProblem[] =>
+    {
+        return findMigrationDrift(root).map((drift) => ({ check: "migrations" as const, message: drift.message }));
+    },
+
+    /** Where a query ends in `.get()`, `.all()` or `.run()`, which only SQLite answers, with the portable replacement. */
+    findSqliteOnlyCalls: (root: string): ProjectProblem[] =>
+    {
+        return findSqliteOnlyCalls(root).map((call) => ({ check: "dialect" as const, message: call.message }));
     },
 
     findUnusedFields: (root: string, apart = true): ProjectProblem[] =>

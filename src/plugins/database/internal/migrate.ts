@@ -1,11 +1,14 @@
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import type Database from "better-sqlite3";
 
 import { KernelFault } from "../../kernel/api";
 
+import { dialect } from "./dialect";
+
+import type { Dialect } from "./dialect";
 import type { Sql } from "./sql";
 
 /** Where one plugin keeps its migrations. */
@@ -39,7 +42,8 @@ export class MigrationFault extends Error
     }
 }
 
-const NUMBERED = /^(\d{4})-[a-z0-9][a-z0-9-]*\.sql$/;
+// `NNNN-name.sql`, or `NNNN_name.sql` as drizzle-kit generates it
+const NUMBERED = /^(\d{4})[-_][a-z0-9][a-z0-9_-]*\.sql$/;
 
 /** The table recording what has run. Ours, and no plugin's to read. */
 const LEDGER = `
@@ -60,14 +64,50 @@ function read(plugin: string, from: string, name: string): MigrationStep
     return { plugin, name, sql, hash: createHash("sha256").update(sql).digest("hex") };
 }
 
-/** The migrations one plugin holds, in the order their numbers give. */
-export function migrationSteps(source: MigrationSource): MigrationStep[]
+/** Whether a path is a folder. */
+function isFolder(path: string): boolean
+{
+    return existsSync(path) && statSync(path).isDirectory();
+}
+
+/**
+ * Where one plugin keeps the migrations of a dialect: `<from>/sqlite` and `<from>/postgres`, each generated from the
+ * same table definitions. A folder holding the files itself is the layout before 9.0, which is SQLite's alone.
+ */
+function folderFor(source: MigrationSource, which: Dialect): string
+{
+    const own = join(source.from, which);
+    const other = which === "sqlite" ? "postgres" : "sqlite";
+
+    if (isFolder(own))
+    {
+        return own;
+    }
+
+    if (isFolder(join(source.from, other)))
+    {
+        throw new MigrationFault(`"${source.plugin}" keeps migrations for ${other} in ${join(source.from, other)} and none for ${which}. Generate them into ${own} from the same table definitions.`, source.plugin);
+    }
+
+    const flat = isFolder(source.from) && readdirSync(source.from).some((name) => name.endsWith(".sql"));
+
+    if (which === "postgres" && flat)
+    {
+        throw new MigrationFault(`"${source.plugin}" keeps its migrations in ${source.from} itself, the SQLite-only layout. Move them into ${join(source.from, "sqlite")} and generate ${join(source.from, "postgres")} from the same table definitions.`, source.plugin);
+    }
+
+    return source.from;
+}
+
+/** The migrations one plugin holds for a dialect, the process's own unless named, in the order their numbers give. */
+export function migrationSteps(source: MigrationSource, which: Dialect = dialect()): MigrationStep[]
 {
     let names: string[];
+    const folder = folderFor(source, which);
 
     try
     {
-        names = readdirSync(source.from);
+        names = readdirSync(folder);
     }
     catch
     {
@@ -80,7 +120,7 @@ export function migrationSteps(source: MigrationSource): MigrationStep[]
     {
         if (!NUMBERED.test(name))
         {
-            throw new MigrationFault(`"${name}" is not named NNNN-name.sql, so its place in the order is ambiguous.`, source.plugin, name);
+            throw new MigrationFault(`"${name}" is not named NNNN-name.sql (or drizzle-kit's NNNN_name.sql), so its place in the order is ambiguous.`, source.plugin, name);
         }
     }
 
@@ -99,7 +139,7 @@ export function migrationSteps(source: MigrationSource): MigrationStep[]
         numbers.set(numbered, name);
     }
 
-    return [...sql].sort().map((name) => read(source.plugin, source.from, name));
+    return [...sql].sort().map((name) => read(source.plugin, folder, name));
 }
 
 /**
@@ -182,7 +222,7 @@ async function applyMigrations(sql: Sql, sources: readonly MigrationSource[]): P
 
     for (const source of sources)
     {
-        for (const step of migrationSteps(source))
+        for (const step of migrationSteps(source, sql.dialect))
         {
             const before = applied.get(`${step.plugin}/${step.name}`);
 

@@ -628,6 +628,8 @@
     | "UNSTORED_SCHEDULE"
     | "JOINED_TRANSACTION"
     | "UNSUPPORTED_DATABASE"
+    | "MIXED_DIALECT"
+    | "UNPORTABLE_COLUMN"
     | "SELF_HEARD_EVENT"
     | "UNDECLARED_HOOK"
     | "UNDECLARED_COMMAND"
@@ -1298,6 +1300,11 @@
 > Reads every plugin folder under `root` by regex, never by compiling, and answers what crosses a boundary; tests are excused the deep import of a dependency's `plugin.ts`.
 ### findImportViolations(root: string): ImportViolation[]
 
+> Where one plugin's migrations for SQLite and for Postgres went apart: a numbered file in one folder and not the
+> other. Both are generated from the same tables, so a gap means one dialect was generated and the other forgotten.
+> A plugin keeping one folder of files, the layout before 9.0, runs on SQLite alone and is not reported.
+### findMigrationDrift(root: string): DialectFinding[]
+
 > Answers which of the `required` paths, read relative to `root`, are absent or hold nothing but whitespace; a file that exists but is empty counts as missing.
 ### findMissingDocs(root: string, required: readonly string[]): string[]
 
@@ -1309,6 +1316,10 @@
 
 > One word naming two closed sets that are nearly, but not quite, the same.
 ### findSplitVocabulary(root: string): SplitVocabulary[]
+
+> Where a query ends in `.get()`, `.all()` or `.run()`, which only the SQLite driver answers: the same code fails on
+> Postgres. Read per statement, and only where the statement reaches a `db`, so a Map's get or a command's run passes.
+### findSqliteOnlyCalls(root: string): DialectFinding[]
 
 > Takes the two files' TEXT, not their paths, and answers the keys of `Definition` that the procedure never names in backticks.
 ### findUndocumentedKeys(contract: string, procedure: string): string[]
@@ -1323,13 +1334,17 @@
 ### findUnusedFields(root: string, separately?: boolean): UnusedField[]
 
 > Every project-wide check in one object, each answering `ProjectProblem[]`; `findAll` runs the lot against sensible defaults and answers an empty array when a project is clean.
-### Project: { /** What a project is suggested to require of itself, the same list the app kit names. */ required: readonly ["#docs/usage.md", "#docs/architecture.md"]; findAll: (checking?: ProjectCheckOptions) => ProjectProblem[]; findImportViolations: (root: string, leaving?: readonly string[]) => ProjectProblem[]; /** Where a scoped table is reached without narrowing, which returns another tenant's rows with nothing reporting it. */ findUnscopedReach: (root: string) => ProjectProblem[]; findUnusedFields: (root: string, apart?: boolean) => ProjectProblem[]; findUnexplainedPlugins: (root: string) => ProjectProblem[]; findCopiedVocabulary: (root: string, excused?: readonly string[]) => ProjectProblem[]; findSplitVocabulary: (root: string, excused?: readonly string[]) => ProjectProblem[]; findSharedNames: (root: string, excused?: readonly string[]) => ProjectProblem[]; findOversizedDocs: (root: string, limit: number) => ProjectProblem[]; findUndocumentedKeys: (procedure: string) => ProjectProblem[] }
+### Project: { /** What a project is suggested to require of itself, the same list the app kit names. */ required: readonly ["#docs/usage.md", "#docs/architecture.md"]; findAll: (checking?: ProjectCheckOptions) => ProjectProblem[]; findImportViolations: (root: string, leaving?: readonly string[]) => ProjectProblem[]; /** Where a scoped table is reached without narrowing, which returns another tenant's rows with nothing reporting it. */ findUnscopedReach: (root: string) => ProjectProblem[]; /** Where a plugin's SQLite and Postgres migrations went apart: a numbered step in one dialect's folder and not the other's. */ findMigrationDrift: (root: string) => ProjectProblem[]; /** Where a query ends in `.get()`, `.all()` or `.run()`, which only SQLite answers, with the portable replacement. */ findSqliteOnlyCalls: (root: string) => ProjectProblem[]; findUnusedFields: (root: string, apart?: boolean) => ProjectProblem[]; findUnexplainedPlugins: (root: string) => ProjectProblem[]; findCopiedVocabulary: (root: string, excused?: readonly string[]) => ProjectProblem[]; findSplitVocabulary: (root: string, excused?: readonly string[]) => ProjectProblem[]; findSharedNames: (root: string, excused?: readonly string[]) => ProjectProblem[]; findOversizedDocs: (root: string, limit: number) => ProjectProblem[]; findUndocumentedKeys: (procedure: string) => ProjectProblem[] }
     // What a project is suggested to require of itself, the same list the app kit names.
     required: readonly ["#docs/usage.md", "#docs/architecture.md"]
     findAll: (checking?: ProjectCheckOptions) => ProjectProblem[]
     findImportViolations: (root: string, leaving?: readonly string[]) => ProjectProblem[]
     // Where a scoped table is reached without narrowing, which returns another tenant's rows with nothing reporting it.
     findUnscopedReach: (root: string) => ProjectProblem[]
+    // Where a plugin's SQLite and Postgres migrations went apart: a numbered step in one dialect's folder and not the other's.
+    findMigrationDrift: (root: string) => ProjectProblem[]
+    // Where a query ends in `.get()`, `.all()` or `.run()`, which only SQLite answers, with the portable replacement.
+    findSqliteOnlyCalls: (root: string) => ProjectProblem[]
     findUnusedFields: (root: string, apart?: boolean) => ProjectProblem[]
     findUnexplainedPlugins: (root: string) => ProjectProblem[]
     findCopiedVocabulary: (root: string, excused?: readonly string[]) => ProjectProblem[]
@@ -1396,6 +1411,11 @@
     copier: string
     file: string
     values: readonly string[]
+
+> One finding, written as a sentence a person can act on.
+### DialectFinding
+    file: string
+    message: string
 
 > One method name and signature that more than one plugin wrote for itself under its own `utils/`, with every file holding a copy.
 ### DuplicateSignature
@@ -1478,7 +1498,7 @@
 
 > One finding from any `Project` check, already written out as a sentence a person can act on; `check` says which check spoke.
 ### ProjectProblem
-    check: "boundaries" | "wiring" | "oversized" | "missing" | "unexplained" | "undocumented" | "twice" | "split" | "unscoped"
+    check: "boundaries" | "wiring" | "oversized" | "missing" | "unexplained" | "undocumented" | "twice" | "split" | "unscoped" | "migrations" | "dialect"
     message: string
 
 > One event, as a test sees it.
@@ -1573,3 +1593,48 @@
     file: string
     shape: string
     field: string
+
+# @onetype/stack-api-kit/tables
+
+## Functions
+
+> The columns a table may hold on both dialects.
+### column: { /** A text id, a UUID by convention. */ id: (name?: string) => Text; text: (name: string) => Text; /** A 32-bit integer: a count, a position. A time or anything past 2^31 is `timeMs`. */ integer: (name: string) => Whole; /** Epoch milliseconds: `bigint` on Postgres, read back as a number. */ timeMs: (name: string) => Whole; boolean: (name: string) => lite.SQLiteBooleanBuilderInitial<"">; /** A JSON value: text on SQLite, `jsonb` on Postgres. */ json: <Shape>(name: string) => lite.SQLiteTextJsonBuilderInitial<""> & { _: { data: Shape } }; real: (name: string) => lite.SQLiteRealBuilderInitial<""> }
+    // A text id, a UUID by convention.
+    id: (name?: string) => Text
+    text: (name: string) => Text
+    // A 32-bit integer: a count, a position. A time or anything past 2^31 is `timeMs`.
+    integer: (name: string) => Whole
+    // Epoch milliseconds: `bigint` on Postgres, read back as a number.
+    timeMs: (name: string) => Whole
+    boolean: (name: string) => lite.SQLiteBooleanBuilderInitial<"">
+    // A JSON value: text on SQLite, `jsonb` on Postgres.
+    json: <Shape>(name: string) => lite.SQLiteTextJsonBuilderInitial<""> & {
+    _: {
+    data: Shape
+    }
+    }
+    real: (name: string) => lite.SQLiteRealBuilderInitial<"">
+
+> The dialect this process builds its tables for, read once from the environment on first use: `KIT_DIALECT`, else
+> `postgres` when `DATABASE_URL` is a Postgres URL, else `sqlite`. Read here rather than set by `start`, because a
+> project imports its plugins, and with them their tables, before it starts anything.
+### dialect(): Dialect
+
+> An index, portable: `.on(...)` and, for a partial one, `.where(sql\`...\`)`.
+### index: (name: string) => ReturnType<typeof lite.index>
+
+> One table for both dialects: typed as SQLite, built for the dialect this process uses. Its migrations are
+> generated from it, once for each dialect.
+### table<Name extends string, Columns extends Record<string, lite.SQLiteColumnBuilderBase>>(name: Name, columns: Columns, extras?: (self: Portable<Name, Columns>) => unknown[]): Portable<Name, Columns>
+
+### uniqueIndex: (name: string) => ReturnType<typeof lite.uniqueIndex>
+
+## Types
+
+> Which SQL a deployment speaks. One per deployment.
+### Dialect = "sqlite" | "postgres"
+
+> What `ctx.db` is over portable tables: typed as the SQLite handle, so every query infers as it always did. `.get()`,
+> `.all()` and `.run()` answer on SQLite alone; the Project check `[dialect]` names them where they are written.
+### PortableDb<Schema extends Record<string, unknown> = Record<string, never>> = BetterSQLite3Database<Schema>

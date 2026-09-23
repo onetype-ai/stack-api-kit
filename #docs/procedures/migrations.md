@@ -4,50 +4,45 @@ A migration is history. What ran once ran everywhere, and cannot be rewritten.
 
 ## Files
 
-One folder per plugin, named in the contract:
+One folder per plugin, named in the contract, with one folder a dialect:
 
 ```
 plugins/items/migrations/
-    0001-create-items.sql
-    0002-add-status.sql
+    sqlite/0000_items.sql
+    postgres/0000_items.sql
 ```
 
-`NNNN-name.sql`, four digits, lowercase. A name outside that is refused rather
-than sorted somewhere: "2-b.sql" sorts before "10-a.sql" as text and after it
-as a number, and a schema depending on which is one nobody can reproduce.
+Both are generated from the plugin's `table()` definitions, never written
+twice by hand: `drizzle-kit generate` once with `dialect: "sqlite"` and once
+with `"postgresql"`, `KIT_DIALECT` set to match. They hold the same numbered
+steps, and `[migrations]` names a gap. One folder of files, the layout before
+9.0, runs on SQLite alone.
 
-Two files sharing a number is refused for the same reason.
+`NNNN-name.sql` or drizzle-kit's `NNNN_name.sql`, four digits, lowercase. A
+name outside that is refused rather than sorted somewhere: "2-b.sql" sorts
+before "10-a.sql" as text and after it as a number. Two files sharing a
+number are refused for the same reason.
 
 ## Order
 
 They run in dependency order, so a plugin's tables exist before one depending
-on it references them. Within a plugin, the number decides.
-
-Each runs in its own transaction: a failure leaves the ones before it applied
-and recorded, so the next run continues rather than starting over.
+on it references them. Within a plugin, the number decides. All of them run in
+one transaction: one that fails takes every step of that run back with it.
 
 ## Never edit one that ran
 
-The content is hashed when it runs. Changing it afterwards is refused, because
-a file edited after it ran leaves one database with the old shape and another
-with the new, and both report they are current.
-
-Add a new file. A mistake in production is fixed forwards.
+The content is hashed when it runs. Changing it afterwards is refused: one
+database would keep the old shape and another the new, both reporting they
+are current. Add a new one. A mistake in production is fixed forwards.
 
 ## Writing one
 
-Raw SQL, because there is no user input here to interpolate. One subject per
-file: a table, a column, an index.
-
-Write the down migration nowhere. SQLite cannot drop a column without
-rewriting the table, and a rollback that has never run is a rollback that does
-not work. Recovery is a restore and a new migration forwards.
-
-Seed data belongs in a migration only when the application cannot start
-without it. Anything else is a fixture.
+Generated, then read before it is committed. Write no down migration: a
+rollback that has never run does not work. Recovery is a restore and a new
+migration forwards. Seed data only when the application cannot start without
+it; anything else is a fixture.
 
 ## Proving it
 
-Run them against an empty in-memory database in a test, then run them again:
-the second run applies nothing. Break one on purpose and watch the failure
-name the plugin and the file.
+Run them against an empty database in a test, then again: the second run
+applies nothing.

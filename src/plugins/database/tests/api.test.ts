@@ -1,11 +1,11 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
-import { database, MigrationFault } from "../api";
+import { database, MigrationFault, migrationSteps } from "../api";
 
 const items = sqliteTable("items", {
     id: text("id").primaryKey(),
@@ -20,6 +20,7 @@ function folder(files: Readonly<Record<string, string>>): string
 
     for (const [name, sql] of Object.entries(files))
     {
+        mkdirSync(dirname(join(at, name)), { recursive: true });
         writeFileSync(join(at, name), sql);
     }
 
@@ -326,5 +327,40 @@ describe("migrations", () =>
         expect(await store.migrate([{ plugin: "items", from: folder({ "0001-init.sql": CREATE }) }])).toHaveLength(1);
 
         await store.close();
+    });
+});
+
+describe("migrations for each dialect", () =>
+{
+    test("are read from the folder of the process's dialect, in drizzle-kit's names, past its meta folder", async () =>
+    {
+        const from = folder({
+            "sqlite/0000_items.sql": CREATE,
+            "sqlite/meta/_journal.json": "{}",
+            "postgres/0000_items.sql": "CREATE TABLE items (id TEXT PRIMARY KEY)",
+        });
+        const store = database({ file: ":memory:", tables: { items: { items } } });
+
+        const ran = await store.migrate([{ plugin: "items", from }]);
+
+        expect(ran.map((step) => step.name)).toEqual(["0000_items.sql"]);
+        expect(migrationSteps({ plugin: "items", from }, "postgres").map((step) => step.sql)).toEqual(["CREATE TABLE items (id TEXT PRIMARY KEY)"]);
+
+        await store.close();
+    });
+
+    test.each([
+        ["one folder of files, the layout before 9.0, on Postgres", { "0001-init.sql": CREATE }, "postgres", /the SQLite-only layout\. Move them into .*sqlite and generate .*postgres/],
+        ["migrations for the other dialect alone", { "postgres/0000_items.sql": CREATE }, "sqlite", /for postgres in .* and none for sqlite\. Generate them into/],
+    ] as const)("refuse %s, naming the fix", (_what, files, which, message) =>
+    {
+        expect(() => migrationSteps({ plugin: "items", from: folder(files) }, which)).toThrow(message);
+    });
+
+    test("in one folder of files still run on SQLite, as before 9.0", () =>
+    {
+        const steps = migrationSteps({ plugin: "items", from: folder({ "0001-init.sql": CREATE }) }, "sqlite");
+
+        expect(steps.map((step) => step.name)).toEqual(["0001-init.sql"]);
     });
 });
