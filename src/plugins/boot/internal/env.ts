@@ -103,6 +103,12 @@ export const Env = {
 
     flag: (name: string, fallback: boolean): boolean => rules.flag(name, read(name), fallback),
 
+    /** Whether this process runs as production: `NODE_ENV=production`. What must never happen there asks here itself, so no caller can vouch for it. */
+    isProduction: (): boolean => read("NODE_ENV") === "production",
+
+    /** Whether a plugin marked `fake` may run in production anyway: `ALLOW_FAKE=true`, a decision written where the deployment is. */
+    allowsFake: (): boolean => rules.flag("ALLOW_FAKE", read("ALLOW_FAKE"), false),
+
     list: (name: string): readonly string[] => rules.list(read(name)),
 
     oneOf: <Allowed extends string>(name: string, allowed: readonly Allowed[], fallback: Allowed): Allowed =>

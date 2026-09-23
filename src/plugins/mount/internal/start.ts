@@ -1,3 +1,4 @@
+import { Env } from "../../boot/api";
 import { database, migrationSteps, noStore } from "../../database/api";
 import { limiter, unlimited } from "../../guard/api";
 import { createKernel, order, tableIndexes } from "../../kernel/api";
@@ -217,6 +218,14 @@ export async function start(options: StartOptions): Promise<StartedApp>
         throw new TypeError(
             `${withTables.map((plugin) => `"${plugin.name}"`).join(", ")} declare tables, and start() was given no database. Pass one: database: { file: "./data/app.db" }, or a store of your own.`,
         );
+    }
+
+    const fakes = options.plugins.filter((plugin) => plugin.definition.fake === true).map((plugin) => plugin.name);
+
+    // a stand-in in production answers as the real thing would and does nothing: free checkouts, mail never sent
+    if (fakes.length > 0 && Env.isProduction() && !Env.allowsFake())
+    {
+        throw new TypeError(`${fakes.map((name) => `"${name}"`).join(", ")} ${fakes.length === 1 ? "is a stand-in" : "are stand-ins"} for a real provider, and this process runs as production. Configure the real provider, or set ALLOW_FAKE=true where the deployment is decided.`);
     }
 
     const store = storeFor(options.database, withTables);

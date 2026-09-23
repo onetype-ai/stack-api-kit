@@ -3,6 +3,8 @@ export { findImportViolations, findCopiedVocabulary, findSharedNames, findSplitV
 export { findMissingDocs, findOversizedDocs, findUndocumentedKeys, findUnexplainedPlugins } from "./testing/docs";
 export { Project } from "./testing/project";
 export { StoredContracts } from "./testing/storedContracts";
+export { testClock } from "./testing/testClock";
+export type { TestClock } from "./testing/testClock";
 export { Started } from "./testing/started";
 export { findUnusedFields } from "./testing/wiring";
 

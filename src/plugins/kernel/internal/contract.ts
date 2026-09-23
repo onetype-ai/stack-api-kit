@@ -369,6 +369,9 @@ export type Definition<
     /** This plugin reads `ctx.work`: how scheduled work and the outbox are doing. Any other plugin reading it is refused; guard what it answers to platform operators. */
     watchesWork?: boolean;
 
+    /** This plugin stands in for a real provider (mail that is never sent, payments never charged): `start` refuses it in production unless `ALLOW_FAKE=true`. */
+    fake?: boolean;
+
     services?: (ctx: Context<z.infer<Schema>, never, Db>) => Services;
 
     /** The endpoints this plugin answers, each carrying its own input schema; a narrower handler input is sound because the kernel parses before it calls. */

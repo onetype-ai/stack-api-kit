@@ -32,10 +32,11 @@ Env.rules.number("PORT", import.meta.env.PORT, 7280, 1, 65_535);
 ```
 
 - Set and empty throws; unset takes the fallback.
-- `number` takes whole numbers in range: `"1.5"`, `"-1"`, `"abc"` and `" "`
-  are each refused by name.
+- `number` takes whole numbers in range; `"1.5"` or `"abc"` is refused.
 - `flag` takes `"true"` or `"false"` only.
 - `list` splits on commas, trims, and drops what a trailing comma leaves.
+- `isProduction()` is `NODE_ENV=production`; there `start` refuses a plugin
+  declaring `fake: true` unless `allowsFake()` (`ALLOW_FAKE=true`).
 - `Log.line` never writes a credential, by key or by shape (Bearer, JWT,
   live keys); `forLevel(level, { personal: true })` masks emails and IPs.
 - `Log.line` keeps its own `at`, `level` and `line`; an `Error` becomes

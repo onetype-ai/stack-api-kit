@@ -11,7 +11,7 @@ A test imports the plugin as another does, from `../api`, never
 
 ## Shape
 
-Arrange, act, assert, in that order, with a blank line between. Name the case,
+Arrange, act, assert, a blank line between. Name the case,
 not the function. No shared setup hiding a dependency, no helper wrapping the
 assertion: a reader sees what is claimed without opening another file.
 
@@ -24,7 +24,7 @@ A fake accepting what SQLite rejects is where bugs hide.
 
 `configureTestKernels({ resolve })` in a setup file adds what a plugin
 `dependsOn`, so a test names only the plugin it proves. Each test builds
-its own kernel and stops it.
+its own kernel and stops it. `testClock()` gives `now` a test moves by hand.
 
 ## What must be proved
 
