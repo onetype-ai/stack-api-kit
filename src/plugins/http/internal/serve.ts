@@ -25,6 +25,9 @@ export type ServerOptions = {
     headers?: readonly string[];
     maxAge?: number;
 
+    /** Response headers a page on an allowed origin may read: retry-after, x-request-id, etag and content-disposition when left out. */
+    exposes?: readonly string[];
+
     /** The largest body accepted, before it is parsed. */
     bodyBytes?: number;
 
@@ -322,6 +325,7 @@ export function serve(options: ServerOptions): Hono
         methods: options.methods ?? ["GET", "POST", "PUT", "PATCH", "DELETE"],
         headers: options.headers ?? ["content-type", "authorization"],
         maxAge: options.maxAge ?? 600,
+        exposes: options.exposes ?? ["retry-after", "x-request-id", "etag", "content-disposition"],
     };
 
     const requestIds = new WeakMap<Request, string>();
@@ -365,7 +369,9 @@ export function serve(options: ServerOptions): Hono
         }
 
         // Vary stays: a handler may still answer by the Origin it reads, and a shared cache must keep those apart
-        const allowed = shared.has(c.req.raw) ? { "access-control-allow-origin": "*", vary: "Origin" } : cors(policy, c.req.header("origin"));
+        const allowed = shared.has(c.req.raw)
+            ? { "access-control-allow-origin": "*", ...(policy.exposes.length > 0 && { "access-control-expose-headers": policy.exposes.join(", ") }), vary: "Origin" }
+            : cors(policy, c.req.header("origin"));
 
         for (const [name, value] of Object.entries(allowed))
         {
