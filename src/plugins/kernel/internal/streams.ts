@@ -1,5 +1,6 @@
 import type { Context, Route } from "./contract";
 import { logRecord } from "./logRecord";
+import { pruneRecords } from "./records";
 import { refusalBodyFor, ServerEvent, type EventsReply, type Reply } from "./refusal";
 import { isKitHeader, SHARED_CACHE } from "./replyHeaders";
 
@@ -222,7 +223,7 @@ export async function* streamedEvents(
             const item: unknown = next.value;
             const event = item instanceof ServerEvent ? item : new ServerEvent(item);
             const framed = [event.event, event.id].every((field) => field === undefined || (typeof field === "string" && !/[\r\n]/u.test(field)));
-            const filtered = route.streams.safeParse(event.data);
+            const filtered = route.streams.safeParse(pruneRecords(route.streams, event.data));
 
             if (!framed || !filtered.success)
             {

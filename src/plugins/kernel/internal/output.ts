@@ -1,12 +1,14 @@
 import type { z } from "zod";
 
+import { isBoundedKey } from "./records";
+
 /** Whether a schema can be trusted to whitelist what leaves. */
 export function isFilterable(schema: z.ZodType): boolean
 {
     return isStrictObject(schema, 0, new Set());
 }
 
-const OPEN_KINDS: ReadonlySet<string> = new Set(["any", "unknown", "record", "map", "custom", "never", "void", "transform", "pipe", "promise", "function", "file", "symbol"]);
+const OPEN_KINDS: ReadonlySet<string> = new Set(["any", "unknown", "map", "custom", "never", "void", "transform", "pipe", "promise", "function", "file", "symbol"]);
 
 /** What kind of schema this is, or "" for anything unreadable. */
 function schemaKind(schema: unknown): string
@@ -73,6 +75,11 @@ function isStrictObject(schema: unknown, depth: number, seen: Set<unknown>): boo
         case "set":
         {
             return isStrictObject(def["element"], depth + 1, seen);
+        }
+
+        case "record":
+        {
+            return isBoundedKey(def["keyType"], def["valueType"]) && isStrictObject(def["valueType"], depth + 1, seen);
         }
 
         case "tuple":

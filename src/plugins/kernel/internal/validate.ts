@@ -461,7 +461,7 @@ function checkAnswers(name: string, route: NonNullable<Plugin["definition"]["rou
 
     if (route.output !== undefined && !isFilterable(route.output))
     {
-        report("INVALID_OUTPUT", name, `Route ${route.method} "${route.path}" has an output schema that cannot filter what leaves. Use z.object naming every field that may be sent: it strips the rest. z.any, z.unknown, z.record, z.looseObject, a catchall and a transform all forward whatever the handler returned.`);
+        report("INVALID_OUTPUT", name, `Route ${route.method} "${route.path}" has an output schema that cannot filter what leaves. Use z.object naming every field that may be sent: it strips the rest. z.any, z.unknown, a z.record keyed by a bare string, z.looseObject, a catchall and a transform all forward whatever the handler returned; a z.record keyed by an enum, literals or an anchored pattern refusing secret-shaped keys filters.`);
     }
 }
 

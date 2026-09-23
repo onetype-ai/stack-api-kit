@@ -1,5 +1,6 @@
 import { refusalBodyFor, Reply, Refusal } from "./refusal";
 import { documentAnswer, tagged } from "./document";
+import { pruneRecords } from "./records";
 import { fileAnswer } from "./file";
 import { eventsRefusal, openStream, STREAM_SECONDS, streamedEvents, type OpenStream, type StreamRegistry } from "./streams";
 import type { z } from "zod";
@@ -258,7 +259,7 @@ export async function respond(
             return { status: 500, body: { code: "INTERNAL", message: "The request could not be completed." } };
         }
 
-        const filtered = route.output.safeParse(reply === undefined ? returned : reply.body);
+        const filtered = route.output.safeParse(pruneRecords(route.output, reply === undefined ? returned : reply.body));
 
         if (!filtered.success)
         {
