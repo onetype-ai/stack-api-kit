@@ -793,6 +793,8 @@
     watchSeconds?: number
     stopTimeoutMs?: number
     drainMs?: number
+    // How the socket at `/ws` is held: its lifetime, how often it is identified again and pinged, how many one caller may hold.
+    sockets?: Omit<SocketOptions, "log" | "from">
 
 > Where events wait, so one is never lost between a commit and its delivery.
 > Delivery is at least once per listener: a listener that throws is retried in the running process with backoff (2^n s, 300 s at most),
@@ -1027,7 +1029,7 @@
     connected?: (scope: string, permission: string) => readonly string[]
 
 > What `start` answers: the running kernel and store, the Hono app and its `fetch`, `sockets` only when sockets were asked for, and `stop`, which stops the kernel and closes the database.
-### StartedApp = { kernel: Kernel; store: Store; app: ReturnType<typeof serve>; fetch: (request: Request) => Response | Promise<Response>; sockets: { subscribe: (identity: Identity | undefined, send: (text: string) => void) => Subscription } | undefined; stop: () => Promise<void> }
+### StartedApp = { kernel: Kernel; store: Store; app: ReturnType<typeof serve>; fetch: (request: Request) => Response | Promise<Response>; sockets: { subscribe: (identity: Identity | undefined, send: (text: string) => void) => Subscription } | undefined; served: { origins: readonly string[]; session: SessionOptions | undefined; bodyBytes: number; from: ServerOptions["from"] }; stop: () => Promise<void> }
 
 > Everything `start` takes; `outbox` and `schedule` are opt-in, while `sockets` and `limits` are on unless set to false.
 ### StartOptions = { plugins: readonly Plugin[]; database?: DatabaseOptions | Store | undefined; config?: Readonly<Record<string, unknown>> | undefined; sockets?: boolean | { claim: string } | undefined; identify?: ((kernel: Kernel) => ServerOptions["identify"]) | undefined; http?: Omit<ServerOptions, "kernel" | "identify" | "log"> | undefined; httpClient?: HttpClientOptions | HttpClient | undefined; lookup?: Lookup | undefined; rateLimiter?: RateLimiter | undefined; mostStreamsPerCaller?: number | undefined; streamDrainMs?: number | undefined; strictReplyHeaders?: boolean | undefined; limits?: boolean | undefined; outbox?: boolean | undefined; schedule?: boolean | "enqueue" | undefined; jobLeaseMs?: number | undefined; jobRunMs?: number | undefined; outboxLeaseMs?: number | undefined; log?: Logger | undefined }
