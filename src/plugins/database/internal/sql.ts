@@ -1,6 +1,10 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 import type Database from "better-sqlite3";
 
 import { KernelFault } from "../../kernel/api";
+
+import { queue as ownQueue } from "./queue";
 
 /** Which SQL the database speaks. One per deployment. */
 export type Dialect = "sqlite" | "postgres";
@@ -90,10 +94,37 @@ export type Around = {
 };
 
 /** The same SQL over one better-sqlite3 connection, which answers at once. */
-export function sqliteSql(connection: Database.Database): Sql
+export function sqliteSql(connection: Database.Database, queue?: <Result>(run: () => Promise<Result>) => Promise<Result>): Sql
 {
     const prepared = new Map<string, Database.Statement>();
-    let depth = 0;
+
+    /** How deep this chain of calls is in its own transaction: a call from another chain is not nested, whatever is open. */
+    const nesting = new AsyncLocalStorage<number>();
+
+    /** Where a transaction waits for the one before it: the store's queue when one is given, else this connection's own. */
+    const alone = queue ?? ownQueue().run;
+
+    const savepoint = async <Result,>(depth: number, run: (inside: Sql) => Promise<Result>): Promise<Result> =>
+    {
+        const name = `kit_sp_${String(depth)}`;
+
+        connection.exec(`SAVEPOINT ${name}`);
+
+        try
+        {
+            const result = await nesting.run(depth + 1, () => run(sql));
+
+            connection.exec(`RELEASE ${name}`);
+
+            return result;
+        }
+        catch (cause)
+        {
+            connection.exec(`ROLLBACK TO ${name}; RELEASE ${name}`);
+
+            throw cause;
+        }
+    };
 
     const statement = (text: string): Database.Statement =>
     {
@@ -139,50 +170,45 @@ export function sqliteSql(connection: Database.Database): Sql
             return Promise.resolve();
         },
 
-        transaction: async <Result,>(run: (inside: Sql) => Promise<Result>, caller = "The kit"): Promise<Result> =>
+        transaction: <Result,>(run: (inside: Sql) => Promise<Result>, caller = "The kit"): Promise<Result> =>
         {
-            const name = `kit_sp_${String(depth)}`;
-            const nested = depth > 0;
+            const depth = nesting.getStore() ?? 0;
 
-            // a transaction someone else opened is not this one's to join: its rollback would undo this work too
-            if (!nested && connection.inTransaction)
+            // only this chain's own transaction is nested; any other waits its turn in the queue
+            if (depth > 0)
             {
-                throw new KernelFault(
-                    "JOINED_TRANSACTION",
-                    `${caller} asked for a transaction while another is open on this SQLite connection, and would have joined it without saying so: that one's rollback would undo this work too. Call ${caller} outside ctx.tx and store.tx.`,
-                    { plugin: "" },
-                );
+                return savepoint(depth, run);
             }
 
-            if (nested)
+            return alone(async () =>
             {
-                connection.exec(`SAVEPOINT ${name}`);
-            }
-            else
-            {
+                // a transaction someone else opened is not this one's to join: its rollback would undo this work too
+                if (connection.inTransaction)
+                {
+                    throw new KernelFault(
+                        "JOINED_TRANSACTION",
+                        `${caller} asked for a transaction while another is open on this SQLite connection, and would have joined it without saying so: that one's rollback would undo this work too. Call ${caller} outside ctx.tx and store.tx.`,
+                        { plugin: "" },
+                    );
+                }
+
                 await beginImmediate(connection);
-            }
 
-            depth += 1;
+                try
+                {
+                    const result = await nesting.run(1, () => run(sql));
 
-            try
-            {
-                const result = await run(sql);
+                    connection.exec("COMMIT");
 
-                connection.exec(nested ? `RELEASE ${name}` : "COMMIT");
+                    return result;
+                }
+                catch (cause)
+                {
+                    connection.exec("ROLLBACK");
 
-                return result;
-            }
-            catch (cause)
-            {
-                connection.exec(nested ? `ROLLBACK TO ${name}; RELEASE ${name}` : "ROLLBACK");
-
-                throw cause;
-            }
-            finally
-            {
-                depth -= 1;
-            }
+                    throw cause;
+                }
+            });
         },
     };
 

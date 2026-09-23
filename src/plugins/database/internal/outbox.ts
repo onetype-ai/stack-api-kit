@@ -4,7 +4,7 @@ import type Database from "better-sqlite3";
 
 import type { FailedEvent, OutboxMessage, Outbox } from "../../kernel/api";
 
-import { leaseOf } from "./schedule";
+import { leaseOf, lockingOf } from "./schedule";
 import { serialized, sqliteSql } from "./sql";
 
 import type { Around, Sql } from "./sql";
@@ -156,10 +156,11 @@ export function outboxOver(sql: Sql, settings: { leaseMs?: number } = {}, around
                     SELECT "id" FROM "kit_outbox"
                     WHERE "failedAt" IS NULL AND ("retryAt" IS NULL OR "retryAt" <= ?) AND ("takenAt" IS NULL OR "takenAt" < ?)
                     ORDER BY "writtenAt"
-                    LIMIT ?
+                    LIMIT ?${lockingOf(sql)}
                 )
+                AND "failedAt" IS NULL AND ("retryAt" IS NULL OR "retryAt" <= ?) AND ("takenAt" IS NULL OR "takenAt" < ?)
                 RETURNING "id", "plugin", "name", "payload", "heard", "attempts"
-            `, [now, holder, now, now - leaseMs, limit]);
+            `, [now, holder, now, now - leaseMs, limit, now, now - leaseMs]);
 
             return rows.map((row) => ({
                 id: row.id,

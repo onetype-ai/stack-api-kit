@@ -6,7 +6,11 @@ import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { afterEach, beforeEach, expect, test } from "vitest";
 
 import { database } from "../api";
+import Database from "better-sqlite3";
+
+import { schedule } from "../api";
 import { refuseOldSqlite } from "../internal/connect";
+import { sqliteSql } from "../internal/sql";
 
 const rows = sqliteTable("rows", { id: text("id").primaryKey() });
 
@@ -267,6 +271,61 @@ test("work a finished transaction left running waits for the next one instead of
     await lateWrite;
 
     expect(await store.forPlugin("a").select().from(rows)).toEqual([{ id: "late" }]);
+});
+
+test("two transactions of the kit's own from different calls never nest: one rolls back, the other's work holds", async () =>
+{
+    const connection = new Database(":memory:");
+    const sql = sqliteSql(connection);
+
+    connection.exec(CREATE);
+
+    const failing = sql.transaction(async (inside) =>
+    {
+        await inside.run(`INSERT INTO "rows" ("id") VALUES (?)`, ["gone"]);
+        await wait(30);
+
+        throw new Error("the first work failed");
+    });
+    // asked for while the first is inside its transaction, from another chain of calls
+    await wait(10);
+    const holding = sql.transaction(async (inside) =>
+    {
+        await inside.run(`INSERT INTO "rows" ("id") VALUES (?)`, ["kept"]);
+    });
+
+    await expect(failing).rejects.toThrow("the first work failed");
+    await holding;
+
+    expect(await sql.rows(`SELECT "id" FROM "rows"`)).toEqual([{ id: "kept" }]);
+
+    connection.close();
+});
+
+test("two workers claiming at once each take different jobs, and every job once", async () =>
+{
+    const folder = mkdtempSync(join(tmpdir(), "kit-two-workers-"));
+    const file = join(folder, "app.db");
+    const first = new Database(file);
+    const second = new Database(file);
+    const workerA = schedule(first);
+    const workerB = schedule(second);
+    const now = Date.now();
+
+    for (let job = 0; job < 20; job += 1)
+    {
+        await workerA.save(undefined, { id: `job-${String(job)}`, plugin: "a", command: "a.run", input: {}, at: now - 1_000, attempts: 0 });
+    }
+
+    const [takenByA, takenByB] = await Promise.all([workerA.claim(now, 20), workerB.claim(now, 20)]);
+    const ids = [...takenByA, ...takenByB].map((job) => job.id);
+
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toHaveLength(20);
+
+    first.close();
+    second.close();
+    rmSync(folder, { recursive: true, force: true });
 });
 
 test("SQLite older than 3.39 is refused by name, and newer ones are taken", () =>

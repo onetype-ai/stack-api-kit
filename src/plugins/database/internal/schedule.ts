@@ -8,6 +8,16 @@ import { serialized, sqliteSql } from "./sql";
 
 import type { Around, Sql } from "./sql";
 
+/**
+ * How a claim's inner SELECT locks what it picks. Postgres, under READ COMMITTED, would let two workers pick the
+ * same rows and the second then claim them again: SKIP LOCKED passes over what another claim holds. The outer
+ * WHERE repeats the lease test for the same reason. SQLite has one writer, so its claim is atomic as it is.
+ */
+export function lockingOf(sql: Sql): string
+{
+    return sql.dialect === "postgres" ? " FOR UPDATE SKIP LOCKED" : "";
+}
+
 /** How long a claim holds without a renewal when nothing says otherwise. */
 const LEASE_MS = 60_000;
 
@@ -117,10 +127,11 @@ export function scheduleOver(sql: Sql, settings: { leaseMs?: number } = {}, arou
                     SELECT "id" FROM "kit_schedule"
                     WHERE "runAt" <= ? AND ("takenAt" IS NULL OR "takenAt" < ?)
                     ORDER BY "runAt"
-                    LIMIT ?
+                    LIMIT ?${lockingOf(sql)}
                 )
+                AND ("takenAt" IS NULL OR "takenAt" < ?)
                 RETURNING "id", "plugin", "command", "input", "runAt", "attempts", "takenBy"
-            `, [now, randomUUID(), now, now - leaseMs, limit]);
+            `, [now, randomUUID(), now, now - leaseMs, limit, now - leaseMs]);
 
             return rows.map((row): QueuedJob => ({
                 id: row.id,

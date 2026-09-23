@@ -50,7 +50,7 @@ export function database(settings: StoreOptions): Store<DrizzleDb>
 {
     const connection = connect(settings);
     const backing = store({ connection, tables: settings.tables });
-    const sql = sqliteSql(connection);
+    const sql = sqliteSql(connection, backing.write);
 
     return {
         forPlugin: backing.forPlugin,
