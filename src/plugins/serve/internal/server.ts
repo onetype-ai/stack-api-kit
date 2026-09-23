@@ -1,4 +1,4 @@
-import { closeOnSignal } from "./closing";
+import { closeOnce, closeOnSignal } from "./closing";
 import { from } from "./from";
 import { listen, socketsOf, type SocketOptions } from "./listen";
 import { watch } from "./watch";
@@ -28,6 +28,12 @@ export const Server = {
     from,
     listen,
     watch,
+
+    /** A stop that runs once, closing every socket 1012 first, for a caller stopping without a signal. */
+    closeOnce,
+
+    /** The sockets a listening server holds, for `closeOnce` to close. */
+    socketsOf,
 
     open: (api: StartedApp, options: OpenOptions): void =>
     {

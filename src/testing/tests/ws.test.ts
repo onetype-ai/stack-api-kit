@@ -3,7 +3,6 @@ import { WebSocket } from "ws";
 import { z } from "zod";
 
 import { definePlugin, Server, start } from "../../index";
-import { closeOnce, socketsOf } from "../../plugins/serve/api";
 
 import type { AddressInfo } from "node:net";
 import type { StartedApp } from "../../index";
@@ -236,7 +235,7 @@ describe("the socket at /ws", () =>
 
         app = undefined;
         server = undefined;
-        closeOnce({ server: running, api: stopping, log: { debug: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined }, exit: () => undefined, drainMs: 0, sockets: socketsOf(running) })("SIGTERM");
+        Server.closeOnce({ server: running, api: stopping, log: { debug: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined }, exit: () => undefined, drainMs: 0, sockets: Server.socketsOf(running) })("SIGTERM");
 
         expect((await closed).code).toBe(1012);
     });
