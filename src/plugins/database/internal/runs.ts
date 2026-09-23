@@ -139,7 +139,9 @@ export function runsOver(sql: Sql, around: Around = {}): PipelineStore
         {
             await ready;
 
-            await within(db).run(`UPDATE "kit_pipeline_runs" SET "status" = 'failed', "step" = ? WHERE "id" = ?`, [step, id]);
+            const { changes } = await within(db).run(`UPDATE "kit_pipeline_runs" SET "status" = 'failed', "step" = ? WHERE "id" = ? AND "status" = 'running'`, [step, id]);
+
+            return changes > 0;
         },
 
         revive: async (db, id) =>

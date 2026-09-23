@@ -10,7 +10,7 @@ import { order } from "./order";
 import { pipelines, type ExplainedStep } from "./pipelines";
 import { registries } from "./registries";
 import { RegistryChange, registryRoute } from "./registryRoute";
-import { ADVANCE, PipelineFailure, StepJob, type DurableSteps } from "./durable";
+import { ABANDON, ADVANCE, PipelineFailure, StepJob, type DurableSteps } from "./durable";
 import { createPermissions } from "./permissions";
 import { type RateLimiter, type KernelRequest, type RouteOwner, notServing, type KernelResponse, respond, unknownRoute } from "./request";
 import { systemLookup, type Lookup } from "./resolve";
@@ -408,6 +408,30 @@ export function createKernel(options: KernelOptions): Kernel
         return revived;
     }
 
+    /**
+     * A durable step's job the schedule gives up on fails its run first, so no run waits for a job that will never
+     * come. It commits before the give-up: a crash between the two gives up again, and a run fails and is told once.
+     */
+    async function abandonRun(job: { plugin: string; command: string; input: unknown }): Promise<void>
+    {
+        const name = job.command.endsWith(".step") ? job.command.slice(0, -".step".length) : "";
+        const asked = StepJob.safeParse(job.input);
+
+        if (flows.declared(name)?.pipeline.flavour !== "durable" || !asked.success)
+        {
+            return;
+        }
+
+        try
+        {
+            await (contextFor(job.plugin).pipeline(name) as unknown as DurableSteps)[ABANDON](asked.data.runId);
+        }
+        catch (cause)
+        {
+            log("error", job.plugin, `could not fail a run of pipeline "${name}" whose step the schedule gave up; it stays running`, { cause: cause instanceof Error ? cause.message : String(cause) });
+        }
+    }
+
     /** Runs what is due, one turn. */
     async function due(): Promise<number>
     {
@@ -431,6 +455,7 @@ export function createKernel(options: KernelOptions): Kernel
 
                 failedJobs.push({ plugin: job.plugin, command: job.command, input: job.input, attempts: job.attempts, error: new Error("Its lease ran out too many times."), at: clock() });
 
+                await abandonRun(job);
                 await schedule.giveUp(job.id, job.lease);
 
                 continue;
@@ -478,6 +503,7 @@ export function createKernel(options: KernelOptions): Kernel
                         failedJobs.splice(0, failedJobs.length - MOST_REMEMBERED);
                     }
 
+                    await abandonRun(job);
                     await schedule.giveUp(job.id, job.lease);
                 }
                 else

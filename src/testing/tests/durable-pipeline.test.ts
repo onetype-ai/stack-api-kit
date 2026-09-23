@@ -123,11 +123,33 @@ describe("a durable pipeline", () =>
         await api.drain();
 
         expect(failed).toEqual({ status: "failed", step: "check" });
-        expect(told.map((seen) => seen.payload)).toEqual([{ runId, step: "check", scope: "a" }]);
+        expect(told.map((seen) => seen.payload)).toEqual([{ runId, step: "check", scope: "a", reason: "retries" }]);
         expect(JSON.stringify(told)).not.toContain("hunter2");
         expect(retried).toBe(true);
         expect(await posts().status(runId)).toMatchObject({ status: "done" });
         expect(calls.filter((call) => call.startsWith("render"))).toHaveLength(1);
+    });
+
+    test("fails the run once when the schedule gives its step's job up, so no run waits for a job that never comes", async () =>
+    {
+        const stuck: Step = { id: "check", result: Draft, retries: 1_000, run: () =>
+        {
+            throw new Error("the provider is down");
+        } };
+        const clock = testClock(0);
+        api = await startTestKernel({ plugins: [createPosts({ steps: [mark("render"), stuck, mark("store")] })], schedule: true, outbox: true, now: clock.now });
+        const { runId } = await start(api, writer("a"));
+
+        for (let round = 0; round < 12; round += 1)
+        {
+            await api.due();
+            clock.advance(120_000);
+        }
+
+        await api.flush();
+
+        expect(await api.kernel.context("posts", writer("a")).pipeline("posts.publish").status(runId)).toEqual({ status: "failed", step: "check" });
+        expect(api.emittedEvents().filter((seen) => seen.event === "posts.publish.failed").map((seen) => seen.payload)).toEqual([{ runId, step: "check", scope: "a", reason: "abandoned" }]);
     });
 
     test("answers nothing for another scope's run", async () =>

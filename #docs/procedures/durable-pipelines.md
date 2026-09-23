@@ -24,10 +24,10 @@ await ctx.tx((inside) => inside.pipeline("posts.publish").retry(runId));
   are idempotent.
 - A step that throws is tried again on the schedule's backoff; past its
   `retries` (3) the run is `failed` at it, and `<pipeline>.failed`
-  `{ runId, step, scope }` is emitted, without the fault's text.
+  `{ runId, step, scope, reason }` is emitted, without the fault's text.
 - `status` and `retry` answer nothing for another scope's run.
-- A job the schedule abandons after its lease ran out too often leaves
-  the run `running`; the schedule's failed jobs name it.
+- A step's job the schedule gives up on fails the run too, reason
+  `abandoned`: no run waits for a job that never comes.
 
 ## Refuses
 

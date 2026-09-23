@@ -1061,7 +1061,8 @@
     finish: (db: unknown, id: string, output: unknown) => Promise<void>
     // Counts one failed attempt, outside any transaction, answering how many there have been.
     attempted: (id: string) => Promise<number>
-    fail: (db: unknown, id: string, step: string) => Promise<void>
+    // Marks a running run failed at a step; false when it was not running.
+    fail: (db: unknown, id: string, step: string) => Promise<boolean>
     // Puts a failed run back to running, its attempts reset; false when it had not failed.
     revive: (db: unknown, id: string) => Promise<boolean>
 

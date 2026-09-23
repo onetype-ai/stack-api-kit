@@ -12,7 +12,7 @@ import { publicAddressOf, type Lookup } from "./resolve";
 import type { hooks } from "./hooks";
 import { stop, stoppedWith, type pipelines } from "./pipelines";
 import { orderedEntries, type registries, type RegistryEntry } from "./registries";
-import { ADVANCE, FAIL, KEEP, type DurableSteps } from "./durable";
+import { ABANDON, ADVANCE, FAIL, KEEP, type DurableSteps } from "./durable";
 import { createPermissions } from "./permissions";
 import type { HttpClient, ScopeFilter, Outbox, PipelineStore, QueuedJob, RegistryStore, Schedule, Sockets, KernelStore, WorkWatch } from "./store";
 
@@ -1004,7 +1004,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
                     throw cause;
                 }
 
-                await context(wiring, owner, undefined, undefined, {}, acting).tx(async (inside) => (inside.pipeline(name) as unknown as DurableSteps)[FAIL](runId, step.id));
+                await context(wiring, owner, undefined, undefined, {}, acting).tx(async (inside) => (inside.pipeline(name) as unknown as DurableSteps)[FAIL](runId, step.id, "retries"));
 
                 return;
             }
@@ -1076,16 +1076,40 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
                 enqueue(inside, runId);
             },
 
-            [FAIL]: async (runId, step) =>
+            [FAIL]: async (runId, step, reason) =>
             {
                 const inside = inTransaction("fail");
 
-                await runs.fail(inside.db, runId, step);
+                // told once: a give-up repeated after a crash finds the run failed already
+                if (!(await runs.fail(inside.db, runId, step)))
+                {
+                    return;
+                }
 
                 const event = `${name}.failed`;
                 const run = await runs.get(runId);
 
-                wiring.pending.get(inside.mark)?.push({ id: crypto.randomUUID(), plugin: owner, name: event, payload: wiring.bus.checkDeclared(owner, event, { runId, step, scope: run?.scope ?? "" }) });
+                wiring.pending.get(inside.mark)?.push({ id: crypto.randomUUID(), plugin: owner, name: event, payload: wiring.bus.checkDeclared(owner, event, { runId, step, scope: run?.scope ?? "", reason }) });
+            },
+
+            [ABANDON]: async (runId) =>
+            {
+                const run = await runs.get(runId);
+
+                if (run === undefined || run.status !== "running")
+                {
+                    return;
+                }
+
+                const results = await runs.results(runId);
+                const step = steps.find((each) => !results.has(each.id)) ?? steps.at(-1);
+
+                if (step === undefined)
+                {
+                    return;
+                }
+
+                await context(wiring, owner, undefined, undefined, {}, run.scope === "" ? undefined : run.scope).tx(async (inside) => (inside.pipeline(name) as unknown as DurableSteps)[FAIL](runId, step.id, "abandoned"));
             },
         };
     }
