@@ -7,6 +7,7 @@
 
 /** Suites run on SQLite and on Postgres. */
 export const bothDialects = [
+    "src/testing/tests/openApi.test.ts",
     "src/plugins/http/tests/sockets.test.ts",
     "src/plugins/kernel/tests/context.test.ts",
     "src/plugins/kernel/tests/inference.test.ts",
