@@ -1,5 +1,6 @@
 import type { Logger } from "../../kernel/api";
 import type { StartedApp } from "../../mount/api";
+import type { OpenSockets } from "./connection";
 import type { Listening } from "./listen";
 
 /** What a stop needs from the process, named so a test hands its own. */
@@ -10,6 +11,9 @@ export type Closing = {
     exit: (code: number) => void;
     stopTimeoutMs?: number;
     drainMs?: number;
+
+    /** The open sockets, each told the server is restarting (1012) before the kernel stops. */
+    sockets?: OpenSockets | undefined;
 };
 
 const wait = (ms: number): Promise<void> => new Promise((settle) => setTimeout(settle, ms));
@@ -38,7 +42,12 @@ export function closeOnce(closing: Closing): (signal: string) => void
 
         closed = true;
 
-        log.info("stopping", { signal });
+        log.info("stopping", { signal, sockets: closing.sockets?.all.size ?? 0 });
+
+        for (const socket of closing.sockets?.all ?? [])
+        {
+            socket.close(1012, "The server is restarting. Reconnect shortly.");
+        }
 
         server.close();
 

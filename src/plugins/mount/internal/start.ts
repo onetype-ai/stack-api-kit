@@ -352,6 +352,13 @@ export async function start(options: StartOptions): Promise<StartedApp>
         fetch: app.fetch,
         sockets: wires === undefined ? undefined : { subscribe: wires.subscribe },
 
+        served: {
+            origins: options.http?.origins ?? [],
+            session: options.http?.session,
+            bodyBytes: options.http?.bodyBytes ?? 1_000_000,
+            from: options.http?.from,
+        },
+
         stop: async (): Promise<void> =>
         {
             if (sweep !== undefined)

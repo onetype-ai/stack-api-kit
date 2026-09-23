@@ -1,6 +1,6 @@
 import { closeOnSignal } from "./closing";
 import { from } from "./from";
-import { listen } from "./listen";
+import { listen, socketsOf, type SocketOptions } from "./listen";
 import { watch } from "./watch";
 
 import type { Logger } from "../../kernel/api";
@@ -18,6 +18,9 @@ export type OpenOptions = {
     watchSeconds?: number;
     stopTimeoutMs?: number;
     drainMs?: number;
+
+    /** How the socket at `/ws` is held: its lifetime, how often it is identified again and pinged, how many one caller may hold. */
+    sockets?: Omit<SocketOptions, "log" | "from">;
 };
 
 /** A started kernel, put on a port and taken off one cleanly. */
@@ -29,7 +32,7 @@ export const Server = {
     open: (api: StartedApp, options: OpenOptions): void =>
     {
         const { port, log } = options;
-        const server = listen(api, port);
+        const server = listen(api, port, { ...options.sockets, from: from(options.behindProxy ?? false), log: (level, line, about) => log[level](line, about) });
 
         if ((options.watchSeconds ?? 0) > 0)
         {
@@ -42,6 +45,7 @@ export const Server = {
             server,
             api,
             log,
+            sockets: socketsOf(server),
             exit: (code) =>
             {
                 process.exit(code);

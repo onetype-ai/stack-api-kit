@@ -1,5 +1,5 @@
 import type { DatabaseOptions, Store } from "../database/api";
-import type { Subscription, ServerOptions } from "../http/api";
+import type { Subscription, ServerOptions, SessionOptions } from "../http/api";
 import type { RateLimiter, HttpClient, Identity, Kernel, Logger, Lookup, Plugin } from "../kernel/api";
 import type { HttpClientOptions } from "../outbound/api";
 import { discover, discoverFrom } from "./internal/discover";
@@ -74,6 +74,14 @@ export type StartedApp = {
 
     /** What a socket joins, when `sockets` was asked for. */
     sockets: { subscribe: (identity: Identity | undefined, send: (text: string) => void) => Subscription } | undefined;
+
+    /** How the HTTP side was served, for a socket server to hold to the same: allowed origins, the session cookie, the body bound and who an unknown caller is. */
+    served: {
+        origins: readonly string[];
+        session: SessionOptions | undefined;
+        bodyBytes: number;
+        from: ServerOptions["from"];
+    };
 
     stop: () => Promise<void>;
 };
