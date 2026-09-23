@@ -23,7 +23,12 @@ test("a test drives its own clock and asks for what is due", async () =>
 
     const api = await startTestKernel({ plugins: [plugin], schedule: true, now: () => clock });
 
-    api.kernel.context("holds").commands.later("holds.release", { id: "one" }, 600);
+    await api.kernel.context("holds").tx((inside) =>
+    {
+        inside.commands.later("holds.release", { id: "one" }, 600);
+
+        return Promise.resolve();
+    });
 
     await api.due();
 
@@ -49,12 +54,12 @@ test("drain runs a chain through, where due runs one link of it", async () =>
             "chain.one": {
                 describe: "First.",
                 schema: z.object({}),
-                run: (_input, ctx) => { ran.push("one"); ctx.commands.later("chain.two", {}, 0); },
+                run: async (_input, ctx) => { ran.push("one"); await ctx.tx((inside) => Promise.resolve(inside.commands.later("chain.two", {}, 0))); },
             },
             "chain.two": {
                 describe: "Second.",
                 schema: z.object({}),
-                run: (_input, ctx) => { ran.push("two"); ctx.commands.later("chain.three", {}, 0); },
+                run: async (_input, ctx) => { ran.push("two"); await ctx.tx((inside) => Promise.resolve(inside.commands.later("chain.three", {}, 0))); },
             },
             "chain.three": {
                 describe: "Third.",
@@ -85,7 +90,7 @@ test("and stops at the bound, so work asking for itself cannot spin", async () =
             "sweeping.sweep": {
                 describe: "Sweeps, then asks again.",
                 schema: z.object({}),
-                run: (_input, ctx) => { turns += 1; ctx.commands.later("sweeping.sweep", {}, 0); },
+                run: async (_input, ctx) => { turns += 1; await ctx.tx((inside) => Promise.resolve(inside.commands.later("sweeping.sweep", {}, 0))); },
             },
         },
     });

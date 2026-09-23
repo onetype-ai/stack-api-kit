@@ -5,7 +5,20 @@ import Database from "better-sqlite3";
 import { schedule } from "../../database/api";
 import { Refusal, createKernel, definePlugin } from "../api";
 
-import type { Plugin } from "../api";
+import type { Kernel, KernelStore, Plugin } from "../api";
+
+// A store whose transaction only runs the work: a job is written by the transaction that asks for it, so asking needs one.
+const bare: KernelStore = { forPlugin: () => undefined, tx: (_plugin, run) => run(undefined) };
+
+function later(kernel: Kernel, command: string, input: unknown, inSeconds: number): Promise<void>
+{
+    return kernel.context("holds").tx((inside) =>
+    {
+        inside.commands.later(command, input, inSeconds);
+
+        return Promise.resolve();
+    });
+}
 
 function createScheduled(ran: string[], throwsFirst = false): Plugin
 {
@@ -46,6 +59,7 @@ describe("work asked for later", () =>
 
         const kernel = createKernel({
             plugins: [createScheduled(ran)],
+            db: bare,
             schedule: jobs,
             now: () => clock,
             beatMs: 5,
@@ -53,7 +67,7 @@ describe("work asked for later", () =>
 
         await kernel.start();
 
-        kernel.context("holds").commands.later("holds.release", { id: "one" }, 600);
+        await later(kernel, "holds.release", { id: "one" }, 600);
 
         await new Promise((done) => setTimeout(done, 30));
 
@@ -79,6 +93,7 @@ describe("work asked for later", () =>
 
         const kernel = createKernel({
             plugins: [createScheduled(ran, true)],
+            db: bare,
             schedule: jobs,
             now: () => clock,
             beatMs: 5,
@@ -86,7 +101,7 @@ describe("work asked for later", () =>
 
         await kernel.start();
 
-        kernel.context("holds").commands.later("holds.release", { id: "two" }, 0);
+        await later(kernel, "holds.release", { id: "two" }, 0);
 
         await new Promise((done) => setTimeout(done, 30));
 
@@ -123,6 +138,7 @@ describe("work asked for later", () =>
                     },
                 },
             })],
+            db: bare,
             schedule: jobs,
             now: () => clock,
             mostAttempts: 3,
@@ -130,7 +146,7 @@ describe("work asked for later", () =>
 
         await kernel.start();
 
-        kernel.context("holds").commands.later("holds.release", {}, 0);
+        await later(kernel, "holds.release", {}, 0);
 
         for (let turn = 0; turn < 6; turn += 1)
         {
@@ -173,14 +189,15 @@ describe("work asked for later", () =>
                         },
                     },
                 })],
-                schedule: jobs,
+                db: bare,
+            schedule: jobs,
                 now: () => clock,
                 mostAttempts: 4,
             });
 
             await kernel.start();
 
-            kernel.context("holds").commands.later("holds.release", {}, 0);
+            await later(kernel, "holds.release", {}, 0);
 
             for (let turn = 0; turn < 8; turn += 1)
             {
@@ -292,6 +309,7 @@ describe("work asked for later", () =>
                     },
                 },
             })],
+            db: bare,
             schedule: jobs,
             now: () => clock,
             mostAttempts: 3,
@@ -301,7 +319,7 @@ describe("work asked for later", () =>
 
         expect(kernel.work.failed()).toEqual([]);
 
-        kernel.context("holds").commands.later("holds.sweep", { round: 4 }, 0);
+        await later(kernel, "holds.sweep", { round: 4 }, 0);
 
         for (let turn = 0; turn < 6; turn += 1)
         {
@@ -318,6 +336,43 @@ describe("work asked for later", () =>
         expect(dead[0]?.attempts).toBe(3);
         expect(dead[0]?.input).toEqual({ round: 4 });
         expect((dead[0]?.error as Error).message).toBe("the store was locked");
+
+        await kernel.stop();
+        connection.close();
+    });
+
+    test("refuses work asked for outside a transaction, naming the fix, and keeps none of it", async () =>
+    {
+        const connection = new Database(":memory:");
+        const jobs = schedule(connection);
+        const kernel = createKernel({ plugins: [createScheduled([])], db: bare, schedule: jobs });
+
+        await kernel.start();
+
+        expect(() => kernel.context("holds").commands.later("holds.release", { id: "a" }, 0))
+            .toThrow(/"holds" scheduled "holds\.release" outside a transaction.*Call commands\.later inside ctx\.tx/);
+        expect(await jobs.counts?.(Date.now())).toEqual({ due: 0, later: 0, running: 0, abandoned: 0 });
+
+        await kernel.stop();
+        connection.close();
+    });
+
+    test("keeps no work asked for by a transaction that rolled back", async () =>
+    {
+        const connection = new Database(":memory:");
+        const jobs = schedule(connection);
+        const kernel = createKernel({ plugins: [createScheduled([])], db: bare, schedule: jobs });
+
+        await kernel.start();
+
+        await expect(kernel.context("holds").tx(() =>
+        {
+            kernel.context("holds").commands.later("holds.release", { id: "a" }, 0);
+
+            return Promise.reject(new Error("the work failed"));
+        })).rejects.toThrow("the work failed");
+
+        expect(await jobs.counts?.(Date.now())).toEqual({ due: 0, later: 0, running: 0, abandoned: 0 });
 
         await kernel.stop();
         connection.close();

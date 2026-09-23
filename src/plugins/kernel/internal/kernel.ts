@@ -577,6 +577,7 @@ export function createKernel(options: KernelOptions): Kernel
         pending,
         lists,
         flows,
+        jobs: new Map(),
         outbox: options.outbox,
         isRunning: () => running,
         warned: new Set<string>(),

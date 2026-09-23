@@ -1,9 +1,10 @@
 import { connect, type DatabaseOptions } from "./internal/connect";
-import { migrate, MigrationFault, type MigrationSource, type MigrationStep, migrationSteps } from "./internal/migrate";
+import { migrateOver, MigrationFault, type MigrationSource, type MigrationStep, migrationSteps, refuseUnwritable } from "./internal/migrate";
 import { createScopeFilter } from "./internal/scopeFilter";
 import { noStore } from "./internal/noStore";
-import { outbox } from "./internal/outbox";
-import { schedule } from "./internal/schedule";
+import { outbox, outboxOver } from "./internal/outbox";
+import { schedule, scheduleOver } from "./internal/schedule";
+import { sqliteSql } from "./internal/sql";
 
 import { tableName } from "../kernel/api";
 
@@ -30,8 +31,8 @@ export type Store<Db = unknown> = {
     tx: <Result>(plugin: string, run: (db: unknown) => Promise<Result>) => Promise<Result>;
     write: <Result>(run: () => Promise<Result>) => Promise<Result>;
     inTransaction: () => boolean;
-    migrate: (sources: readonly MigrationSource[]) => MigrationStep[];
-    close: () => void;
+    migrate: (sources: readonly MigrationSource[]) => Promise<MigrationStep[]>;
+    close: () => Promise<void>;
 };
 
 export { MigrationFault, createScopeFilter, noStore, outbox, schedule, migrationSteps };
@@ -49,6 +50,7 @@ export function database(settings: StoreOptions): Store<DrizzleDb>
 {
     const connection = connect(settings);
     const backing = store({ connection, tables: settings.tables });
+    const sql = sqliteSql(connection);
 
     return {
         forPlugin: backing.forPlugin,
@@ -58,21 +60,21 @@ export function database(settings: StoreOptions): Store<DrizzleDb>
         close: backing.close,
 
         /** Runs every migration that has not run, in the order given. */
-        migrate: (sources: readonly MigrationSource[]): MigrationStep[] =>
+        migrate: (sources: readonly MigrationSource[]): Promise<MigrationStep[]> =>
         {
-            return migrate(connection, sources, declaredTables(settings.tables));
+            return migrateOver(sql, sources, () => refuseUnwritable(connection, declaredTables(settings.tables)));
         },
 
         /** Where events wait, in this same database. */
         outbox: (settings: { leaseMs?: number } = {}): Outbox =>
         {
-            return outbox(connection, settings);
+            return outboxOver(sql, settings);
         },
 
         /** Where later work waits, in this same database. */
         schedule: (settings: { leaseMs?: number } = {}): Schedule =>
         {
-            return schedule(connection, settings);
+            return scheduleOver(sql, settings);
         },
 
         /** How a scope narrows a query, over the tables one plugin declared. */

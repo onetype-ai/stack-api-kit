@@ -33,7 +33,7 @@ export type OutboxMessage = {
  */
 export type Outbox = {
     /** Writes events inside the transaction that emitted them. */
-    save: (db: unknown, messages: readonly OutboxMessage[]) => void;
+    save: (db: unknown, messages: readonly OutboxMessage[]) => Promise<void>;
 
     /** Marks one delivered. */
     markSent: (id: string) => Promise<void>;
@@ -121,7 +121,7 @@ export type FailedJob = {
 /** Where work waits until it is time. */
 export type Schedule = {
     /** Writes one, inside the transaction that asked for it when there is one. */
-    save: (db: unknown, job: QueuedJob) => void;
+    save: (db: unknown, job: QueuedJob) => Promise<void>;
 
     /** Claims what is due, at most `limit`, marking each taken; a job whose lease ran out is claimed again with its lost run counted. */
     claim: (now: number, limit: number) => Promise<readonly QueuedJob[]>;

@@ -268,7 +268,7 @@ export async function start(options: StartOptions): Promise<StartedApp>
         );
     }
 
-    const steps = store.migrate(migrations);
+    const steps = await store.migrate(migrations);
 
     if (steps.length > 0)
     {
@@ -384,7 +384,7 @@ export async function start(options: StartOptions): Promise<StartedApp>
             }
 
             await kernel.stop();
-            store.close();
+            await store.close();
         },
     };
 }

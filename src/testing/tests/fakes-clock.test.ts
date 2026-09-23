@@ -56,7 +56,12 @@ describe("a test clock", () =>
 
         const api = await startTestKernel({ plugins: [reminders], schedule: true, now: clock.now });
 
-        api.kernel.context("reminders").commands.later("reminders.send", { id: "r1" }, 3600);
+        await api.kernel.context("reminders").tx((inside) =>
+        {
+            inside.commands.later("reminders.send", { id: "r1" }, 3600);
+
+            return Promise.resolve();
+        });
         await api.due();
         const before = [...ran];
 
@@ -71,33 +76,5 @@ describe("a test clock", () =>
     test("refuses to run backwards", () =>
     {
         expect(() => testClock(0).advance(-1)).toThrow("advance takes a number of milliseconds of 0 or more");
-    });
-});
-
-describe("a command scheduled outside a transaction", () =>
-{
-    test("is still stored, and warned about once, since 9.0 refuses it", async () =>
-    {
-        const reminders = definePlugin("reminders", {
-            version: "1.0.0",
-            describe: "Reminds later.",
-            commands: { "reminders.send": { describe: "Sends one.", schema: z.object({ id: z.string() }), run: () => undefined } },
-        } as unknown as Parameters<typeof definePlugin>[1]);
-
-        const api = await startTestKernel({ plugins: [reminders], schedule: true });
-        const ctx = api.kernel.context("reminders");
-
-        ctx.commands.later("reminders.send", { id: "a" }, 60);
-        ctx.commands.later("reminders.send", { id: "b" }, 60);
-        await ctx.tx(async (inside) =>
-        {
-            inside.commands.later("reminders.send", { id: "c" }, 60);
-        });
-
-        const warnings = api.logLines.filter((line) => line.line.includes("which 9.0 refuses"));
-
-        await api.stop();
-
-        expect(warnings).toHaveLength(1);
     });
 });

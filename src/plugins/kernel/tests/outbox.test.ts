@@ -1,11 +1,13 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import Database from "better-sqlite3";
+import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 import { database, outbox } from "../../database/api";
 import { createKernel, definePlugin } from "../api";
 
-import type { Plugin } from "../api";
+import type { Outbox, Plugin } from "../api";
+import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 
 function emitter(): Plugin
 {
@@ -39,7 +41,7 @@ describe("an event kept in an outbox", () =>
         const heard: string[] = [];
 
         // A process that committed the work and stopped before delivering: the row is what it left behind.
-        unsent.save({}, [{ id: "a1", plugin: "orders", name: "orders.placed", payload: { id: "order-1" } }]);
+        await unsent.save({}, [{ id: "a1", plugin: "orders", name: "orders.placed", payload: { id: "order-1" } }]);
 
         expect(await unsent.pending()).toHaveLength(1);
 
@@ -120,6 +122,37 @@ describe("an event kept in an outbox", () =>
         await kernel.stop();
         store.close();
         connection.close();
+    });
+
+    test("takes the work down with it when it cannot be kept, so neither exists without the other", async () =>
+    {
+        const rows = sqliteTable("orders_rows", { id: text("id").primaryKey() });
+        const store = database({ file: ":memory:", tables: { orders: { rows } } });
+        const db = store.forPlugin("orders") as BetterSQLite3Database & { $client: Database.Database };
+        const refusing: Outbox = { save: () => Promise.reject(new Error("the outbox could not be written")), markSent: () => Promise.resolve(), pending: () => Promise.resolve([]) };
+        const orders = definePlugin("orders", {
+            version: "1.0.0",
+            describe: "The orders plugin, with a table.",
+            tables: { rows },
+            emits: { "orders.placed": { describe: "An order was placed.", schema: z.object({ id: z.string() }) } },
+        });
+
+        db.$client.exec("CREATE TABLE orders_rows (id TEXT PRIMARY KEY)");
+
+        const kernel = createKernel({ plugins: [orders], db: store, outbox: refusing });
+
+        await kernel.start();
+
+        await expect(kernel.context("orders").tx(async (inside) =>
+        {
+            await (inside.db as BetterSQLite3Database).insert(rows).values({ id: "order-5" });
+            inside.events.emit("orders.placed", { id: "order-5" });
+        })).rejects.toThrow("the outbox could not be written");
+
+        expect(await db.select().from(rows)).toEqual([]);
+
+        await kernel.stop();
+        await store.close();
     });
 
     test("and never once a listener threw, so the next start tries again", async () =>

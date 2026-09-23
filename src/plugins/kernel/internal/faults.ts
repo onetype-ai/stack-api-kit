@@ -12,6 +12,7 @@ export type FaultCode =
     | "UNDECLARED_CHANNEL"
     | "UNDECLARED_EVENT"
     | "UNKEPT_EVENT"
+    | "UNKEPT_JOB"
     | "SELF_HEARD_EVENT"
     | "UNDECLARED_HOOK"
     | "UNDECLARED_COMMAND"

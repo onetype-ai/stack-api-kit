@@ -1,6 +1,33 @@
 # Changelog
 
-## Unreleased (8.3.0)
+## 9.0.0 (unreleased)
+
+### Breaking
+
+- `ctx.commands.later` is refused outside `ctx.tx` (`UNKEPT_JOB`), on every
+  database. The job is now written by the transaction that asks for it,
+  before it commits: it exists exactly when the work it belongs to does.
+- `Outbox.save` and `Schedule.save` return a Promise, awaited before the
+  commit. A save that fails takes the transaction down with it.
+- `Store.migrate` and `Store.close` return Promises.
+
+### How to convert
+
+- A `later` outside a transaction, in a route, a listener, a command or
+  `setup`, moves inside one:
+
+  ```ts
+  await ctx.tx(async (inside) =>
+  {
+      inside.commands.later("items.archive", { id }, 3600);
+  });
+  ```
+
+  Put it in the transaction that writes the work it belongs to, where there
+  is one.
+- A store of your own: `migrate` and `close` return Promises, and an outbox
+  or schedule of your own returns one from `save`.
+- A test calling `store.migrate(...)` or `store.close()` awaits it.
 
 ### Added
 

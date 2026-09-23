@@ -18,9 +18,9 @@ beforeEach(() =>
     (store.forPlugin("a") as unknown as { $client: { exec: (sql: string) => void } }).$client.exec(CREATE);
 });
 
-afterEach(() =>
+afterEach(async () =>
 {
-    store.close();
+    await store.close();
 });
 
 test("a write made outside a transaction survives another transaction's rollback", async () =>

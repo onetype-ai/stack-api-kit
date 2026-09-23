@@ -4,6 +4,8 @@ import { join } from "node:path";
 
 import type Database from "better-sqlite3";
 
+import type { Sql } from "./sql";
+
 /** Where one plugin keeps its migrations. */
 export type MigrationSource = {
     plugin: string;
@@ -39,12 +41,12 @@ const NUMBERED = /^(\d{4})-[a-z0-9][a-z0-9-]*\.sql$/;
 
 /** The table recording what has run. Ours, and no plugin's to read. */
 const LEDGER = `
-    CREATE TABLE IF NOT EXISTS _migrations (
-        plugin TEXT NOT NULL,
-        name   TEXT NOT NULL,
-        hash   TEXT NOT NULL,
-        ran_at TEXT NOT NULL,
-        PRIMARY KEY (plugin, name)
+    CREATE TABLE IF NOT EXISTS "_migrations" (
+        "plugin" TEXT NOT NULL,
+        "name"   TEXT NOT NULL,
+        "hash"   TEXT NOT NULL,
+        "ran_at" TEXT NOT NULL,
+        PRIMARY KEY ("plugin", "name")
     )
 `;
 
@@ -98,40 +100,43 @@ export function migrationSteps(source: MigrationSource): MigrationStep[]
     return [...sql].sort().map((name) => read(source.plugin, source.from, name));
 }
 
-/** Runs what has not run yet, in dependency order, all under one write lock. */
-export function migrate(connection: Database.Database, sources: readonly MigrationSource[], tables: readonly string[] = []): MigrationStep[] {
+/**
+ * Runs what has not run yet, in dependency order, all in one transaction, which on SQLite holds the write lock.
+ * `check` runs inside it after the last step, so what it refuses rolls every step back.
+ */
+export async function migrateOver(sql: Sql, sources: readonly MigrationSource[], check: (inside: Sql) => void | Promise<void> = () => undefined): Promise<MigrationStep[]>
+{
+    let began = false;
+
     try
     {
-        connection.exec("BEGIN IMMEDIATE");
+        return await sql.transaction(async (inside) =>
+        {
+            began = true;
+
+            const applied = await applyMigrations(inside, sources);
+
+            await check(inside);
+
+            return applied;
+        });
     }
     catch (cause)
     {
+        if (began)
+        {
+            throw cause;
+        }
+
         throw new MigrationFault(
             `Another process is migrating this database and holds the write lock: ${cause instanceof Error ? cause.message : String(cause)}. Migrations run once, under one lock, so this boot did not start. Let the other finish, or raise busyMs if migrating takes longer than it allows.`,
             "",
         );
     }
-
-    try
-    {
-        const applied = applyMigrations(connection, sources);
-
-        refuseUnwritable(connection, tables);
-
-        connection.exec("COMMIT");
-
-        return applied;
-    }
-    catch (cause)
-    {
-        connection.exec("ROLLBACK");
-
-        throw cause;
-    }
 }
 
 /** Refuses a migration that left a table nothing can write to. */
-function refuseUnwritable(connection: Database.Database, tables: readonly string[]): void
+export function refuseUnwritable(connection: Database.Database, tables: readonly string[]): void
 {
     for (const table of tables)
     {
@@ -160,13 +165,13 @@ function refuseUnwritable(connection: Database.Database, tables: readonly string
 }
 
 /** What migrate does once it holds the lock. Its failure rolls the lot back. */
-function applyMigrations(connection: Database.Database, sources: readonly MigrationSource[]): MigrationStep[]
+async function applyMigrations(sql: Sql, sources: readonly MigrationSource[]): Promise<MigrationStep[]>
 {
-    connection.exec(LEDGER);
+    await sql.exec(LEDGER);
 
     const applied = new Map<string, string>();
 
-    for (const row of connection.prepare("SELECT plugin, name, hash FROM _migrations").all() as { plugin: string; name: string; hash: string }[])
+    for (const row of await sql.rows<{ plugin: string; name: string; hash: string }>(`SELECT "plugin", "name", "hash" FROM "_migrations"`))
     {
         applied.set(`${row.plugin}/${row.name}`, row.hash);
     }
@@ -195,9 +200,8 @@ function applyMigrations(connection: Database.Database, sources: readonly Migrat
 
             try
             {
-                connection.exec(step.sql);
-                connection.prepare("INSERT INTO _migrations (plugin, name, hash, ran_at) VALUES (?, ?, ?, ?)")
-                    .run(step.plugin, step.name, step.hash, new Date().toISOString());
+                await sql.exec(step.sql);
+                await sql.run(`INSERT INTO "_migrations" ("plugin", "name", "hash", "ran_at") VALUES (?, ?, ?, ?)`, [step.plugin, step.name, step.hash, new Date().toISOString()]);
             }
             catch (cause)
             {

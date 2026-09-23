@@ -6,7 +6,7 @@ import { database, type Store } from "../api";
 
 const rows = sqliteTable("rows", { id: text("id").primaryKey() });
 
-test("what database opens is what a project holds, and what the kernel takes", () =>
+test("what database opens is what a project holds, and what the kernel takes", async () =>
 {
     const store: Store = database({ file: ":memory:", tables: { a: { rows } } });
 
@@ -17,5 +17,5 @@ test("what database opens is what a project holds, and what the kernel takes", (
     expect(typeof store.close).toBe("function");
     expect(typeof found.forPlugin).toBe("function");
 
-    store.close();
+    await store.close();
 });

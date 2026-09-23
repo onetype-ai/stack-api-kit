@@ -134,8 +134,13 @@ describe("a store that is not SQLite", () =>
             tx: async (_plugin, run) => run({}),
             write: async (run) => run(),
             inTransaction: () => false,
-            migrate: () => [],
-            close: () => { rowsByPlugin.clear(); },
+            migrate: () => Promise.resolve([]),
+            close: () =>
+            {
+                rowsByPlugin.clear();
+
+                return Promise.resolve();
+            },
         };
     }
 

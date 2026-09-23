@@ -13,7 +13,7 @@ import type { hooks } from "./hooks";
 import type { pipelines } from "./pipelines";
 import type { registries } from "./registries";
 import { createPermissions } from "./permissions";
-import type { HttpClient, ScopeFilter, Outbox, Schedule, Sockets, KernelStore, WorkWatch } from "./store";
+import type { HttpClient, ScopeFilter, Outbox, QueuedJob, Schedule, Sockets, KernelStore, WorkWatch } from "./store";
 
 /** Everything a context is built from. One object, so the shape is one line. */
 export type KernelWiring = {
@@ -29,6 +29,9 @@ export type KernelWiring = {
     /** The registries and pipelines plugins declared, with what was added to them. */
     lists: ReturnType<typeof registries>;
     flows: ReturnType<typeof pipelines>;
+
+    /** Commands asked for later inside each open transaction, written by it before it commits. */
+    jobs: Map<object, QueuedJob[]>;
 
     /** What each plugin owns: one thing, living as long as the kernel does. */
     owned: Map<string, unknown>;
@@ -298,6 +301,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
             const nested = openTransaction !== undefined;
 
             wiring.pending.set(mark, []);
+            wiring.jobs.set(mark, []);
 
             try
             {
@@ -307,10 +311,21 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
                         const answer = await run(contextFor(plugin, { mark, db }));
 
                         const queued = wiring.pending.get(mark) ?? [];
+                        const later = wiring.jobs.get(mark) ?? [];
+                        const isOutermost = !(nested && outer !== undefined);
 
-                        if (wiring.outbox !== undefined && queued.length > 0 && !(nested && outer !== undefined))
+                        // written by this transaction, so a job exists exactly when the work that asked for it does
+                        if (wiring.schedule !== undefined && isOutermost)
                         {
-                            wiring.outbox.save(db, queued.map((event) => ({
+                            for (const job of later)
+                            {
+                                await wiring.schedule.save(db, job);
+                            }
+                        }
+
+                        if (wiring.outbox !== undefined && queued.length > 0 && isOutermost)
+                        {
+                            await wiring.outbox.save(db, queued.map((event) => ({
                                 id: event.id,
                                 plugin: event.plugin,
                                 name: event.name,
@@ -326,6 +341,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
                 if (nested && outer !== undefined)
                 {
                     wiring.pending.get(outer)?.push(...announced);
+                    wiring.jobs.get(outer)?.push(...(wiring.jobs.get(mark) ?? []));
 
                     return returned;
                 }
@@ -364,6 +380,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
             finally
             {
                 wiring.pending.delete(mark);
+                wiring.jobs.delete(mark);
             }
         },
 
@@ -620,17 +637,21 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
                     );
                 }
 
-                const inside = openTransaction !== undefined || wiring.open.getStore() !== undefined;
-                const once = `later-outside:${plugin}:${command}`;
+                const mark = openTransaction?.mark ?? wiring.open.getStore();
+                const queued = mark === undefined ? undefined : wiring.jobs.get(mark);
 
-                // 9.0 refuses this: an async store could lose the job with nobody told, so it is written with the transaction
-                if (!inside && !wiring.warned.has(once))
+                // Written by the transaction it belongs to, the job exists exactly when that work does. Outside
+                // one, a write that failed after this call returned would lose the job with nobody told.
+                if (queued === undefined)
                 {
-                    wiring.warned.add(once);
-                    wiring.log("warn", plugin, `scheduled "${command}" outside a transaction, which 9.0 refuses. Call commands.later inside ctx.tx, with the work it belongs to.`);
+                    throw new KernelFault(
+                        "UNKEPT_JOB",
+                        `"${plugin}" scheduled "${command}" outside a transaction, so a write that failed later would lose it with nobody told. Call commands.later inside ctx.tx, with the work it belongs to.`,
+                        { plugin },
+                    );
                 }
 
-                wiring.schedule.save(openTransaction?.db, {
+                queued.push({
                     id: crypto.randomUUID(),
                     plugin,
                     command,

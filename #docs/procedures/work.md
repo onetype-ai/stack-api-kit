@@ -26,13 +26,13 @@ A listener recognises what it already did: it may hear an event twice.
 ```ts
 commands: { "items.archive": { describe: "Archives one.", schema: Id, run: archive } },
 
-ctx.commands.later("items.archive", { id }, 3600);
+await ctx.tx(async (inside) => { inside.commands.later("items.archive", { id }, 3600); });
 ```
 
-A claim is a lease, renewed while the command runs; one whose process died
-is taken again and counted. `schedule: true` runs what is due in this
-process, `"enqueue"` only stores it for one that does. A command that
-refuses 4xx is not tried again.
+Written by the transaction that asks. A claim is a lease, renewed while
+the command runs; a dead process's claim is taken again and counted.
+`schedule: true` runs what is due here, `"enqueue"` only stores it. A 4xx
+refusal is not retried.
 
 ## What stays written
 
@@ -43,11 +43,10 @@ removed one or a narrower type fails until `accept` names why.
 
 ## Watching it
 
-One plugin declaring `watchesWork: true` reads `ctx.work`: counts, failed
-jobs and dead letters, never an input or a payload, and `retryFailed(id)`.
-Guard what it answers to operators.
+A plugin declaring `watchesWork: true` reads `ctx.work`: counts, failed
+jobs, dead letters (never an input or payload) and `retryFailed(id)`.
 
 ## Refuses
 
-- `ctx.emit` outside `tx` with an outbox on; `later` for another's command.
+- `emit` outside `tx` with an outbox on; `later` outside `tx`, or for another's command.
 - `ctx.work` for a plugin that did not declare it.

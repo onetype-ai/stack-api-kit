@@ -243,7 +243,7 @@ describe("an event whose delivery never finished", () =>
     {
         const kernel = await boot();
         const kept = outboxOf(kernel);
-        kept.save(undefined, [{ id: crypto.randomUUID(), plugin: "orders", name: EVENT, payload: { id: "order-2", workspaceId: WORKSPACE, note: "x" } }]);
+        await kept.save(undefined, [{ id: crypto.randomUUID(), plugin: "orders", name: EVENT, payload: { id: "order-2", workspaceId: WORKSPACE, note: "x" } }]);
 
         later(5);
         const withinGrace = await kernel.kernel.redeliver();
@@ -354,7 +354,7 @@ describe("two processes on one database", () =>
         folder = mkdtempSync(join(tmpdir(), "kit-redelivery-"));
         const file = join(folder, "app.db");
         const connection = new Database(file);
-        outbox(connection).save(undefined, [{ id: crypto.randomUUID(), plugin: "orders", name: EVENT, payload: { id: "order-3", workspaceId: WORKSPACE, note: "x" } }]);
+        await outbox(connection).save(undefined, [{ id: crypto.randomUUID(), plugin: "orders", name: EVENT, payload: { id: "order-3", workspaceId: WORKSPACE, note: "x" } }]);
         connection.close();
 
         apps = await Promise.all([1, 2].map(() => start({ plugins: [orders, mailer, ledger], database: { file }, outbox: true, sockets: false })));

@@ -339,7 +339,7 @@ export async function startTestKernel(asked: TestKernelOptions): Promise<TestKer
 
     const store = database({ file: ":memory:", tables: testTables.tables(options.plugins) });
 
-    store.migrate(testTables.migrations(options.plugins));
+    await store.migrate(testTables.migrations(options.plugins));
 
     const lines: LogLine[] = [];
     const calls: SentRequest[] = [];
@@ -479,7 +479,7 @@ export async function startTestKernel(asked: TestKernelOptions): Promise<TestKer
         stop: async (): Promise<void> =>
         {
             await kernel.stop();
-            store.close();
+            await store.close();
         },
     };
 }

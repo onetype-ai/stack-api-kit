@@ -5,6 +5,9 @@ import type Database from "better-sqlite3";
 import type { FailedEvent, OutboxMessage, Outbox } from "../../kernel/api";
 
 import { leaseOf } from "./schedule";
+import { sqliteSql } from "./sql";
+
+import type { Sql } from "./sql";
 
 type Row = { id: string; plugin: string; name: string; payload: string; heard: string | null; attempts: number };
 
@@ -14,210 +17,230 @@ function heardOf(text: string | null | undefined): string[]
     return text === null || text === undefined ? [] : JSON.parse(text) as string[];
 }
 
-/**
- * Where events wait, in the same database as the work they announce. The process writing a row holds it for
- * `leaseMs` while it delivers; a row one listener refused waits out a backoff and is claimed again, by this process
- * or another, for the listeners that have not heard it.
- */
-export function outbox(connection: Database.Database, settings: { leaseMs?: number } = {}): Outbox
+/** The table, as either dialect creates it. */
+function tableOf(sql: Sql): string
 {
-    const holder = randomUUID();
-    const leaseMs = leaseOf(settings);
+    const whole = sql.dialect === "postgres" ? "BIGINT" : "INTEGER";
 
-    connection.exec(`
-        CREATE TABLE IF NOT EXISTS kit_outbox (
-            id TEXT PRIMARY KEY,
-            plugin TEXT NOT NULL,
-            name TEXT NOT NULL,
-            payload TEXT NOT NULL,
-            writtenAt TEXT NOT NULL
+    return `
+        CREATE TABLE IF NOT EXISTS "kit_outbox" (
+            "id" TEXT PRIMARY KEY,
+            "plugin" TEXT NOT NULL,
+            "name" TEXT NOT NULL,
+            "payload" TEXT NOT NULL,
+            "writtenAt" TEXT NOT NULL,
+            "heard" TEXT,
+            "attempts" INTEGER NOT NULL DEFAULT 0,
+            "retryAt" ${whole},
+            "takenAt" ${whole},
+            "takenBy" TEXT,
+            "failedAt" ${whole}
         )
-    `);
+    `;
+}
 
-    /* A table written before the column was renamed still carries the old one. */
-    const columns = connection.prepare("PRAGMA table_info(kit_outbox)").all() as { name: string }[];
+/**
+ * Creates the table. On SQLite it is ready before the factory returns, as it always was, and a table written by an
+ * earlier release is brought up to date so its rows still read: the old column name, and the redelivery columns.
+ */
+function prepare(sql: Sql): Promise<void>
+{
+    if (sql.now === undefined)
+    {
+        return sql.exec(tableOf(sql));
+    }
+
+    sql.now.exec(tableOf(sql));
+
+    const columns = sql.now.rows<{ name: string }>(`PRAGMA table_info("kit_outbox")`);
 
     if (columns.some((column) => column.name === "keptAt"))
     {
-        connection.exec("ALTER TABLE kit_outbox RENAME COLUMN keptAt TO writtenAt");
+        sql.now.exec(`ALTER TABLE "kit_outbox" RENAME COLUMN "keptAt" TO "writtenAt"`);
     }
 
-    // a table written before redelivery lacks these: added, so its rows still read
-    const names = new Set((connection.prepare("PRAGMA table_info(kit_outbox)").all() as { name: string }[]).map((column) => column.name));
+    const names = new Set(columns.map((column) => column.name));
 
     for (const [column, type] of [["heard", "TEXT"], ["attempts", "INTEGER NOT NULL DEFAULT 0"], ["retryAt", "INTEGER"], ["takenAt", "INTEGER"], ["takenBy", "TEXT"], ["failedAt", "INTEGER"]] as const)
     {
         if (!names.has(column))
         {
-            connection.exec(`ALTER TABLE kit_outbox ADD COLUMN ${column} ${type}`);
+            sql.now.exec(`ALTER TABLE "kit_outbox" ADD COLUMN "${column}" ${type}`);
         }
     }
 
-    const insert = connection.prepare(
-        "INSERT INTO kit_outbox (id, plugin, name, payload, writtenAt, retryAt, takenAt, takenBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    );
+    return Promise.resolve();
+}
 
-    const remove = connection.prepare("DELETE FROM kit_outbox WHERE id = ?");
-    const selectUnsent = connection.prepare("SELECT id, plugin, name, payload FROM kit_outbox WHERE failedAt IS NULL ORDER BY writtenAt");
-    const renewRow = connection.prepare("UPDATE kit_outbox SET takenAt = ? WHERE id = ? AND takenBy = ?");
-    const heardRow = connection.prepare("SELECT heard FROM kit_outbox WHERE id = ? AND takenBy = ?");
-    const writeHeard = connection.prepare("UPDATE kit_outbox SET heard = ? WHERE id = ? AND takenBy = ?");
+/** Adds one listener to the row's `heard` in a single statement, so two deliveries never overwrite each other. */
+function addHeardStatement(sql: Sql): string
+{
+    return sql.dialect === "postgres"
+        ? `UPDATE "kit_outbox" SET "heard" = (COALESCE("heard", '[]')::jsonb || to_jsonb(?::text))::text
+           WHERE "id" = ? AND "takenBy" = ? AND NOT jsonb_exists(COALESCE("heard", '[]')::jsonb, ?)`
+        : `UPDATE "kit_outbox" SET "heard" = json_insert(COALESCE("heard", '[]'), '$[#]', ?)
+           WHERE "id" = ? AND "takenBy" = ? AND NOT EXISTS (SELECT 1 FROM json_each(COALESCE("heard", '[]')) WHERE "value" = ?)`;
+}
 
-    const addHeard = connection.transaction((id: string, listener: string) =>
-    {
-        const row = heardRow.get(id, holder) as { heard: string | null } | undefined;
+/**
+ * Where events wait, in the same database as the work they announce. The process writing a row holds it for
+ * `leaseMs` while it delivers; a row one listener refused waits out a backoff and is claimed again, by this process
+ * or another, for the listeners that have not heard it.
+ *
+ * `within` answers the statements a transaction's own handle runs, where the database needs the transaction's
+ * connection rather than any from the pool; SQLite has one connection and answers `sql` itself.
+ */
+export function outboxOver(sql: Sql, settings: { leaseMs?: number } = {}, within: (db: unknown) => Sql = () => sql): Outbox
+{
+    const holder = randomUUID();
+    const leaseMs = leaseOf(settings);
+    const ready = prepare(sql);
 
-        if (row === undefined)
-        {
-            return;
-        }
-
-        const heard = heardOf(row.heard);
-
-        if (!heard.includes(listener))
-        {
-            writeHeard.run(JSON.stringify([...heard, listener]), id, holder);
-        }
-    });
-
-    const claim = connection.prepare(`
-        UPDATE kit_outbox SET takenAt = ?, takenBy = ?
-        WHERE id IN (
-            SELECT id FROM kit_outbox
-            WHERE failedAt IS NULL AND (retryAt IS NULL OR retryAt <= ?) AND (takenAt IS NULL OR takenAt < ?)
-            ORDER BY writtenAt
-            LIMIT ?
-        )
-        RETURNING id, plugin, name, payload, heard, attempts
-    `);
-
-    const retry = connection.prepare(
-        "UPDATE kit_outbox SET heard = ?, attempts = ?, retryAt = ?, takenAt = NULL, takenBy = NULL WHERE id = ? AND (takenBy IS NULL OR takenBy = ?)",
-    );
-
-    const dead = connection.prepare(
-        "UPDATE kit_outbox SET heard = ?, attempts = ?, failedAt = ?, takenAt = NULL, takenBy = NULL WHERE id = ? AND (takenBy IS NULL OR takenBy = ?)",
-    );
-
-    const selectFailed = connection.prepare("SELECT id, plugin, name, heard, attempts, failedAt FROM kit_outbox WHERE failedAt IS NOT NULL ORDER BY failedAt");
-    const countRows = connection.prepare(`
-        SELECT
-            SUM(CASE WHEN failedAt IS NULL AND attempts = 0 THEN 1 ELSE 0 END) AS waiting,
-            SUM(CASE WHEN failedAt IS NULL AND attempts > 0 THEN 1 ELSE 0 END) AS retrying,
-            SUM(CASE WHEN failedAt IS NOT NULL THEN 1 ELSE 0 END) AS dead
-        FROM kit_outbox
-    `);
-
-    const revive = connection.prepare("UPDATE kit_outbox SET failedAt = NULL, attempts = 0, retryAt = ? WHERE id = ? AND failedAt IS NOT NULL");
+    ready.catch(() => undefined);
 
     return {
         // the writing process holds the row while it delivers, and nobody else takes it before its lease runs out
-        save: (_db: unknown, messages: readonly OutboxMessage[]) =>
+        save: async (db: unknown, messages: readonly OutboxMessage[]) =>
         {
+            await ready;
+
             const now = Date.now();
             const writtenAt = new Date(now).toISOString();
+            const inside = within(db);
 
             for (const announcement of messages)
             {
-                insert.run(announcement.id, announcement.plugin, announcement.name, JSON.stringify(announcement.payload), writtenAt, now + leaseMs, now, holder);
+                await inside.run(
+                    `INSERT INTO "kit_outbox" ("id", "plugin", "name", "payload", "writtenAt", "retryAt", "takenAt", "takenBy") VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [announcement.id, announcement.plugin, announcement.name, JSON.stringify(announcement.payload), writtenAt, now + leaseMs, now, holder],
+                );
             }
         },
 
-        markSent: (id: string) =>
+        markSent: async (id: string) =>
         {
-            try
-            {
-                remove.run(id);
-            }
-            catch (cause)
-            {
-                // A closed connection is the one case worth surviving: shutdown
-                // races a delivery in flight. Swallowing every TypeError hid
-                // that, and the row stayed for start() to deliver twice.
-                const closed = cause instanceof TypeError && /connection is not open/iu.test(cause.message);
+            await ready;
 
-                if (!closed)
-                {
-                    throw cause;
-                }
-
-                return Promise.reject(cause);
-            }
-
-            return Promise.resolve();
+            // A failure, a closed connection during shutdown included, rejects rather than being swallowed:
+            // a row wrongly taken as sent is an event lost, and one left behind is only delivered again.
+            await sql.run(`DELETE FROM "kit_outbox" WHERE "id" = ?`, [id]);
         },
 
-        pending: () =>
+        pending: async () =>
         {
-            const rows = selectUnsent.all() as { id: string; plugin: string; name: string; payload: string }[];
+            await ready;
 
-            return Promise.resolve(rows.map((row): OutboxMessage => ({
+            const rows = await sql.rows<{ id: string; plugin: string; name: string; payload: string }>(
+                `SELECT "id", "plugin", "name", "payload" FROM "kit_outbox" WHERE "failedAt" IS NULL ORDER BY "writtenAt"`,
+            );
+
+            return rows.map((row): OutboxMessage => ({
                 id: row.id,
                 plugin: row.plugin,
                 name: row.name,
                 payload: JSON.parse(row.payload) as unknown,
-            })));
+            }));
         },
 
         leaseMs,
 
-        claim: (now: number, limit: number) =>
+        claim: async (now: number, limit: number) =>
         {
-            const rows = claim.all(now, holder, now, now - leaseMs, limit) as Row[];
+            await ready;
 
-            return Promise.resolve(rows.map((row) => ({
+            const rows = await sql.rows<Row>(`
+                UPDATE "kit_outbox" SET "takenAt" = ?, "takenBy" = ?
+                WHERE "id" IN (
+                    SELECT "id" FROM "kit_outbox"
+                    WHERE "failedAt" IS NULL AND ("retryAt" IS NULL OR "retryAt" <= ?) AND ("takenAt" IS NULL OR "takenAt" < ?)
+                    ORDER BY "writtenAt"
+                    LIMIT ?
+                )
+                RETURNING "id", "plugin", "name", "payload", "heard", "attempts"
+            `, [now, holder, now, now - leaseMs, limit]);
+
+            return rows.map((row) => ({
                 id: row.id,
                 plugin: row.plugin,
                 name: row.name,
                 payload: JSON.parse(row.payload) as unknown,
                 heard: heardOf(row.heard),
-                attempts: row.attempts,
-            })));
+                attempts: Number(row.attempts),
+            }));
         },
 
-        renew: (id: string, now: number) =>
+        renew: async (id: string, now: number) =>
         {
-            return Promise.resolve(renewRow.run(now, id, holder).changes > 0);
+            await ready;
+
+            const { changes } = await sql.run(`UPDATE "kit_outbox" SET "takenAt" = ? WHERE "id" = ? AND "takenBy" = ?`, [now, id, holder]);
+
+            return changes > 0;
         },
 
-        markHeard: (id: string, listener: string) =>
+        markHeard: async (id: string, listener: string) =>
         {
-            addHeard(id, listener);
-
-            return Promise.resolve();
+            await ready;
+            await sql.run(addHeardStatement(sql), [listener, id, holder, listener]);
         },
 
-        markRetry: (id: string, heard: readonly string[], attempts: number, at: number) =>
+        markRetry: async (id: string, heard: readonly string[], attempts: number, at: number) =>
         {
-            retry.run(JSON.stringify(heard), attempts, at, id, holder);
-
-            return Promise.resolve();
+            await ready;
+            await sql.run(
+                `UPDATE "kit_outbox" SET "heard" = ?, "attempts" = ?, "retryAt" = ?, "takenAt" = NULL, "takenBy" = NULL WHERE "id" = ? AND ("takenBy" IS NULL OR "takenBy" = ?)`,
+                [JSON.stringify(heard), attempts, at, id, holder],
+            );
         },
 
-        markDead: (id: string, heard: readonly string[], attempts: number, at: number) =>
+        markDead: async (id: string, heard: readonly string[], attempts: number, at: number) =>
         {
-            dead.run(JSON.stringify(heard), attempts, at, id, holder);
-
-            return Promise.resolve();
+            await ready;
+            await sql.run(
+                `UPDATE "kit_outbox" SET "heard" = ?, "attempts" = ?, "failedAt" = ?, "takenAt" = NULL, "takenBy" = NULL WHERE "id" = ? AND ("takenBy" IS NULL OR "takenBy" = ?)`,
+                [JSON.stringify(heard), attempts, at, id, holder],
+            );
         },
 
-        failed: () =>
+        failed: async () =>
         {
-            const rows = selectFailed.all() as { id: string; plugin: string; name: string; heard: string | null; attempts: number; failedAt: number }[];
+            await ready;
 
-            return Promise.resolve(rows.map((row): FailedEvent => ({ id: row.id, plugin: row.plugin, name: row.name, heard: heardOf(row.heard), attempts: row.attempts, failedAt: row.failedAt })));
+            const rows = await sql.rows<{ id: string; plugin: string; name: string; heard: string | null; attempts: number; failedAt: number }>(
+                `SELECT "id", "plugin", "name", "heard", "attempts", "failedAt" FROM "kit_outbox" WHERE "failedAt" IS NOT NULL ORDER BY "failedAt"`,
+            );
+
+            return rows.map((row): FailedEvent => ({ id: row.id, plugin: row.plugin, name: row.name, heard: heardOf(row.heard), attempts: Number(row.attempts), failedAt: Number(row.failedAt) }));
         },
 
-        counts: () =>
+        counts: async () =>
         {
-            const row = countRows.get() as { waiting: number | null; retrying: number | null; dead: number | null };
+            await ready;
 
-            return Promise.resolve({ waiting: row.waiting ?? 0, retrying: row.retrying ?? 0, dead: row.dead ?? 0 });
+            const [row] = await sql.rows<{ waiting: number | string | null; retrying: number | string | null; dead: number | string | null }>(`
+                SELECT
+                    SUM(CASE WHEN "failedAt" IS NULL AND "attempts" = 0 THEN 1 ELSE 0 END) AS "waiting",
+                    SUM(CASE WHEN "failedAt" IS NULL AND "attempts" > 0 THEN 1 ELSE 0 END) AS "retrying",
+                    SUM(CASE WHEN "failedAt" IS NOT NULL THEN 1 ELSE 0 END) AS "dead"
+                FROM "kit_outbox"
+            `);
+
+            return { waiting: Number(row?.waiting ?? 0), retrying: Number(row?.retrying ?? 0), dead: Number(row?.dead ?? 0) };
         },
 
-        revive: (id: string, now: number) =>
+        revive: async (id: string, now: number) =>
         {
-            return Promise.resolve(revive.run(now, id).changes > 0);
+            await ready;
+
+            const { changes } = await sql.run(`UPDATE "kit_outbox" SET "failedAt" = NULL, "attempts" = 0, "retryAt" = ? WHERE "id" = ? AND "failedAt" IS NOT NULL`, [now, id]);
+
+            return changes > 0;
         },
     };
+}
+
+/** Where events wait, in the same SQLite database as the work they announce. */
+export function outbox(connection: Database.Database, settings: { leaseMs?: number } = {}): Outbox
+{
+    return outboxOver(sqliteSql(connection), settings);
 }

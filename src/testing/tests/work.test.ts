@@ -48,8 +48,13 @@ describe("a plugin watching the work", () =>
 
         const scheduling = api.kernel.context("reminders");
 
-        scheduling.commands.later("reminders.send", { secret: "s1" }, 0);
-        scheduling.commands.later("reminders.send", { secret: "s2" }, 3600);
+        await scheduling.tx((inside) =>
+        {
+            inside.commands.later("reminders.send", { secret: "s1" }, 0);
+            inside.commands.later("reminders.send", { secret: "s2" }, 3600);
+
+            return Promise.resolve();
+        });
 
         const health = await api.kernel.context("operations").work.health();
 
@@ -62,7 +67,12 @@ describe("a plugin watching the work", () =>
 
         api = await startTestKernel({ plugins: [operations, reminders], schedule: true, outbox: true, now: () => now });
 
-        api.kernel.context("reminders").commands.later("reminders.send", { secret: "never-shown" }, 0);
+        await api.kernel.context("reminders").tx((inside) =>
+        {
+            inside.commands.later("reminders.send", { secret: "never-shown" }, 0);
+
+            return Promise.resolve();
+        });
 
         for (let round = 0; round < 8; round += 1)
         {

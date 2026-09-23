@@ -30,18 +30,18 @@ const CREATE = "CREATE TABLE items (id TEXT PRIMARY KEY, title TEXT NOT NULL, co
 
 describe("connection", () =>
 {
-    test("enforces foreign keys, which SQLite leaves off", () =>
+    test("enforces foreign keys, which SQLite leaves off", async () =>
     {
         const store = database({ file: ":memory:", tables: { items: { items } } });
 
-        store.migrate([{ plugin: "items", from: folder({ "0001-init.sql": `${CREATE}; CREATE TABLE notes (id TEXT PRIMARY KEY, item TEXT NOT NULL REFERENCES items(id))` }) }]);
+        await store.migrate([{ plugin: "items", from: folder({ "0001-init.sql": `${CREATE}; CREATE TABLE notes (id TEXT PRIMARY KEY, item TEXT NOT NULL REFERENCES items(id))` }) }]);
 
         const db = store.forPlugin("items");
 
         expect(() => (db as never as { $client: { exec: (sql: string) => void } }).$client
             .exec("INSERT INTO notes (id, item) VALUES ('n1', 'missing')")).toThrow(/FOREIGN KEY/);
 
-        store.close();
+        await store.close();
     });
 });
 
@@ -49,15 +49,15 @@ describe("handles", () =>
 {
     let store: ReturnType<typeof database>;
 
-    beforeEach(() =>
+    beforeEach(async () =>
     {
         store = database({ file: ":memory:", tables: { items: { items } } });
-        store.migrate([{ plugin: "items", from: folder({ "0001-init.sql": CREATE }) }]);
+        await store.migrate([{ plugin: "items", from: folder({ "0001-init.sql": CREATE }) }]);
     });
 
-    afterEach(() =>
+    afterEach(async () =>
     {
-        store.close();
+        await store.close();
     });
 
     test("hands a plugin a handle over its own tables", async () =>
@@ -74,9 +74,9 @@ describe("handles", () =>
         expect(() => store.forPlugin("billing")).toThrow(/"billing" asked for a database handle but declares no tables/);
     });
 
-    test("refuses a handle after close", () =>
+    test("refuses a handle after close", async () =>
     {
-        store.close();
+        await store.close();
 
         expect(() => store.forPlugin("items")).toThrow(/after it was closed/);
 
@@ -88,15 +88,15 @@ describe("transactions", () =>
 {
     let store: ReturnType<typeof database>;
 
-    beforeEach(() =>
+    beforeEach(async () =>
     {
         store = database({ file: ":memory:", tables: { items: { items } } });
-        store.migrate([{ plugin: "items", from: folder({ "0001-init.sql": CREATE }) }]);
+        await store.migrate([{ plugin: "items", from: folder({ "0001-init.sql": CREATE }) }]);
     });
 
-    afterEach(() =>
+    afterEach(async () =>
     {
-        store.close();
+        await store.close();
     });
 
     test("opens one for a plugin with no tables, handing it no handle, so it can still emit through an outbox", async () =>
@@ -152,7 +152,7 @@ describe("transactions", () =>
 
 describe("migrations", () =>
 {
-    test("runs each file once, in the order its number gives", () =>
+    test("runs each file once, in the order its number gives", async () =>
     {
         const store = database({ file: ":memory:", tables: { items: { items } } });
         const from = folder({
@@ -161,79 +161,77 @@ describe("migrations", () =>
             "0010-more.sql": "INSERT INTO items (id, title) VALUES ('b', 'Two')",
         });
 
-        const ran = store.migrate([{ plugin: "items", from }]);
-        const again = store.migrate([{ plugin: "items", from }]);
+        const ran = await store.migrate([{ plugin: "items", from }]);
+        const again = await store.migrate([{ plugin: "items", from }]);
 
         expect(ran.map((step) => step.name)).toEqual(["0001-init.sql", "0002-seed.sql", "0010-more.sql"]);
         expect(again).toEqual([]);
 
-        store.close();
+        await store.close();
     });
 
-    test("refuses a migration whose content changed after it ran", () =>
+    test("refuses a migration whose content changed after it ran", async () =>
     {
         const store = database({ file: ":memory:", tables: { items: { items } } });
         const from = folder({ "0001-init.sql": CREATE });
 
-        store.migrate([{ plugin: "items", from }]);
+        await store.migrate([{ plugin: "items", from }]);
 
         writeFileSync(join(from, "0001-init.sql"), `${CREATE};\n-- edited`);
 
-        expect(() => store.migrate([{ plugin: "items", from }])).toThrow(MigrationFault);
-        expect(() => store.migrate([{ plugin: "items", from }])).toThrow(/has changed since it ran/);
+        await expect(store.migrate([{ plugin: "items", from }])).rejects.toThrow(MigrationFault);
+        await expect(store.migrate([{ plugin: "items", from }])).rejects.toThrow(/has changed since it ran/);
 
-        store.close();
+        await store.close();
     });
 
-    test("refuses a file outside NNNN-name.sql", () =>
+    test("refuses a file outside NNNN-name.sql", async () =>
     {
         const store = database({ file: ":memory:", tables: { items: { items } } });
 
-        expect(() => store.migrate([{ plugin: "items", from: folder({ "init.sql": CREATE }) }]))
-            .toThrow(/not named NNNN-name\.sql/);
+        await expect(store.migrate([{ plugin: "items", from: folder({ "init.sql": CREATE }) }])).rejects.toThrow(/not named NNNN-name\.sql/);
 
-        store.close();
+        await store.close();
     });
 
-    test("refuses two files sharing one number", () =>
+    test("refuses two files sharing one number", async () =>
     {
         const store = database({ file: ":memory:", tables: { items: { items } } });
 
-        expect(() => store.migrate([{ plugin: "items", from: folder({ "0001-a.sql": CREATE, "0001-b.sql": "SELECT 1" }) }]))
-            .toThrow(/share the number 0001/);
+        await expect(store.migrate([{ plugin: "items", from: folder({ "0001-a.sql": CREATE, "0001-b.sql": "SELECT 1" }) }])).rejects.toThrow(/share the number 0001/);
 
-        store.close();
+        await store.close();
     });
 
-    test("rolls every one of them back when one fails", () =>
+    test("rolls every one of them back when one fails", async () =>
     {
         const store = database({ file: ":memory:", tables: { items: { items } } });
         const from = folder({ "0001-init.sql": CREATE, "0002-bad.sql": "THIS IS NOT SQL" });
 
-        expect(() => store.migrate([{ plugin: "items", from }])).toThrow(MigrationFault);
+        await expect(store.migrate([{ plugin: "items", from }])).rejects.toThrow(MigrationFault);
 
         // 0001 is not applied, so its author can still correct it; recorded, the hash guard would refuse the edit.
         expect(() => store.forPlugin("items").select().from(items).all()).toThrow(/no such table/);
 
-        store.close();
+        await store.close();
     });
 
-    test("lets the author correct an earlier file after a later one failed", () =>
+    test("lets the author correct an earlier file after a later one failed", async () =>
     {
         const store = database({ file: ":memory:", tables: { items: { items } } });
         const from = folder({ "0001-init.sql": CREATE, "0002-bad.sql": "THIS IS NOT SQL" });
 
-        expect(() => store.migrate([{ plugin: "items", from }])).toThrow(MigrationFault);
+        await expect(store.migrate([{ plugin: "items", from }])).rejects.toThrow(MigrationFault);
 
         writeFileSync(join(from, "0001-init.sql"), `${CREATE.replace(")", ", extra TEXT)")}`);
         writeFileSync(join(from, "0002-bad.sql"), "INSERT INTO items (id, title) VALUES ('a', 'One')");
 
-        expect(store.migrate([{ plugin: "items", from }])).toHaveLength(2);
+        expect(await store.migrate([{ plugin: "items", from }])).toHaveLength(2);
 
-        store.close();
+        await store.close();
     });
 
-    test("refuses a migration that leaves a table nothing can write to", () =>
+    test("refuses a migration that leaves a table nothing can write to", async () =>
     {
         const store = database({ file: ":memory:", tables: { items: { items } } });
 
@@ -242,19 +240,19 @@ describe("migrations", () =>
             "0001-init.sql": "CREATE TABLE items (id TEXT PRIMARY KEY, title TEXT NOT NULL, count INTEGER NOT NULL, CHECK (count >= 0 OR RAISE(ABORT, 'count must not be negative')))",
         });
 
-        expect(() => store.migrate([{ plugin: "items", from }])).toThrow(/nothing can write to it/);
+        await expect(store.migrate([{ plugin: "items", from }])).rejects.toThrow(/nothing can write to it/);
 
         // Rolled back with it, so the author can correct the file; recorded, the hash guard would refuse the edit.
         expect(() => store.forPlugin("items").select().from(items).all()).toThrow(/no such table/);
 
         writeFileSync(join(from, "0001-init.sql"), CREATE);
 
-        expect(store.migrate([{ plugin: "items", from }])).toHaveLength(1);
+        expect(await store.migrate([{ plugin: "items", from }])).toHaveLength(1);
 
-        store.close();
+        await store.close();
     });
 
-    test("leaves a plain CHECK and a trigger that raises alone", () =>
+    test("leaves a plain CHECK and a trigger that raises alone", async () =>
     {
         const store = database({ file: ":memory:", tables: { items: { items } } });
 
@@ -264,12 +262,12 @@ describe("migrations", () =>
             "0002-guard.sql": "CREATE TRIGGER items_guard BEFORE INSERT ON items BEGIN SELECT RAISE(ABORT, 'count must not be negative') WHERE NEW.count < 0; END",
         });
 
-        expect(store.migrate([{ plugin: "items", from }])).toHaveLength(2);
+        expect(await store.migrate([{ plugin: "items", from }])).toHaveLength(2);
 
-        store.close();
+        await store.close();
     });
 
-    test("says so when another process holds the write lock", () =>
+    test("says so when another process holds the write lock", async () =>
     {
         // A file, not :memory:, because the lock is what two processes share.
         const file = join(mkdtempSync(join(tmpdir(), "stack-api-locked-")), "app.db");
@@ -281,7 +279,7 @@ describe("migrations", () =>
 
         try
         {
-            waiting.migrate([{ plugin: "items", from: folder({ "0001-init.sql": CREATE }) }]);
+            await waiting.migrate([{ plugin: "items", from: folder({ "0001-init.sql": CREATE }) }]);
             expect.unreachable();
         }
         catch (cause)
@@ -293,17 +291,17 @@ describe("migrations", () =>
         }
 
         (holder.forPlugin("items") as unknown as { $client: { exec: (sql: string) => void } }).$client.exec("ROLLBACK");
-        waiting.close();
-        holder.close();
+        await waiting.close();
+        await holder.close();
     });
 
-    test("names the plugin and the file when a migration fails", () =>
+    test("names the plugin and the file when a migration fails", async () =>
     {
         const store = database({ file: ":memory:", tables: { items: { items } } });
 
         try
         {
-            store.migrate([{ plugin: "items", from: folder({ "0001-bad.sql": "NOT SQL AT ALL" }) }]);
+            await store.migrate([{ plugin: "items", from: folder({ "0001-bad.sql": "NOT SQL AT ALL" }) }]);
             expect.unreachable();
         }
         catch (cause)
@@ -312,6 +310,6 @@ describe("migrations", () =>
             expect((cause as MigrationFault).step).toBe("0001-bad.sql");
         }
 
-        store.close();
+        await store.close();
     });
 });

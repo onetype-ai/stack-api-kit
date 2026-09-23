@@ -113,11 +113,13 @@ export function store(holding: StoreInternals)
             return inside.getStore() !== undefined;
         },
 
-        close: (): void =>
+        close: (): Promise<void> =>
         {
             open = false;
             handles.clear();
             holding.connection.close();
+
+            return Promise.resolve();
         },
     };
 }

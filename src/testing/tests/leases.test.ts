@@ -80,11 +80,11 @@ const otherProcess = (): Schedule =>
     return schedule(connection, { leaseMs: LEASE_MS });
 };
 
-const queue = (jobs: Schedule, attempts = 0): string =>
+const queue = async (jobs: Schedule, attempts = 0): Promise<string> =>
 {
     const id = crypto.randomUUID();
 
-    jobs.save(undefined, { id, plugin: "worker", command: "worker.run", input: { note: PAYLOAD }, at: Date.now() - 60_000, attempts });
+    await jobs.save(undefined, { id, plugin: "worker", command: "worker.run", input: { note: PAYLOAD }, at: Date.now() - 60_000, attempts });
 
     return id;
 };
@@ -143,7 +143,7 @@ describe("a job claimed by a process that stopped", () =>
     test("runs once its lease has run out, in the process still beating", async () =>
     {
         const dead = otherProcess();
-        queue(dead);
+        await queue(dead);
         await dead.claim(Date.now() - 2 * LEASE_MS, 10);
 
         const running = await boot();
@@ -156,7 +156,7 @@ describe("a job claimed by a process that stopped", () =>
     test("is left alone while its lease holds", async () =>
     {
         const alive = otherProcess();
-        queue(alive);
+        await queue(alive);
         await alive.claim(Date.now(), 10);
 
         const running = await boot();
@@ -169,7 +169,7 @@ describe("a job claimed by a process that stopped", () =>
     test("is given up once its lost runs reach the limit, logged without its input", async () =>
     {
         const dead = otherProcess();
-        queue(dead, 7);
+        await queue(dead, 7);
         await dead.claim(Date.now() - 2 * LEASE_MS, 10);
 
         const running = await boot();
@@ -188,7 +188,7 @@ describe("a job running longer than its lease", () =>
     {
         slowMs = 2 * LEASE_MS;
         const running = await boot();
-        queue(otherProcess());
+        await queue(otherProcess());
 
         const working = running.kernel.due();
         await new Promise((resolve) => setTimeout(resolve, LEASE_MS + 400));
@@ -204,7 +204,7 @@ describe("a job running longer than its lease", () =>
     test("cannot be finished by a process whose lease was taken over", async () =>
     {
         const slow = otherProcess();
-        const id = queue(slow);
+        const id = await queue(slow);
         await slow.claim(Date.now() - 2 * LEASE_MS, 10);
         const [taken] = await otherProcess().claim(Date.now(), 10);
 
@@ -222,7 +222,7 @@ describe("a command that never settles", () =>
     {
         slowMs = 60_000;
         const running = await boot(true, LEASE_MS);
-        queue(otherProcess());
+        await queue(otherProcess());
 
         void running.kernel.due();
         const lostRuns = await within(8_000, () => lostRunsOf() >= 1, lostRunsOf);
@@ -238,7 +238,7 @@ describe("a run whose lease another run took", () =>
     {
         slowMs = 2 * LEASE_MS;
         const running = await boot();
-        queue(otherProcess());
+        await queue(otherProcess());
 
         const working = running.kernel.due();
         const taken = (): boolean =>
@@ -268,7 +268,12 @@ describe("a process that only enqueues", () =>
     {
         const enqueuing = await boot("enqueue");
 
-        enqueuing.kernel.context("worker").commands.later("worker.run", { note: "later" }, 0);
+        await enqueuing.kernel.context("worker").tx((inside) =>
+        {
+            inside.commands.later("worker.run", { note: "later" }, 0);
+
+            return Promise.resolve();
+        });
         const handled = await enqueuing.kernel.due();
 
         expect(handled).toBe(0);
