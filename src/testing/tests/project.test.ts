@@ -219,3 +219,22 @@ describe("a project with no plugins yet", () =>
         }
     });
 });
+
+describe("documents a project asks itself for", () =>
+{
+    test("are named when absent or empty, and only those named", () =>
+    {
+        const at = mkdtempSync(join(tmpdir(), "project-required-"));
+
+        mkdirSync(join(at, "#docs"), { recursive: true });
+        writeFileSync(join(at, "#docs", "usage.md"), "   \n");
+
+        const found = Project.findAll({ root: at, required: Project.required }).filter((problem) => problem.check === "missing");
+
+        expect(found.map((problem) => problem.message)).toEqual([
+            "#docs/usage.md is absent or says nothing, and this project asks itself for it.",
+            "#docs/architecture.md is absent or says nothing, and this project asks itself for it.",
+        ]);
+        expect(Project.findAll({ root: at }).filter((problem) => problem.check === "missing")).toEqual([]);
+    });
+});

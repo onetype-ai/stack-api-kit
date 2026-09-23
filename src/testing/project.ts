@@ -3,7 +3,7 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { findCopiedVocabulary, findImportViolations, findSharedNames, findSplitVocabulary, findUnscopedReach } from "./boundaries";
-import { findOversizedDocs, findUndocumentedKeys, findUnexplainedPlugins } from "./docs";
+import { findMissingDocs, findOversizedDocs, findUndocumentedKeys, findUnexplainedPlugins } from "./docs";
 import { findUnusedFields } from "./wiring";
 
 /** One finding from any `Project` check, already written out as a sentence a person can act on; `check` says which check spoke. */
@@ -19,6 +19,7 @@ export type ProjectCheckOptions = {
     /** Where pure code shared between plugins lives. */
     utils?: string;
     docs?: string;
+    /** Documents this project asks itself to hold, read from `root`; none unless named. `Project.required` is the kit's suggestion. */
     required?: readonly string[];
     procedure?: string;
     limit?: number;
@@ -44,6 +45,9 @@ const PACKED = new Set(["docs.md", "README.md"]);
 
 /** Every project-wide check in one object, each answering `ProjectProblem[]`; `findAll` runs the lot against sensible defaults and answers an empty array when a project is clean. */
 export const Project = {
+    /** What a project is suggested to require of itself, the same list the app kit names. */
+    required: ["#docs/usage.md", "#docs/architecture.md"] as const,
+
     findAll: (checking: ProjectCheckOptions = {}): ProjectProblem[] =>
     {
         const root = checking.root ?? process.cwd();
@@ -64,6 +68,11 @@ export const Project = {
             ...(existsSync(procedure) ? Project.findUndocumentedKeys(procedure) : []),
 
             ...Project.findOversizedDocs(root, checking.limit ?? 1800),
+
+            ...findMissingDocs(root, checking.required ?? []).map((path) => ({
+                check: "missing" as const,
+                message: `${path} is absent or says nothing, and this project asks itself for it.`,
+            })),
         ];
     },
 

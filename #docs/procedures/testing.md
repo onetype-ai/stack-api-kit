@@ -11,9 +11,8 @@ A test imports the plugin as another does, from `../api`, never
 
 ## Shape
 
-Arrange, act, assert, a blank line between. Name the case,
-not the function. No shared setup hiding a dependency, no helper wrapping the
-assertion: a reader sees what is claimed without opening another file.
+Arrange, act, assert, a blank line between. Name the case, not the
+function. No shared setup hiding a dependency or helper hiding the claim.
 
 ## The database is real
 
@@ -28,13 +27,12 @@ its own kernel and stops it. `testClock()` gives `now` a test moves by hand.
 
 ## What must be proved
 
-Every refusal in `usage.md` has a test that triggers it: an untested refusal
-is a promise.
+Every refusal in `usage.md` has a test that triggers it.
 
 Every guard has the attack that motivated it: a body claiming another id,
 an output carrying a hash.
 
-Before fixing a bug, write the test that fails because of it.
+Before fixing a bug, write the test that fails on it.
 
 ## Proving a test
 
@@ -44,7 +42,8 @@ fail naming the real cause, then put it back.
 ## What a project checks about itself
 
 `Project.findAll()` is the whole self-check: boundaries, wiring, document
-length, and every contract key its procedure never names.
+length, contract keys its procedure never names, and the `required` docs.
+`Started` refuses a closed route with no `limit`, unless named `unbounded`.
 
 ## Refuses
 
