@@ -8,8 +8,8 @@ kernel decides which hosts a plugin may reach; this carries the call.
 ## Purpose
 
 A plugin calling `fetch` itself gets no timeout, no size limit, and follows a
-redirect anywhere: how a slow partner becomes an outage, and a permitted host
-hands the call to one nobody declared.
+redirect anywhere: a slow partner becomes an outage, a permitted host hands
+the call on.
 
 ## Usage
 
@@ -27,20 +27,20 @@ export default definePlugin("items", {
 ```
 
 - `ctx.fetch` refuses any host the plugin did not declare, before it dials.
+  Only https origins may be declared.
 - `"anywhere"` resolves the name, refuses it if any answer is not public, and
   dials the address it checked. `detail.reason` says why a call was refused.
-- Only https origins may be declared, so credentials never cross in the clear.
-- A redirect is an error rather than followed: the kernel checked the first
-  url and never saw the second.
-- The answer is JSON; `accepts: "text"` reads a string. Declared by the
-  caller, never sniffed from what came back.
-- The answer is read in chunks and stops at `maxBytes`, so a body that keeps
-  arriving cannot take the process down.
-- `signal` cancels a call; the timeout is separate and reported apart from it.
+- A redirect is an error, never followed: the kernel saw only the first url.
+- The answer is JSON; `accepts: "text"` reads a string, and `"stream"` hands
+  over `{ status, headers, url, body }` once the headers arrive, `body` an
+  async iterable of chunks. Leaving the loop early closes it.
+- `maxBytes` bounds the answer, streamed or whole. A call may pass its own
+  `timeoutMs`, `maxBytes` and `idleMs` (silence between chunks); the client's
+  `mostTimeoutMs` and `mostMaxBytes` cap what any call may ask for.
+- `signal` cancels a call, reported apart from a timeout.
 
 ## Refuses
 
 An `HttpRequestError` carrying a code: `TIMEOUT`, `ABORTED`, `NETWORK`,
-`TOO_LARGE`, `MALFORMED`, or `STATUS` with the status it was refused with.
-`retryAfter` is the seconds a partner asked for, when it asked. Nothing else
-it throws carries a header, a token, or the body that was sent.
+`TOO_LARGE`, `MALFORMED`, or `STATUS` (before any streamed body), with
+`retryAfter` when the partner asked. A size bounding nothing (NaN, 0) too.

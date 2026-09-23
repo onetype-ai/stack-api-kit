@@ -53,6 +53,7 @@ export type {
     Lookup,
     RefusalReason,
     ResolvedAddress,
+    StreamedResponse,
 } from "./plugins/kernel/api";
 
 export { declarationsOf } from "./plugins/declared/api";

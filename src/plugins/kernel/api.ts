@@ -41,6 +41,7 @@ export type {
     Route,
     AnyCommand,
     DescribableWithSchema,
+    StreamedResponse,
 } from "./internal/contract";
 
 export type { ListenerFailure } from "./internal/events";

@@ -5,9 +5,23 @@ import { pinnedFetch } from "./pinned";
 /** How the built-in caller is configured: `timeoutMs` defaults to 10000, `maxBytes` to 5000000, and `headers` is called per request so a rotating credential stays fresh. */
 export type HttpClientOptions = {
     timeoutMs?: number;
+
+    /** The most any one call may ask for with its own `timeoutMs`: 600000 when left out. */
+    mostTimeoutMs?: number;
+
     maxBytes?: number;
+
+    /** The most any one call may ask for with its own `maxBytes`: `maxBytes` when left out, so no call reads more unless this is raised. */
+    mostMaxBytes?: number;
+
     headers?: (() => Readonly<Record<string, string>>) | undefined;
 };
+
+/** Whether a size is one that bounds anything: NaN, Infinity and fractions compare in ways no read can stop on. */
+function isByteCount(value: number): boolean
+{
+    return Number.isSafeInteger(value) && value >= 1;
+}
 
 export class HttpRequestError extends Error
 {
@@ -51,11 +65,32 @@ const REDIRECT_STATUSES: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]
 /** Builds the outbound caller: it follows no redirects, reads at most `maxBytes`, gives up after `timeoutMs`, dials the address it is pinned to when given one, and throws `HttpRequestError` for every failure including a non-2xx status. */
 export function httpClient(options: HttpClientOptions = {}): HttpClient
 {
-    const timeoutMs = options.timeoutMs ?? 10_000;
-    const maxBytes = options.maxBytes ?? 5_000_000;
+    for (const name of ["maxBytes", "mostMaxBytes"] as const)
+    {
+        const given = options[name];
+
+        if (given !== undefined && !isByteCount(given))
+        {
+            throw new TypeError(`httpClient: ${name} is ${String(given)}. Give a whole number of bytes above 0, or leave it out.`);
+        }
+    }
+
+    const defaultMs = options.timeoutMs ?? 10_000;
+    const mostTimeoutMs = options.mostTimeoutMs ?? 600_000;
+    const defaultBytes = options.maxBytes ?? 5_000_000;
+    const mostMaxBytes = options.mostMaxBytes ?? defaultBytes;
 
     return async (call, pin) =>
     {
+        if (call.maxBytes !== undefined && !isByteCount(call.maxBytes))
+        {
+            throw new HttpRequestError("MALFORMED", `maxBytes is ${String(call.maxBytes)}. Pass a whole number of bytes above 0, or leave it out.`);
+        }
+
+        // asking for more than the process allows is clamped, not refused
+        const timeoutMs = Math.min(call.timeoutMs ?? defaultMs, mostTimeoutMs);
+        const maxBytes = Math.min(call.maxBytes ?? defaultBytes, mostMaxBytes);
+
         const stopper = new AbortController();
         const timer = setTimeout(() => stopper.abort(), timeoutMs);
         const cancel = (): void =>
@@ -64,6 +99,15 @@ export function httpClient(options: HttpClientOptions = {}): HttpClient
         };
 
         call.signal?.addEventListener("abort", cancel);
+
+        const release = (): void =>
+        {
+            clearTimeout(timer);
+            call.signal?.removeEventListener("abort", cancel);
+        };
+
+        // a streamed answer keeps its limits until its last chunk, so they are released there
+        let streaming = false;
 
         try
         {
@@ -75,7 +119,7 @@ export function httpClient(options: HttpClientOptions = {}): HttpClient
                 redirect: "manual",
 
                 headers: {
-                    accept: call.accepts === "text" ? "*/*" : "application/json",
+                    accept: call.accepts === "json" || call.accepts === undefined ? "application/json" : "*/*",
                     ...(call.body !== undefined && !isBinaryType(call.body) && { "content-type": "application/json" }),
                     ...options.headers?.(),
                     ...call.headers,
@@ -88,6 +132,18 @@ export function httpClient(options: HttpClientOptions = {}): HttpClient
                 await response.body?.cancel().catch(() => undefined);
 
                 throw new HttpRequestError("NETWORK", `The call was redirected (${response.status}), and redirects are not followed.`, response.status);
+            }
+
+            if (call.accepts === "stream" && response.ok)
+            {
+                streaming = true;
+
+                return {
+                    status: response.status,
+                    headers: Object.fromEntries(response.headers),
+                    url: call.url,
+                    body: streamOf(response, { maxBytes, idleMs: call.idleMs, stopper, call, timeoutMs, release }),
+                };
             }
 
             const text = await readResponseBody(response, maxBytes);
@@ -128,10 +184,96 @@ export function httpClient(options: HttpClientOptions = {}): HttpClient
         }
         finally
         {
-            clearTimeout(timer);
-            call.signal?.removeEventListener("abort", cancel);
+            if (!streaming)
+            {
+                release();
+            }
         }
     };
+}
+
+/** What bounds a streamed answer until its last chunk. */
+type StreamLimits = {
+    maxBytes: number;
+    idleMs: number | undefined;
+    stopper: AbortController;
+    call: HttpRequest;
+    timeoutMs: number;
+    release: () => void;
+};
+
+/**
+ * The body as it arrives. The call's time limit, its byte limit and the caller's signal
+ * hold until the last chunk; a silence longer than `idleMs` ends it too. Leaving the loop
+ * early cancels the body, so nothing keeps the socket open.
+ */
+async function* streamOf(response: Response, limits: StreamLimits): AsyncGenerator<Uint8Array>
+{
+    const reader = response.body?.getReader();
+
+    let size = 0;
+    let idle: ReturnType<typeof setTimeout> | undefined;
+    let wentIdle = false;
+
+    const waiting = (): void =>
+    {
+        if (limits.idleMs !== undefined)
+        {
+            clearTimeout(idle);
+
+            idle = setTimeout(() =>
+            {
+                wentIdle = true;
+                limits.stopper.abort();
+            }, limits.idleMs);
+        }
+    };
+
+    try
+    {
+        if (reader === undefined)
+        {
+            return;
+        }
+
+        waiting();
+
+        for (;;)
+        {
+            const { done, value } = await reader.read();
+
+            if (done)
+            {
+                return;
+            }
+
+            size += value.length;
+
+            if (size > limits.maxBytes)
+            {
+                throw new HttpRequestError("TOO_LARGE", `The answer went past ${limits.maxBytes} bytes.`);
+            }
+
+            waiting();
+
+            yield value;
+        }
+    }
+    catch (cause)
+    {
+        if (wentIdle && !(cause instanceof HttpRequestError))
+        {
+            throw new HttpRequestError("TIMEOUT", `The answer went silent for more than ${String(limits.idleMs)}ms.`, undefined, cause);
+        }
+
+        throw toOutboundFault(cause, limits.call, limits.stopper, limits.timeoutMs);
+    }
+    finally
+    {
+        clearTimeout(idle);
+        limits.release();
+        await reader?.cancel().catch(() => undefined);
+    }
 }
 
 /** What a Retry-After asks for, in seconds. */

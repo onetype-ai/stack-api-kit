@@ -87,6 +87,12 @@ function originOf(url: string): string | undefined
     }
 }
 
+/** A streamed answer names the address that answered, whichever client carried it. */
+function streamedFrom(call: HttpRequest, answer: unknown): unknown
+{
+    return call.accepts === "stream" && typeof answer === "object" && answer !== null ? { ...answer, url: call.url } : answer;
+}
+
 /** Whether ctx.fetch can carry a call to this url at all. */
 function isHttps(url: string): boolean
 {
@@ -314,8 +320,15 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
             }
         },
 
-        fetch: async (call: HttpRequest): Promise<unknown> =>
+        // one implementation behind both overloads: a streamed call answers what the client streamed
+        fetch: (async (call: HttpRequest): Promise<unknown> =>
         {
+            // NaN would bound nothing: every size compares false against it, so a read would never stop
+            if (call.maxBytes !== undefined && (!Number.isSafeInteger(call.maxBytes) || call.maxBytes < 1))
+            {
+                throw new KernelFault("INVALID_CALL", `"${plugin}" passed maxBytes ${String(call.maxBytes)}. Pass a whole number of bytes above 0, or leave it out for the client's default.`, { plugin });
+            }
+
             const allowed = wiring.known.get(plugin)?.definition.allowedHosts ?? [];
             const host = originOf(call.url);
 
@@ -335,7 +348,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
 
                 const pin = await publicAddressOf(new URL(call.url.trim()).hostname, wiring.lookup, plugin);
 
-                return wiring.httpClient(call, pin);
+                return streamedFrom(call, await wiring.httpClient(call, pin));
             }
 
             if (host === undefined)
@@ -365,8 +378,8 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
                 );
             }
 
-            return wiring.httpClient === undefined ? absentWiring(plugin, "httpClient", "fetch", "httpClient") : wiring.httpClient(call);
-        },
+            return wiring.httpClient === undefined ? absentWiring(plugin, "httpClient", "fetch", "httpClient") : streamedFrom(call, await wiring.httpClient(call));
+        }) as Context["fetch"],
 
         events: {
             emit: (event, payload) =>

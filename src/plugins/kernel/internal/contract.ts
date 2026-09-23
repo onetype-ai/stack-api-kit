@@ -144,10 +144,31 @@ export type HttpRequest = {
     body?: unknown;
 
     /** What the answer is read as, json when left out. Declared, never sniffed, so a host that changes content type changes nothing here. */
-    accepts?: "json" | "text";
+    /** `"stream"` answers a `StreamedResponse` once the headers arrive, the body read as it comes; a status outside 2xx still throws before any of it is handed over. */
+    accepts?: "json" | "text" | "stream";
 
     headers?: Readonly<Record<string, string>> | undefined;
     signal?: AbortSignal | undefined;
+
+    /** How long the whole call may take, reading included: the client's default when left out, never more than its `mostTimeoutMs`. */
+    timeoutMs?: number | undefined;
+
+    /** The longest silence allowed between two chunks of a streamed answer. */
+    idleMs?: number | undefined;
+
+    /** The most bytes this answer may carry, streamed or read whole: a whole number above 0. The client's `maxBytes` when left out; more than its `mostMaxBytes` is clamped to it. */
+    maxBytes?: number | undefined;
+};
+
+/** A streamed answer: the body arrives chunk by chunk, still bounded by the call's bytes, time limits and signal; leaving the loop early cancels it. */
+export type StreamedResponse = {
+    status: number;
+    headers: Readonly<Record<string, string>>;
+
+    /** The address that answered. */
+    url: string;
+
+    body: AsyncIterable<Uint8Array>;
 };
 
 /** What every plugin function receives. */
@@ -183,7 +204,10 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
     tx: <Result>(run: (ctx: Context<Config, Services, Db>) => Promise<Result>) => Promise<Result>;
 
     /** Calls a host this plugin declared in `allowedHosts`. */
-    fetch: (call: HttpRequest) => Promise<unknown>;
+    fetch: {
+        (call: HttpRequest & { accepts: "stream" }): Promise<StreamedResponse>;
+        (call: HttpRequest): Promise<unknown>;
+    };
 
     events: {
         /** Announces what happened; inside a transaction it waits for the commit, because an event about rolled-back work is a lie. */
