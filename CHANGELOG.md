@@ -24,6 +24,9 @@
 
 ### How to convert
 
+`#docs/procedures/dialects.md` is the rule the conversion follows.
+
+
 - A `later` outside a transaction, in a route, a listener, a command or
   `setup`, moves inside one:
 
