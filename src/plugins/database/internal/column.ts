@@ -11,6 +11,9 @@ type Recorded = { kind: Kind; name: string; calls: { method: string; args: unkno
 
 const RECORDED = Symbol("portable column");
 
+/** What reading a value for its own sake asks of it: never a builder method, so never refused. */
+const QUIET = new Set(["then", "toJSON", "constructor", "inspect", "toString", "valueOf"]);
+
 /** What a portable column may be told, the same on both dialects. */
 const PORTABLE = new Set(["notNull", "default", "$defaultFn", "primaryKey", "references", "$type", "unique"]);
 
@@ -30,13 +33,22 @@ function recorder<Builder>(kind: Kind, name: string): Builder
                 return recorded;
             }
 
-            if (typeof property !== "string" || !PORTABLE.has(property))
+            // what inspecting, awaiting or serialising a value reads is no builder method, and answers nothing
+            if (typeof property === "symbol" || QUIET.has(property))
             {
-                throw new KernelFault(
-                    "UNPORTABLE_COLUMN",
-                    `Column "${name}" was told ${String(property)}, which is not in the portable set. Use ${[...PORTABLE].join(", ")}, or define the column for one dialect with a table of that dialect.`,
-                    { plugin: "tables" },
-                );
+                return undefined;
+            }
+
+            if (!PORTABLE.has(property))
+            {
+                return () =>
+                {
+                    throw new KernelFault(
+                        "UNPORTABLE_COLUMN",
+                        `database: column "${name}" was told ${property}, which is not in the portable set. Use ${[...PORTABLE].join(", ")}, or define the column for one dialect with a table of that dialect.`,
+                        { plugin: "database" },
+                    );
+                };
             }
 
             return (...args: unknown[]) =>
@@ -79,7 +91,7 @@ export function realColumn(portable: unknown): unknown
 
     if (recorded === undefined)
     {
-        throw new KernelFault("UNPORTABLE_COLUMN", "A portable table holds a column not made with column.*. Make every column of it with column.text, column.integer and the rest.", { plugin: "tables" });
+        throw new KernelFault("UNPORTABLE_COLUMN", "database: a portable table holds a column not made with column.*. Make every column of it with column.text, column.integer and the rest.", { plugin: "database" });
     }
 
     const { kind, name } = recorded;
@@ -97,7 +109,7 @@ export function realColumn(portable: unknown): unknown
 
         if (told === undefined)
         {
-            throw new KernelFault("UNPORTABLE_COLUMN", `Column "${name}": ${call.method} has no ${dialect()} form.`, { plugin: "tables" });
+            throw new KernelFault("UNPORTABLE_COLUMN", `database: column "${name}": ${call.method} has no ${dialect()} form.`, { plugin: "database" });
         }
 
         builder = told.apply(builder, call.args) as typeof builder;

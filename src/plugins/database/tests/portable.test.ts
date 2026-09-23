@@ -81,12 +81,22 @@ describe("refuses", () =>
         expect(() => tables.refuseOtherDialect("sqlite")).toThrow(expect.objectContaining({ code: "MIXED_DIALECT", message: expect.stringContaining("items_items were built for postgres, and the database is sqlite") }));
     });
 
+    test("nothing when a column is only inspected, awaited or compared", async () =>
+    {
+        const tables = await load({ KIT_DIALECT: "sqlite" });
+        const title = tables.column.text("title");
+
+        expect(title).toBeDefined();
+        expect(() => String(Object.prototype.toString.call(title))).not.toThrow();
+        expect(await Promise.resolve(title)).toBe(title);
+    });
+
     test("a column told something outside the portable set", async () =>
     {
         const tables = await load({ KIT_DIALECT: "sqlite" });
         const told = tables.column.text("title") as unknown as { generatedAlwaysAs: (value: string) => unknown };
 
-        expect(() => told.generatedAlwaysAs("x")).toThrow(expect.objectContaining({ code: "UNPORTABLE_COLUMN" }));
+        expect(() => told.generatedAlwaysAs("x")).toThrow(expect.objectContaining({ code: "UNPORTABLE_COLUMN", plugin: "database" }));
     });
 
     test("a dialect it does not know", async () =>

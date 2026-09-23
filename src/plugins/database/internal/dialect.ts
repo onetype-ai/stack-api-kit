@@ -30,7 +30,7 @@ export function dialect(): Dialect
 
     if (named !== undefined && named !== "sqlite" && named !== "postgres")
     {
-        throw new KernelFault("INVALID_CONFIG", `KIT_DIALECT is "${named}". Set it to sqlite or postgres, or leave it unset to follow DATABASE_URL.`, { plugin: "tables" });
+        throw new KernelFault("INVALID_CONFIG", `database: KIT_DIALECT is "${named}". Set it to sqlite or postgres, or leave it unset to follow DATABASE_URL.`, { plugin: "database" });
     }
 
     chosen = named ?? (/^postgres(ql)?:\/\//u.test(process.env["DATABASE_URL"] ?? "") ? "postgres" : "sqlite");
@@ -45,8 +45,8 @@ export function refuseOtherDialect(database: Dialect): void
     {
         throw new KernelFault(
             "MIXED_DIALECT",
-            `The tables ${built.slice(0, 3).join(", ")} were built for ${dialect()}, and the database is ${database}. Set KIT_DIALECT=${database}, or a DATABASE_URL naming it, before any plugin is imported.`,
-            { plugin: "tables" },
+            `database: the tables ${built.slice(0, 3).join(", ")} were built for ${dialect()}, and the database is ${database}. The environment was read before it said so: load .env before any plugin is imported (node --env-file=.env), with KIT_DIALECT=${database} or a DATABASE_URL naming it.`,
+            { plugin: "database" },
         );
     }
 }

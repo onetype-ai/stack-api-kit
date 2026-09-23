@@ -32,8 +32,9 @@ The callback is handed its own context: use that, never the outer. The event
 is held until the commit, so a listener never acts on a write that rolled
 back.
 
-SQLite takes one writer: keep a transaction short, and never await a network
-call inside one. It needs SQLite 3.39 or newer; start refuses an older one.
+Keep a transaction short, and never await a network call inside one. SQLite
+3.39 or newer. Load the environment before importing plugins
+(`node --env-file=.env`): the dialect is read on the first `table()`.
 
 ## Rules
 
@@ -43,8 +44,7 @@ interpolated.
 Never order or case-fold non-ASCII text in SQL: SQLite compares code points
 and folds only A to Z. See `text.md`.
 
-A row is not output. What leaves is whatever the route's output schema names,
-so a column added later stays inside until someone decides otherwise.
+A row is not output: what leaves is what the route's output schema names.
 
 ## Proving it
 
