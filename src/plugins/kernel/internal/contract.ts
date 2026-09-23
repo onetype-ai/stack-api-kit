@@ -112,9 +112,9 @@ export type Route<Context, Input extends z.ZodType = z.ZodType> = Describable & 
     /** `countSuccess: false` counts only failed calls, for a route guarding a secret: five wrong passwords is an attack, five right ones is five devices. */
     limit?: { requests: number; seconds: number; countSuccess?: boolean };
 
-    /** What kind of body this takes, JSON unless it says otherwise; `"form"` reads `multipart/form-data`, file parts as `UploadedFile`s. */
+    /** What kind of body this takes, JSON unless it says otherwise; `"form"` reads `multipart/form-data`, file parts as `UploadedFile`s; `"urlencoded"` reads `application/x-www-form-urlencoded` as string fields (a name sent twice as a list), its bytes in `ctx.sent` with `keepsRaw`, as a provider signs them. */
     /** Declared rather than sniffed, so a route expecting JSON can never be handed a file. */
-    accepts?: "json" | "form";
+    accepts?: "json" | "form" | "urlencoded";
 
     /** Request headers this route reads, lowercase; what is not named does not arrive. */
     /** Named rather than handed the lot: a handler reading any header reads the session cookie, and its log then carries a credential. */

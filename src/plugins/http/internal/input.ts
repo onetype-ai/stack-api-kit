@@ -8,12 +8,13 @@ export type RequestInput = {
     uploads?: Readonly<Record<string, UploadedFile | UploadedFile[]>>;
 };
 
-const UNSAFE: ReadonlySet<string> = new Set(["__proto__", "constructor", "prototype"]);
+export const UNSAFE: ReadonlySet<string> = new Set(["__proto__", "constructor", "prototype"]);
 
 /** One object for a route's input schema to judge. */
 export function readInput(request: RequestInput): Record<string, unknown>
 {
-    const merged: Record<string, unknown> = {};
+    // no prototype: a schema field named toString or valueOf that the caller left out reads undefined, never a function
+    const merged = Object.create(null) as Record<string, unknown>;
 
     if (request.body !== null && typeof request.body === "object" && !Array.isArray(request.body))
     {

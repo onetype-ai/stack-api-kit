@@ -6,7 +6,7 @@ import { securityHeaders } from "./headers";
 import { chunkStream } from "./download";
 import { eventStream } from "./events";
 import { cors, type CorsPolicy } from "./origin";
-import { readInput } from "./input";
+import { readInput, UNSAFE } from "./input";
 import { sessionCookie, withSessionKey, type SessionOptions } from "./session";
 import { formBody, type UploadedFile } from "./upload";
 
@@ -152,8 +152,67 @@ type BodyResult =
 
 const TOO_LARGE = { refused: { code: "TOO_LARGE", message: "The request body is too large." }, status: 413 } as const;
 
+/** The most fields a URL-encoded form may carry, so one request of repeated names costs as much to read as its size. */
+const MOST_FIELDS = 1000;
+
+/**
+ * A form a provider posts: the bytes kept as they arrived for its signature, the fields decoded as strings,
+ * a name sent twice as a list, as a query is.
+ */
+async function urlencodedBody(request: Request, route: { keepsRaw?: boolean }, contentType: string, bytes: number): Promise<BodyResult>
+{
+    if (!contentType.startsWith("application/x-www-form-urlencoded"))
+    {
+        return { refused: { code: "UNSUPPORTED_BODY", message: "This route reads a URL-encoded form. Send application/x-www-form-urlencoded." }, status: 415 };
+    }
+
+    const raw = await readBytes(request.body, bytes);
+
+    if (raw === undefined)
+    {
+        return TOO_LARGE;
+    }
+
+    // no prototype, and a repeat pushed rather than copied, so a request of repeated names is read in its own size
+    const fields = Object.create(null) as Record<string, string | string[]>;
+
+    let count = 0;
+
+    for (const [key, value] of new URLSearchParams(new TextDecoder().decode(raw)))
+    {
+        count += 1;
+
+        if (count > MOST_FIELDS)
+        {
+            return { refused: { code: "TOO_LARGE", message: `The form has more than ${String(MOST_FIELDS)} fields.` }, status: 413 };
+        }
+
+        if (UNSAFE.has(key))
+        {
+            continue;
+        }
+
+        const held = fields[key];
+
+        if (held === undefined)
+        {
+            fields[key] = value;
+        }
+        else if (Array.isArray(held))
+        {
+            held.push(value);
+        }
+        else
+        {
+            fields[key] = [held, value];
+        }
+    }
+
+    return { body: fields, uploads: {}, ...(route.keepsRaw === true && { sent: raw }) };
+}
+
 /** The body a route asked for, bounded before anything parses it. */
-async function requestBody(request: Request, route: { method: string; accepts?: "json" | "form"; keepsRaw?: boolean }, bytes: number): Promise<BodyResult>
+async function requestBody(request: Request, route: { method: string; accepts?: "json" | "form" | "urlencoded"; keepsRaw?: boolean }, bytes: number): Promise<BodyResult>
 {
     if (!CARRIES.has(route.method))
     {
@@ -168,6 +227,12 @@ async function requestBody(request: Request, route: { method: string; accepts?: 
     }
 
     const contentType = (request.headers.get("content-type") ?? "").toLowerCase();
+
+    if (route.accepts === "urlencoded")
+    {
+        return urlencodedBody(request, route, contentType, bytes);
+    }
+
     const wantsForm = route.accepts === "form";
     const sentForm = contentType.startsWith("multipart/form-data");
 

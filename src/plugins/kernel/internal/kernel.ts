@@ -108,8 +108,8 @@ export type RegisteredRoute = {
     anyOrigin: boolean;
     limit: { requests: number; seconds: number } | undefined;
 
-    /** What kind of body it takes: JSON unless it declared a form. */
-    accepts: "json" | "form";
+    /** What kind of body it takes: JSON unless it declared a form or a URL-encoded one. */
+    accepts: "json" | "form" | "urlencoded";
 
     /** The request headers this route declared it reads, lowercase. */
     reads: readonly string[];
