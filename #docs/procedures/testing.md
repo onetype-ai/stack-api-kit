@@ -6,9 +6,8 @@ Every plugin tests itself, from outside, through its `api.ts`.
 
 `src/plugins/<name>/tests/`, one file per subject.
 
-A test imports the plugin the way another does, from `../api`, never from
-`../internal/`. One needing an internal is testing implementation: either
-`api.ts` lacks something, or the test does not belong.
+A test imports the plugin as another does, from `../api`, never
+`../internal/`: one needing an internal tests implementation.
 
 ## Shape
 
@@ -18,20 +17,21 @@ assertion: a reader sees what is claimed without opening another file.
 
 ## The database is real
 
-`startTestKernel({ plugins })` opens an in-memory SQLite, reads the tables and
-migrations off the contracts, and starts a kernel with a rate limiter and an http client
-the test reads. Never a stub: a fake accepting what SQLite rejects is where
-bugs hide.
+`startTestKernel({ plugins })` opens an in-memory SQLite with the real
+migrations, an outbox, a rate limiter and an http client the test reads.
+A fake accepting what SQLite rejects is where bugs hide.
 
-Each test builds its own and stops it.
+`configureTestKernels({ resolve })` in a setup file adds what a plugin
+`dependsOn`, so a test names only the plugin it proves. Each test builds
+its own kernel and stops it.
 
 ## What must be proved
 
 Every refusal in `usage.md` has a test that triggers it: an untested refusal
 is a promise.
 
-Every guard has the attack that motivated it: a body claiming another id, an
-output carrying a hash, an error naming a table.
+Every guard has the attack that motivated it: a body claiming another id,
+an output carrying a hash.
 
 Before fixing a bug, write the test that fails because of it.
 
@@ -43,8 +43,7 @@ fail naming the real cause, then put it back.
 ## What a project checks about itself
 
 `Project.findAll()` is the whole self-check: boundaries, wiring, document
-length, and every contract key its procedure never names. It finds its own
-paths, so a project writes one test and no path into here.
+length, and every contract key its procedure never names.
 
 ## Refuses
 

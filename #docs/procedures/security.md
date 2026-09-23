@@ -15,8 +15,8 @@ Mechanical, so no plugin forgets:
 - **Routes are closed** until `public: true`. Not deciding fails shut.
 - **Credentials never reach a handler.** A route reading `cookie` or
   `authorization` is refused at startup, so no log of its input holds one.
-- **Outbound** reaches declared origins only, and never follows a redirect:
-  the kernel checked the first url and never sees the second.
+- **Outbound** reaches declared origins only, and follows a redirect only
+  under `"anywhere"`, checking every hop as it checked the first.
 - **Bodies** are bounded before parsing; secrets compared in constant time.
 - **Writes** are serialised, so one request's query cannot land inside
   another's transaction.

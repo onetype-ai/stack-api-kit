@@ -60,8 +60,8 @@
 > Answers false on a length mismatch before comparing, because `timingSafeEqual` throws on unequal lengths, and that throw is itself a timing signal.
 ### equalsInConstantTime(left: string, right: string): boolean
 
-> Builds the outbound caller: it follows no redirects, reads at most `maxBytes`, gives up after `timeoutMs`, and throws `HttpRequestError` for every failure including a non-2xx status.
-### httpClient(options?: HttpClientOptions): (call: HttpRequest) => Promise<unknown>
+> Builds the outbound caller: it follows no redirects, reads at most `maxBytes`, gives up after `timeoutMs`, dials the address it is pinned to when given one, and throws `HttpRequestError` for every failure including a non-2xx status.
+### httpClient(options?: HttpClientOptions): HttpClient
 
 > What a schema names a file field as, so `z.custom` can check it.
 ### isUploadedFile(value: unknown): value is UploadedFile
@@ -87,8 +87,11 @@
 > Names a unit, and answers the function that marks a number as one.
 ### measure<Unit extends string>(_unit: Unit): (count: number) => Tagged<Unit>
 
-> Where events wait, in the same database as the work they announce.
-### outbox(connection: Database.Database): Outbox
+> Where events wait, in the same database as the work they announce. The process writing a row holds it for
+> `leaseMs` while it delivers; a row one listener refused waits out a backoff and is claimed again, by this process
+> or another, for the listeners that have not heard it.
+### outbox(connection: Database.Database, settings?: { leaseMs?: number }): Outbox
+    leaseMs?: number
 
 > What the caller is told about a failure.
 ### refusalBodyFor(cause: unknown): RefusalBody
@@ -97,7 +100,11 @@
 ### requestId(header: string | undefined): string
 
 > Where later work waits, in the same database as the work that asked for it.
-### schedule(connection: Database.Database): Schedule
+> A claim is a lease: the process renews it while the command runs, and a lease nobody renewed
+> means the process died, so the job is taken again and the lost run counted. Only the holder of
+> a claim may finish or put back what it claimed.
+### schedule(connection: Database.Database, settings?: { leaseMs?: number }): Schedule
+    leaseMs?: number
 
 > What every response carries, whatever it answers.
 ### securityHeaders: Readonly<Record<string, string>>
@@ -120,10 +127,11 @@
     readonly end: "x-session-end"
 
 > Every open connection, and how far what a plugin pushes travels.
-### sockets(kernel: { channels: () => readonly RegisteredChannel[] }, claim?: string): { push: (message: ChannelMessage) => void; subscribe: (identity: Identity | undefined, send: (text: string) => void) => Subscription }
+### sockets(kernel: { channels: () => readonly RegisteredChannel[] }, claim?: string): { push: (message: ChannelMessage) => void; connected: (scope: string, permission: string) => readonly string[]; subscribe: (identity: Identity | undefined, send: (text: string) => void) => Subscription }
     channels: () => readonly RegisteredChannel[]
     }, claim?: string): {
     push: (message: ChannelMessage) => void
+    connected: (scope: string, permission: string) => readonly string[]
     subscribe: (identity: Identity | undefined, send: (text: string) => void) => Subscription
 
 > Boots the whole application, refusing before it serves anything: declared tables or indexes no migration creates, migrations reading another plugin's table without depending on it, tables with no database, and a store missing `migrate` or `close`.
@@ -138,12 +146,15 @@
 
 ## Classes
 
+> An outbound call that failed. Owned here with the `HttpClient` contract it belongs to, so the kernel can read one while following redirects.
 ### HttpRequestError extends Error
-    readonly code: "TIMEOUT" | "ABORTED" | "NETWORK" | "TOO_LARGE" | "MALFORMED" | "STATUS"
+    readonly code: HttpRequestErrorCode
     readonly status: number | undefined
     // How long the partner asked to be left alone, in seconds.
     readonly retryAfter: number | undefined
-    constructor(code: HttpRequestError["code"], message: string, status?: number, cause?: unknown, retryAfter?: number)
+    // Where a redirect pointed, absolute, on REDIRECT.
+    readonly location: string | undefined
+    constructor(code: HttpRequestErrorCode, message: string, status?: number, cause?: unknown, retryAfter?: number, location?: string)
 
 > A refusal, naming the plugin it came from.
 ### KernelFault extends Error
@@ -172,8 +183,54 @@
     readonly body: unknown
     readonly headers: Readonly<Record<string, string>>
     constructor(status: number, body: unknown, headers?: Readonly<Record<string, string>>)
+    // What `Reply.events` gave, read by the kit.
+    events?: EventsReply
+    // What `Reply.document` gave, read by the kit.
+    document?: {
+    policy: DocumentPolicy | undefined
+    etag: string | undefined
+    }
+    // What `Reply.file` gave, read by the kit.
+    file?: {
+    type: FileType
+    filename: string
+    etag: string | undefined
+    }
     // Sends the caller somewhere else.
     static redirect(to: string, permanent?: boolean): Reply
+    // An HTML page, for a route declaring `document`: its policy and etag, when given, replace the route's; `headers` takes only cache-control, vary and content-language.
+    static document(html: string, options?: {
+    policy?: DocumentPolicy
+    status?: number
+    etag?: string
+    headers?: Readonly<Record<string, string>>
+    }): Reply
+    // A download, for a route declaring `file`: text, bytes, or an iterable of chunks sent as they come; `headers` takes only cache-control and vary.
+    static file(body: string | Uint8Array | Iterable<string | Uint8Array> | AsyncIterable<string | Uint8Array>, options: {
+    type: FileType
+    filename: string
+    status?: number
+    etag?: string
+    headers?: Readonly<Record<string, string>>
+    }): Reply
+    // Events, for a route declaring `streams`: `headers` only names the route `sends`, printable, up to 256 characters each;
+    // `end` (1 to 64 printable characters) is written raw as the last `data:` line when the events finish, never after a failure;
+    // `error`, given the neutral message, becomes the data-only frame an unexpected failure ends the stream with, instead of `event: error`.
+    static events(source: Iterable<unknown> | AsyncIterable<unknown>, options?: {
+    headers?: Readonly<Record<string, string>>
+    end?: string
+    error?: (message: string) => unknown
+    }): Reply
+
+> One event of a streamed answer: `data` is what the route's `streams` schema parses, `event` and `id` the SSE fields an EventSource reads.
+### ServerEvent<Data = unknown>
+    readonly data: Data
+    readonly event: string | undefined
+    readonly id: string | undefined
+    constructor(data: Data, options?: {
+    event?: string
+    id?: string
+    })
 
 ## Types
 
@@ -205,10 +262,13 @@
     from: Identity | undefined
     // Which socket pushed it, for a reach of "connection"; absent means none can hear it.
     fromConnection: string | undefined
+    // The identity it is for, for a reach of "identity".
+    to?: string | undefined
 
 > `connection` is the one socket that asked, `viewer` every socket one person has open, `scope` everyone the claim puts together, `everyone` all of them.
 > `everyone` is written out, like `public` on a route, so a world-readable channel is a decision rather than an oversight.
-### ChannelReach = "connection" | "viewer" | "scope" | "everyone"
+> `identity` is every socket of the one person a push names, inside the pusher's scope only.
+### ChannelReach = "connection" | "viewer" | "scope" | "identity" | "everyone"
 
 > Something a plugin can be asked to do, behind the permissions it names.
 ### Command<Context, Input extends z.ZodType = z.ZodType> = Describable &
@@ -230,6 +290,10 @@
     headers: Readonly<Record<string, string>>
     // The bytes of the request body exactly as they arrived, present only where the route declared `keepsRaw`.
     sent: Uint8Array | undefined
+    // How scheduled work and the outbox are doing: counts, names and times, never a job's input or an event's payload. Only for a plugin declaring `watchesWork: true`.
+    work: WorkWatch
+    // Aborts when the caller goes away, as a client closing a stream does. Absent outside a request.
+    signal: AbortSignal | undefined
     // This plugin's own tables: a query naming another plugin's table does not compile.
     // The connection underneath is shared, so the table boundary is the compiler's rather than the database's.
     db: Db
@@ -240,13 +304,25 @@
     // A `tx` inside the callback joins this one rather than opening a second.
     tx: <Result>(run: (ctx: Context<Config, Services, Db>) => Promise<Result>) => Promise<Result>
     // Calls a host this plugin declared in `allowedHosts`.
-    fetch: (call: HttpRequest) => Promise<unknown>
+    fetch: {
+    (call: HttpRequest & {
+    accepts: "stream"
+    }): Promise<StreamedResponse>
+    (call: HttpRequest): Promise<unknown>
+    }
     events: {
     // Announces what happened; inside a transaction it waits for the commit, because an event about rolled-back work is a lie.
     emit: (event: string, payload: unknown) => void
     }
     // Sends a message on a channel this plugin declared, as far as its `reach` says and no further. Nothing waits for it.
-    push: (channel: string, message: unknown) => void
+    push: (channel: string, message: unknown, options?: {
+    // The identity a channel reaching "identity" is pushed to; refused for any other reach.
+    to?: string
+    }) => void
+    presence: {
+    // The distinct identity ids holding `permission` with a socket open in this scope now; per process, like the rate limiter.
+    connected: (permission: string) => readonly string[]
+    }
     hooks: {
     // Runs a hook and answers the first refusal, or undefined.
     run: (hook: string, payload: unknown) => Promise<string | undefined>
@@ -365,6 +441,8 @@
     // Hosts this plugin may call, anything else refused before it dials; `"anywhere"` is for a plugin whose hosts are a row rather than a constant.
     // `"anywhere"` relaxes nothing else: private address, non-https scheme, off-port and credential-in-url stay refused, and the resolved address is checked rather than the name.
     allowedHosts?: readonly string[] | "anywhere"
+    // This plugin reads `ctx.work`: how scheduled work and the outbox are doing. Any other plugin reading it is refused; guard what it answers to platform operators.
+    watchesWork?: boolean
     services?: (ctx: Context<z.infer<Schema>, never, Db>) => Services
     // The endpoints this plugin answers, each carrying its own input schema; a narrower handler input is sound because the kernel parses before it calls.
     routes?: readonly AnyRoute<Context<z.infer<Schema>, NoExtraKeys<Services>, Db>>[]
@@ -401,6 +479,18 @@
     plugins: Plugin[]
     skipped: SkippedFolder[]
 
+> A page's content security policy as named source lists; each is written as one directive, `'none'` where left out for default-src, base-uri and frame-ancestors. A source holding `;`, `,` or whitespace is refused, as are 'unsafe-eval' anywhere and 'unsafe-inline' in scriptSrc.
+### DocumentPolicy
+    defaultSrc?: readonly string[]
+    scriptSrc?: readonly string[]
+    styleSrc?: readonly string[]
+    fontSrc?: readonly string[]
+    connectSrc?: readonly string[]
+    imgSrc?: readonly string[]
+    frameAncestors?: readonly string[]
+    baseUri?: readonly string[]
+    formAction?: readonly string[]
+
 > A drizzle handle over the one shared better-sqlite3 connection, scoped to a single plugin's tables; asking for one for a plugin declaring no tables throws.
 ### DrizzleDb = ReturnType<typeof drizzle>
 
@@ -412,6 +502,16 @@
 ### Event
     describe: string
     schema: z.ZodType
+
+> An event a listener kept refusing, as an operator sees it.
+### FailedEvent
+    id: string
+    plugin: string
+    name: string
+    // The listeners (plugin names) that did hear it.
+    heard: readonly string[]
+    attempts: number
+    failedAt: number
 
 > One scheduled command that ran out of attempts, and why.
 ### FailedJob
@@ -446,6 +546,7 @@
     | "UNDECLARED_PERMISSION"
     | "UNDECLARED_DEPENDENCY"
     | "UNDECLARED_HOST"
+    | "INVALID_CALL"
     | "DUPLICATE_ROUTE"
     | "DUPLICATE_CHANNEL"
     | "DUPLICATE_EVENT"
@@ -466,6 +567,9 @@
     detail?: Readonly<Record<string, unknown>>
     cause?: unknown
 
+> What a download may be sent as: never a type a browser would render and run.
+### FileType = "text/csv" | "text/plain" | "application/json" | "application/pdf" | "application/zip" | "application/octet-stream"
+
 > The Hono app `serve` returns, with the kernel's routes, CORS and security headers already mounted.
 ### HonoApp = ReturnType<typeof serve>
 
@@ -474,13 +578,17 @@
     describe: string
     schema: z.ZodType
 
-> What the kernel needs to call another server.
-### HttpClient = (call: HttpRequest) => Promise<unknown>
+> What the kernel needs to call another server; `pin`, when given, is the address the kernel checked, and the call is dialled there rather than wherever the name resolves now.
+### HttpClient = (call: HttpRequest, pin?: ResolvedAddress) => Promise<unknown>
 
 > How the built-in caller is configured: `timeoutMs` defaults to 10000, `maxBytes` to 5000000, and `headers` is called per request so a rotating credential stays fresh.
 ### HttpClientOptions
     timeoutMs?: number
+    // The most any one call may ask for with its own `timeoutMs`: 600000 when left out.
+    mostTimeoutMs?: number
     maxBytes?: number
+    // The most any one call may ask for with its own `maxBytes`: `maxBytes` when left out, so no call reads more unless this is raised.
+    mostMaxBytes?: number
     headers?: (() => Readonly<Record<string, string>>) | undefined
 
 > The verbs a route may answer.
@@ -492,9 +600,23 @@
     url: string
     body?: unknown
     // What the answer is read as, json when left out. Declared, never sniffed, so a host that changes content type changes nothing here.
-    accepts?: "json" | "text"
+    // `"stream"` answers a `StreamedResponse` once the headers arrive, the body read as it comes; a status outside 2xx still throws before any of it is handed over.
+    accepts?: "json" | "text" | "stream"
     headers?: Readonly<Record<string, string>> | undefined
     signal?: AbortSignal | undefined
+    // How long the whole call may take, reading included: the client's default when left out, never more than its `mostTimeoutMs`.
+    timeoutMs?: number | undefined
+    // The longest silence allowed between two chunks of a streamed answer.
+    idleMs?: number | undefined
+    // The most bytes this answer may carry, streamed or read whole: a whole number above 0. The client's `maxBytes` when left out; more than its `mostMaxBytes` is clamped to it.
+    maxBytes?: number | undefined
+    // What a 301, 302, 303, 307 or 308 does, only under allowedHosts "anywhere". "refuse" (the default) throws NETWORK.
+    // "manual" hands it back: a streamed answer with its `status` and absolute `location`, or, read whole, `HttpRequestError` REDIRECT carrying them.
+    // "follow" dials each hop checked like a first call, turning 303, and a 301 or 302 after a POST, into a GET without a body
+    // as the fetch standard does, and dropping this call's headers on another origin. `timeoutMs` then bounds the whole chain, 30000 when left out.
+    redirects?: "refuse" | "manual" | "follow" | undefined
+    // How many hops "follow" takes before throwing TOO_MANY_REDIRECTS: 5 when left out, at most 10.
+    mostRedirects?: number | undefined
 
 > What `identifies` answers: an identity without permissions, which `grants` fills so nobody grants themselves.
 > `permissions?: never` is load-bearing: without it a plugin may write permissions in and the kernel drops them silently.
@@ -531,7 +653,13 @@
     // What the schedule did that nobody is waiting on.
     work: {
     failed: () => readonly FailedJob[]
+    // Events a listener kept refusing, kept in the outbox.
+    failedEvents: () => Promise<readonly FailedEvent[]>
+    // Delivers one dead letter again, to the listeners that have not heard it; false when there is none by that id.
+    retryFailed: (id: string) => Promise<boolean>
     }
+    // Hands what the outbox says is due to the listeners that have not heard it, once, and waits for it.
+    redeliver: () => Promise<number>
     // Runs whatever the schedule says is due, once, and waits for it.
     due: () => Promise<number>
     run: (command: string, input: unknown, identity?: Identity) => Promise<void>
@@ -544,6 +672,8 @@
     // What holds the open sockets. Without one, ctx.push throws.
     sockets?: Sockets
     httpClient?: HttpClient
+    // How a name becomes addresses for a plugin reaching "anywhere"; the platform's resolver when left out.
+    lookup?: Lookup
     log?: LogFn
     // What counts requests against a route's declared limit.
     rateLimiter?: RateLimiter
@@ -555,6 +685,12 @@
     schedule?: Schedule
     // How often to ask the schedule what is due, in milliseconds.
     beatMs?: number
+    // False keeps the schedule for `commands.later` without running what is due, for a process that only enqueues.
+    runsSchedule?: boolean
+    // How often to hand failed events to the listeners that have not heard them, in milliseconds: 5000 when left out.
+    outboxBeatMs?: number
+    // How long a scheduled command is held while it runs, in milliseconds: ten leases when left out; past it the lease runs out and the job is taken again, counted.
+    jobRunMs?: number
     // How many times a scheduled command may throw before it is abandoned.
     mostAttempts?: number
     // How a declared scope becomes a condition the store understands.
@@ -563,6 +699,10 @@
     grantedBy?: string
     // How long a hook participant has to answer, in milliseconds.
     hookTimeoutMs?: number
+    // How many streams one caller may hold open at once (4 when left out); one more answers 429 TOO_MANY_STREAMS before its handler runs.
+    mostStreamsPerCaller?: number
+    // How long `stop` waits for open streams to send their final RESTARTING event, in milliseconds (5000 when left out).
+    streamDrainMs?: number
 
 > One request, as it reaches the kernel.
 ### KernelRequest
@@ -576,12 +716,20 @@
     sent?: Uint8Array | undefined
     // Where it came from when nobody is signed in. Only a rate limit reads it.
     from?: string | undefined
+    // Aborts when the caller goes away; handed to the route as `ctx.signal`.
+    signal?: AbortSignal | undefined
+    // The request's If-None-Match, which the kit answers itself: a GET whose ETag matches gets a 304.
+    ifNoneMatch?: string | undefined
 
 > What the kernel answers: a status, and a body already safe to send.
 ### KernelResponse
     status: number
     body: unknown
     headers?: Readonly<Record<string, string>>
+    // Whether a declared document answered, so the body is sent as HTML under its own policy.
+    document?: boolean
+    // Whether a declared file answered, so the body (text, bytes or chunks) is sent as a download.
+    file?: boolean
 
 > What the kernel needs to reach storage.
 ### KernelStore
@@ -618,6 +766,9 @@
     warn: (line: string, about?: Readonly<Record<string, unknown>>) => void
     error: (line: string, about?: Readonly<Record<string, unknown>>) => void
 
+> How a name becomes addresses: every one of them, as `dns.lookup(name, { all: true })` answers.
+### Lookup = (hostname: string) => Promise<readonly ResolvedAddress[]>
+
 > Where one plugin keeps its migrations.
 ### MigrationSource
     plugin: string
@@ -642,14 +793,42 @@
     drainMs?: number
 
 > Where events wait, so one is never lost between a commit and its delivery.
-> Delivery is at least once, not exactly once: one listener failing keeps the row, and the next start hands the event to every listener again. A listener that charges, sends or bills must recognise what it already did.
+> Delivery is at least once per listener: a listener that throws is retried in the running process with backoff (2^n s, 300 s at most),
+> and only the listeners that have not heard the event are called again. After `mostAttempts` the row stays as a dead letter,
+> logged once, until `work.retryFailed`. A listener that charges, sends or bills must recognise what it already did (the event id).
+> Order holds within one event's listeners only: a retried event can reach a listener after a later one.
 ### Outbox
     // Writes events inside the transaction that emitted them.
     save: (db: unknown, messages: readonly OutboxMessage[]) => void
     // Marks one delivered.
     markSent: (id: string) => Promise<void>
-    // What was kept but never marked sent. Read once, at startup.
+    // What was kept but never marked sent. Read once, at startup, by a kernel whose outbox cannot `claim`.
     pending: () => Promise<readonly OutboxMessage[]>
+    // Leases what is due for another delivery: failed before and waiting out its backoff, or never cleared after a grace period.
+    claim?: (now: number, limit: number) => Promise<readonly (OutboxMessage & {
+    heard: readonly string[]
+    attempts: number
+    })[]>
+    // How long a row stays with the process delivering it without a renewal.
+    leaseMs?: number
+    // Keeps the lease on a row this process is delivering; false when another has taken it.
+    renew?: (id: string, now: number) => Promise<boolean>
+    // One listener heard it: kept at once, so a process that dies mid-delivery repeats only the rest.
+    markHeard?: (id: string, listener: string) => Promise<void>
+    // Some listeners threw: keep which heard it, and try the rest again at `at`.
+    markRetry?: (id: string, heard: readonly string[], attempts: number, at: number) => Promise<void>
+    // A listener kept throwing: keep the row as a dead letter.
+    markDead?: (id: string, heard: readonly string[], attempts: number, at: number) => Promise<void>
+    // The dead letters, without their payloads.
+    failed?: () => Promise<readonly FailedEvent[]>
+    // Puts one dead letter back to be delivered now; false when no dead letter has that id.
+    revive?: (id: string, now: number) => Promise<boolean>
+    // How many rows wait for their first delivery, are being retried, or are dead letters.
+    counts?: (now: number) => Promise<{
+    waiting: number
+    retrying: number
+    dead: number
+    }>
 
 > One event, as it waits to be delivered.
 ### OutboxMessage
@@ -692,6 +871,8 @@
     input: unknown
     at: number
     attempts: number
+    // Which claim holds it, when the schedule leases per claim.
+    lease?: string
 
 > What decides whether one identity has any allowance left on one route.
 ### RateLimiter
@@ -724,6 +905,10 @@
     // Field-level detail, only ever from an input schema.
     fields?: Readonly<Record<string, string>>
 
+> Whether an address is one the outside world may be reached at.
+> Why a refused address was refused, for a plugin to tell its caller.
+### RefusalReason = "unresolvable" | "blocked_address" | "refused_url"
+
 > One channel a plugin declared, as a reader of the api sees it.
 ### RegisteredChannel
     plugin: string
@@ -732,18 +917,39 @@
     requires: readonly string[]
 
 > A route, and the plugin it came from.
-### RegisteredRoute = { plugin: string; method: HttpMethod; path: string; describe: string; requires: readonly string[]; public: boolean; limit: { requests: number; seconds: number } | undefined; accepts: "json" | "form"; reads: readonly string[]; keepsRaw: boolean }
+### RegisteredRoute = { plugin: string; method: HttpMethod; path: string; describe: string; requires: readonly string[]; public: boolean; anyOrigin: boolean; limit: { requests: number; seconds: number } | undefined; accepts: "json" | "form" | "urlencoded"; reads: readonly string[]; keepsRaw: boolean }
+
+> One address a name resolves to.
+### ResolvedAddress
+    address: string
+    family: number
 
 > One endpoint: `output` is a whitelist of what may leave, so a column added to a table tomorrow does not appear in a response by itself.
 ### Route<Context, Input extends z.ZodType = z.ZodType> = Describable &
     method: HttpMethod
     path: string
     input: Input
-    output: z.ZodType
+    // What one answer may carry. Declared with `streams` as well, the route answers JSON when `handle` answers a value and events when it answers an iterable or `Reply.events`.
+    output?: z.ZodType
+    // What each event of a streamed answer may carry, parsed like `output`: `handle` answers an iterable, sync or async, of values or `ServerEvent`s, sent as Server-Sent Events. Requires, limit, input and scope are decided before the first event; a failure after it ends the stream with an `error` event.
+    streams?: z.ZodType
+    // Declares an HTML page instead of `output`: `handle` answers `Reply.document(html, …)` or a string. Only such a route may send a policy of its own; frame-ancestors other than 'none' needs `framable: true`.
+    document?: {
+    policy?: DocumentPolicy
+    framable?: boolean
+    }
+    // Declares a download instead of `output`: `handle` answers `Reply.file(body, { type, filename })`, always sent as an attachment, as one of the types named here.
+    file?: {
+    types: readonly FileType[]
+    }
+    // How long one stream of this route may stay open, in seconds (300 when left out); it then ends with an `error` event of code EXPIRED, and the client reconnects, which checks the caller again.
+    streamSeconds?: number
     // What the caller must hold. Every route says something: name a permission, mark it `public`, or write `requires: []` for one any signed-in caller may reach. Leaving it out is refused at startup.
     requires?: readonly string[]
     // Whether an unauthenticated caller may reach this. Absent means no, so forgetting to think about it fails shut.
     public?: boolean
+    // Whether any website may read the answer from a browser: CORS `*`, never with credentials, and the server reads no session for it. Only a public GET that reads no credential header; anything else is refused at startup. For what an embed on another site fetches, the same for everyone.
+    anyOrigin?: boolean
     // Requests per window for one caller.
     // `countSuccess: false` counts only failed calls, for a route guarding a secret: five wrong passwords is an attack, five right ones is five devices.
     limit?: {
@@ -751,12 +957,14 @@
     seconds: number
     countSuccess?: boolean
     }
-    // What kind of body this takes, JSON unless it says otherwise; `"form"` reads `multipart/form-data`, file parts as `UploadedFile`s.
+    // What kind of body this takes, JSON unless it says otherwise; `"form"` reads `multipart/form-data`, file parts as `UploadedFile`s; `"urlencoded"` reads `application/x-www-form-urlencoded` as string fields (a name sent twice as a list), its bytes in `ctx.sent` with `keepsRaw`, as a provider signs them.
     // Declared rather than sniffed, so a route expecting JSON can never be handed a file.
-    accepts?: "json" | "form"
+    accepts?: "json" | "form" | "urlencoded"
     // Request headers this route reads, lowercase; what is not named does not arrive.
     // Named rather than handed the lot: a handler reading any header reads the session cookie, and its log then carries a credential.
     reads?: readonly string[]
+    // Response headers this route sets beyond the kit's short list (location, retry-after, content-disposition, vary, etag, cache-control and the session headers), lowercase. A header governing how a browser treats the response is never one a route may name.
+    sends?: readonly string[]
     // Whether this route also sees the bytes exactly as they arrived, as `ctx.sent`; `input` is still parsed and still passes the schema.
     // For signature checks: parsing reorders keys and drops whitespace, so `JSON.stringify` of the parsed body is a different string and no canonical form recovers the original.
     // Declared rather than always present, because bytes nobody asked for are bytes a log can carry.
@@ -768,35 +976,31 @@
 ### Schedule
     // Writes one, inside the transaction that asked for it when there is one.
     save: (db: unknown, job: QueuedJob) => void
-    // Claims what is due, at most `limit`, marking each taken.
+    // Claims what is due, at most `limit`, marking each taken; a job whose lease ran out is claimed again with its lost run counted.
     claim: (now: number, limit: number) => Promise<readonly QueuedJob[]>
-    // It ran. Forget it.
-    markDone: (id: string) => Promise<void>
-    // It threw. Put it back for `at`, having counted the attempt.
-    markFailed: (id: string, at: number) => Promise<void>
-    // It threw too many times. Stop trying.
-    giveUp: (id: string) => Promise<void>
+    // How long a claim holds without `renew`; the kernel renews every third of it while the command runs.
+    leaseMs?: number
+    // How many jobs are due, waiting for later, running within their lease, and held by a lease that ran out.
+    counts?: (now: number) => Promise<{
+    due: number
+    later: number
+    running: number
+    abandoned: number
+    }>
+    // Keeps a claim; false when the lease was taken since, and this run should stop counting on it.
+    renew?: (id: string, now: number, lease?: string) => Promise<boolean>
+    // It ran. Forget it; with `lease`, only if that claim still holds it.
+    markDone: (id: string, lease?: string) => Promise<void>
+    // It threw. Put it back for `at`, having counted the attempt; with `lease`, only if that claim still holds it.
+    markFailed: (id: string, at: number, lease?: string) => Promise<void>
+    // It threw too many times. Stop trying; with `lease`, only if that claim still holds it.
+    giveUp: (id: string, lease?: string) => Promise<void>
 
 > How a scope becomes a condition the database understands.
 ### ScopeFilter = (table: string, column: string, value: string) => unknown
 
 > What `serve` needs to know.
-### ServerOptions
-    kernel: Kernel
-    // Who is calling, where the project answers rather than a plugin.
-    identify?: ((c: Context$1) => Identity | undefined | Promise<Identity | undefined>) | undefined
-    // What to count an anonymous identity by for a rate limit; the project decides, because reading a forwarded header blindly lets anyone spend anyone's budget.
-    from?: ((c: Context$1) => string) | undefined
-    origins?: readonly string[]
-    methods?: readonly string[]
-    headers?: readonly string[]
-    maxAge?: number
-    // The largest body accepted, before it is parsed.
-    bodyBytes?: number
-    // What a session is kept in, when it is a cookie.
-    session?: SessionOptions | undefined
-    // Where a line goes.
-    log?: ((level: "info" | "warn" | "error", line: string, about?: Readonly<Record<string, unknown>>) => void) | undefined
+### ServerOptions = { kernel: Kernel; identify?: ((c: Context$1) => Identity | undefined | Promise<Identity | undefined>) | undefined; from?: ((c: Context$1) => string) | undefined; origins?: readonly string[]; methods?: readonly string[]; headers?: readonly string[]; maxAge?: number; bodyBytes?: number; session?: SessionOptions | undefined; log?: ((level: "info" | "warn" | "error", line: string, about?: Readonly<Record<string, unknown>>) => void) | undefined; readiness?: (() => Promise<{ ready: boolean } & Readonly<Record<string, unknown>>>) | undefined }
 
 > How a route's answer becomes a session cookie.
 ### SessionOptions
@@ -817,20 +1021,26 @@
 > What holds the open sockets, when anything does.
 ### Sockets
     push: (sending: ChannelMessage) => void
+    // Who holding a permission has a socket open in a scope, for `ctx.presence`.
+    connected?: (scope: string, permission: string) => readonly string[]
 
 > What `start` answers: the running kernel and store, the Hono app and its `fetch`, `sockets` only when sockets were asked for, and `stop`, which stops the kernel and closes the database.
 ### StartedApp = { kernel: Kernel; store: Store; app: ReturnType<typeof serve>; fetch: (request: Request) => Response | Promise<Response>; sockets: { subscribe: (identity: Identity | undefined, send: (text: string) => void) => Subscription } | undefined; stop: () => Promise<void> }
 
 > Everything `start` takes; `outbox` and `schedule` are opt-in, while `sockets` and `limits` are on unless set to false.
-### StartOptions = { plugins: readonly Plugin[]; database?: DatabaseOptions | Store | undefined; config?: Readonly<Record<string, unknown>> | undefined; sockets?: boolean | { claim: string } | undefined; identify?: ((kernel: Kernel) => ServerOptions["identify"]) | undefined; http?: Omit<ServerOptions, "kernel" | "identify" | "log"> | undefined; httpClient?: HttpClientOptions | HttpClient | undefined; rateLimiter?: RateLimiter | undefined; limits?: boolean | undefined; outbox?: boolean | undefined; schedule?: boolean | undefined; log?: Logger | undefined }
+### StartOptions = { plugins: readonly Plugin[]; database?: DatabaseOptions | Store | undefined; config?: Readonly<Record<string, unknown>> | undefined; sockets?: boolean | { claim: string } | undefined; identify?: ((kernel: Kernel) => ServerOptions["identify"]) | undefined; http?: Omit<ServerOptions, "kernel" | "identify" | "log"> | undefined; httpClient?: HttpClientOptions | HttpClient | undefined; lookup?: Lookup | undefined; rateLimiter?: RateLimiter | undefined; mostStreamsPerCaller?: number | undefined; streamDrainMs?: number | undefined; limits?: boolean | undefined; outbox?: boolean | undefined; schedule?: boolean | "enqueue" | undefined; jobLeaseMs?: number | undefined; jobRunMs?: number | undefined; outboxLeaseMs?: number | undefined; log?: Logger | undefined }
 
 > What a project holds after opening a database.
 ### Store<Db = unknown> =
     forPlugin: (plugin: string) => Db
-    // An outbox in this same database, when the store can hold one.
-    outbox?: () => Outbox
-    // A schedule in this same database, for work asked for later.
-    schedule?: () => Schedule
+    // An outbox in this same database, when the store can hold one; the process writing a row holds it for `leaseMs` (60000 when left out) while it delivers.
+    outbox?: (settings?: {
+    leaseMs?: number
+    }) => Outbox
+    // A schedule in this same database, for work asked for later; each claim holds for `leaseMs` (60000 when left out) unless renewed.
+    schedule?: (settings?: {
+    leaseMs?: number
+    }) => Schedule
     // How a declared scope becomes a condition over the tables it was given.
     createScopeFilter?: () => ScopeFilter
     tx: <Result>(plugin: string, run: (db: unknown) => Promise<Result>) => Promise<Result>
@@ -842,6 +1052,16 @@
 > What building a store needs: where the file is, and who owns what.
 ### StoreOptions = DatabaseOptions &
     tables: Readonly<Record<string, TablesByName>>
+
+> A streamed answer: the body arrives chunk by chunk, still bounded by the call's bytes, time limits and signal; leaving the loop early cancels it.
+### StreamedResponse
+    status: number
+    headers: Readonly<Record<string, string>>
+    // The address that answered: the last hop's, after redirects "follow".
+    url: string
+    // Where a redirect handed back by redirects "manual" points, absolute; its body is empty.
+    location?: string
+    body: AsyncIterable<Uint8Array>
 
 > One open connection, as whoever holds the wire sees it.
 ### Subscription
@@ -855,6 +1075,8 @@
     unlisten: (channel: string) => void
     // The connection closed: it hears nothing more.
     close: () => void
+    // The same socket's caller, identified again: what it may hear and whether it counts as present follow at once.
+    reidentify: (identity: Identity | undefined) => void
 
 > One plugin's drizzle tables keyed by the name its contract declares them under; the values are opaque here so the kit never depends on a drizzle table's shape.
 ### TablesByName = Readonly<Record<string, unknown>>
@@ -871,9 +1093,41 @@
     type: string
     bytes: Uint8Array
 
+> How scheduled work and the outbox are doing, as an operator sees it: counts, names and times, never a job's input or an event's payload.
+### WorkWatch
+    health: () => Promise<{
+    jobs: {
+    due?: number
+    later?: number
+    running?: number
+    abandoned?: number
+    failed: number
+    }
+    outbox: {
+    waiting?: number
+    retrying?: number
+    dead?: number
+    }
+    }>
+    // Scheduled commands given up in this process, newest last, without their input.
+    failedJobs: () => readonly {
+    plugin: string
+    command: string
+    attempts: number
+    at: number
+    error: string
+    }[]
+    failedEvents: () => Promise<readonly FailedEvent[]>
+    retryFailed: (id: string) => Promise<boolean>
+
 # @onetype/stack-api-kit/testing
 
 ## Functions
+
+> Registers, once per test process (a setup file), where missing dependencies come from. `resolve` runs only when a kernel names a
+> dependency the test did not pass, and once: a test that passes every plugin it needs boots exactly as before.
+### configureTestKernels(configuring: { resolve: () => Promise<TestKernelFixture> }): void
+    resolve: () => Promise<TestKernelFixture>
 
 > An identity a test controls.
 ### createIdentity(permissions?: readonly string[], id?: string, claims?: Readonly<Record<string, unknown>>): Identity
@@ -935,8 +1189,8 @@
     // Where a closed route carries no budget, so one caller may spend the whole process on it.
     findUnboundedRoutes: (kernel: Kernel, excused?: readonly string[]) => StartedProblem[]
 
-> Boots a kernel on an in-memory database with migrations already applied, recording every event, log line and outbound call; it throws on an option it does not take, and outbound calls answer `{}` unless `respondWith` says otherwise.
-### startTestKernel(options: TestKernelOptions): Promise<TestKernel>
+> Boots a kernel on an in-memory database with migrations already applied; a dependency the test did not pass is added from the fixture `configureTestKernels` registered, with the fixture's config under the test's own, field by field. It records every event, log line and outbound call, throws on an option it does not take, and outbound calls answer `{}` unless `respondWith` says otherwise.
+### startTestKernel(asked: TestKernelOptions): Promise<TestKernel>
 
 > Pulls the table declarations and migration sources out of a list of plugins, for a test building its own store rather than letting `startTestKernel` build one.
 ### testTables: { tables: (plugins: readonly Plugin[]) => Readonly<Record<string, Readonly<Record<string, unknown>>>>; migrations: (plugins: readonly Plugin[]) => { plugin: string; from: string }[] }
@@ -945,6 +1199,11 @@
     plugin: string
     from: string
     }[]
+
+> The plugins with every transitive dependsOn added from the fixture: a plugin passed wins by name (a stand-in stays one, its own
+> dependsOn closed over too), dependencies come first, and otherwise the order given holds. Unchanged when nothing is missing or
+> no fixture is registered; throws naming the plugin and the dependency when neither the test nor the fixture has it.
+### withDependencies(plugins: readonly Plugin[]): Promise<Plugin[]>
 
 ## Types
 
@@ -968,9 +1227,23 @@
     url: string
     body?: unknown
     // What the answer is read as, json when left out. Declared, never sniffed, so a host that changes content type changes nothing here.
-    accepts?: "json" | "text"
+    // `"stream"` answers a `StreamedResponse` once the headers arrive, the body read as it comes; a status outside 2xx still throws before any of it is handed over.
+    accepts?: "json" | "text" | "stream"
     headers?: Readonly<Record<string, string>> | undefined
     signal?: AbortSignal | undefined
+    // How long the whole call may take, reading included: the client's default when left out, never more than its `mostTimeoutMs`.
+    timeoutMs?: number | undefined
+    // The longest silence allowed between two chunks of a streamed answer.
+    idleMs?: number | undefined
+    // The most bytes this answer may carry, streamed or read whole: a whole number above 0. The client's `maxBytes` when left out; more than its `mostMaxBytes` is clamped to it.
+    maxBytes?: number | undefined
+    // What a 301, 302, 303, 307 or 308 does, only under allowedHosts "anywhere". "refuse" (the default) throws NETWORK.
+    // "manual" hands it back: a streamed answer with its `status` and absolute `location`, or, read whole, `HttpRequestError` REDIRECT carrying them.
+    // "follow" dials each hop checked like a first call, turning 303, and a 301 or 302 after a POST, into a GET without a body
+    // as the fetch standard does, and dropping this call's headers on another origin. `timeoutMs` then bounds the whole chain, 30000 when left out.
+    redirects?: "refuse" | "manual" | "follow" | undefined
+    // How many hops "follow" takes before throwing TOO_MANY_REDIRECTS: 5 when left out, at most 10.
+    mostRedirects?: number | undefined
 
 > Who this is, as whatever the project decided that means. Nobody signed in is no identity at all.
 ### Identity
@@ -1033,6 +1306,8 @@
     body: unknown
     // What was sent, with a credential's value replaced by `"[redacted]"`.
     headers: Readonly<Record<string, string>> | undefined
+    // The address the call was dialled at, for a plugin reaching "anywhere".
+    address?: string
 
 > One enum name two plugins each declare with overlapping but unequal members: `shared` is in both, `apart` in only one.
 ### SplitVocabulary
@@ -1070,11 +1345,16 @@
     drain: (maxRounds?: number) => Promise<void>
     stop: () => Promise<void>
 
+> Where a test kernel finds the plugins a test did not pass: every plugin the project holds, and the config each boots with there (a non-secret fixture).
+### TestKernelFixture
+    plugins: readonly Plugin[]
+    config: Readonly<Record<string, Readonly<Record<string, unknown>>>>
+
 ### TestKernelOptions
     plugins: readonly Plugin[]
     config?: Readonly<Record<string, unknown>>
     respondWith?: (request: HttpRequest) => unknown
-    // Whether events are kept until a listener has recorded them, as `start({ outbox: true })` does.
+    // Whether events are kept until a listener has recorded them, as `start({ outbox: true })` does; on unless `false`, as a deployment runs.
     outbox?: boolean
     // Whether a plugin may ask for work later, as `start({ schedule: true })`.
     schedule?: boolean
@@ -1082,6 +1362,8 @@
     sockets?: boolean
     // What the clock answers, so a test can reach tomorrow.
     now?: () => number
+    // What a name resolves to for a plugin reaching "anywhere"; every name answers 93.184.215.14 when left out, so no test asks real DNS.
+    lookup?: Lookup
 
 > One contract key a procedure never documents; exported for naming only, since `findUndocumentedKeys` answers plain strings.
 ### UndocumentedKey

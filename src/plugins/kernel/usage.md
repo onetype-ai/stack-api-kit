@@ -2,13 +2,12 @@
 
 ## Description
 
-The plugin runtime an API builds on: registry, checks, routes, events,
-hooks, identity.
+The plugin runtime: registry, checks, routes, events, hooks, identity.
 
 ## Purpose
 
 A server grows into one thing unless something holds the seams: a plugin
-declares what crosses, the rest is refused.
+declares what crosses, and the rest is refused.
 
 ## Usage
 
@@ -24,29 +23,28 @@ export default definePlugin.over<Rows, Services>()("items", {
 });
 ```
 
-`over` names what `ctx.db` and `ctx.services` are. `input` is body, query and
-path, plus files where `accepts: "form"`; `reads` the headers. `output` is a
-whitelist. A route is closed until `public`; `limit` needs a `rateLimiter`.
+`over` types `ctx.db` and `ctx.services`. `input` is body, query and path;
+`reads` names headers a handler sees, `sends` ones it may set. `output` is a
+whitelist; `streams`, `document`, `file`: `procedures/answers.md`. A route is
+closed until `public`; `limit` needs a `rateLimiter`.
 
-One plugin says who is calling, one what it means:
+Who is calling, and what that means, are one plugin each:
 
 ```ts
 identifies: (ctx, request) => Sessions.of(ctx, request.headers.get("cookie")),
 grants: (ctx, who) => Roles.of(ctx, who.id),
 ```
 
-`identifies` names no permission: `grants` fills them, so none grants itself.
-`grantsSupported` grants nothing: startup reads it to refuse a route nobody
-could reach. Without it, any declared permission passes.
-
-`measure("bytes")` marks a number with what it counts: bytes where gigabytes
-were wanted does not compile.
+`ctx.push` reaches as far as the channel's `reach`: `viewer`, `scope`, one
+`identity` (`{ to }`) in the scope, or `everyone`; `ctx.presence` says who
+is connected. Work and the outbox: `procedures/work.md`.
 
 ## Refuses
 
-At startup: anything declared twice, named outside its own namespace, or
-referenced that nobody declared; a cycle; a route nobody can reach; a
-`limit` with no `rateLimiter`; a handler reading a credential header.
+At startup: anything declared twice, outside its namespace, or referenced
+and undeclared; a cycle; an unreachable route, or one answering two ways; a
+`limit` with no `rateLimiter`; reading a credential or sending a kit header.
 
-At runtime: an undeclared event or host, a bad payload, a missing permission,
-a caller past budget. Every refusal names the plugin and the fix.
+At runtime: an undeclared event or host, a bad payload, a missing
+permission, a caller past budget, `ctx.work` without `watchesWork`. Every
+refusal names the plugin and the fix.

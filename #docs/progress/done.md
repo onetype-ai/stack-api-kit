@@ -145,3 +145,26 @@ was trusted.
 `boot`, `Host`, `offer`/`take` and the six plugin factories. The composition
 their documentation described had never run and could not: `httpPlugin` needed
 a started kernel, and `kernelPlugin` offered a factory. `mount` does the work.
+
+## 8.1: what the first project built on it needed
+
+A project of about thirty plugins ran on 8.0 with its own patch over the
+bundle. Everything generic in that patch is here, each area with its tests
+and each test watched to fail:
+
+- **Outbound:** "anywhere" resolves every answer and dials the address it
+  checked; streamed answers; per-call time and size limits; redirects
+  followed only where every hop is checked again.
+- **Answers:** Server-Sent Events, JSON-or-stream per request, HTML pages
+  under their own policy, downloads, ETag and 304 on every GET, bounded
+  records in output, a header allow-list with `sends`, 204 without a body,
+  `anyOrigin` for public reads, URL-encoded forms, `/health` and readiness.
+- **Realtime:** a push to one named person, presence, re-identifying a socket.
+- **Work:** a job claim is a lease, `schedule: "enqueue"`, events redelivered
+  to the listeners that missed them, dead letters, `ctx.work`.
+- **Tests:** the test kernel keeps an outbox, and adds what a plugin depends
+  on from a registered fixture.
+
+Found while taking it: a plugin with no tables could not open a transaction,
+so with an outbox it could not emit at all; a session cookie on a request
+with a body answered 500; a 204 sign-out would have kept its cookie.

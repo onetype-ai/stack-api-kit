@@ -25,22 +25,21 @@ const app = serve({
 export default { fetch: app.fetch, port: 3000 };
 ```
 
-- A body over `bodyBytes` (1 MB default) is refused before parsing, form
-  included, so a bomb never reaches a parser.
+- A body over `bodyBytes` (1 MB) is refused before anything parses it.
 - `identify` runs once per request; throwing answers 401, not 500.
 - `session` turns a route's `x-session-key` (with `x-session-expires`) into a
-  `HttpOnly` cookie and takes the headers back out; `x-session-end` clears
-  one. Left out, they leave as they are, so a token client is unchanged.
-- Query and path parameters reach the route as one object under the body; its
-  input schema decides what it means. A header arrives only where the route
-  named it in `reads`.
-- `accepts: "form"` reads `multipart/form-data` through the platform: text
-  parts become fields, file parts `UploadedFile`s. A filename is the caller's
-  claim, stripped of a path.
+  `HttpOnly` cookie, `x-session-end` clears it. Left out, they pass as sent.
+- Query and path parameters reach the route as one object over the body,
+  with no prototype; its input schema decides what it means.
+- `accepts: "form"` reads `multipart/form-data`: file parts become
+  `UploadedFile`s, a filename stripped of a path. `"urlencoded"` reads string
+  fields, a repeated name as a list; `keepsRaw` keeps the bytes to verify.
+- `/live` and `/health` answer 200; `/ready` answers `readiness()` once the
+  kernel started, 503 when not ready or when it throws.
 - Each response carries `x-request-id`, as does every log line for it.
 
 ## Refuses
 
 - An origin not in `origins`, with no CORS headers rather than permissive.
-- A body of the wrong kind, 415, or one that claims JSON and is not, 400.
+- A body of the wrong kind, 415; one claiming JSON and not, 400.
 - Anything the kernel refuses, in its own shape: `code`, `message`, `fields`.

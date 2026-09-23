@@ -1,6 +1,6 @@
 {
     "name": "@onetype/stack-api-kit",
-    "version": "8.0.1",
+    "version": "8.1.0",
     "type": "module",
     "sideEffects": false,
     "exports": {
@@ -75,6 +75,7 @@
         "dist",
         "schema.md",
         "README.md",
+        "CHANGELOG.md",
         "#docs",
         "!#docs/progress"
     ],
