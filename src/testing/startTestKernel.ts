@@ -44,11 +44,11 @@ export type TestKernelOptions = {
     config?: Readonly<Record<string, unknown>>;
     respondWith?: (request: HttpRequest) => unknown;
 
-    /** Whether events are kept until a listener has recorded them, as `start({ outbox: true })` does. Left out it is off, and 9.0 turns it on: pass `true` to test as a deployment with an outbox runs. */
+    /** Whether events are kept until a listener has recorded them, as `start({ outbox: true })` does: on unless `false`, as a deployment runs. */
     outbox?: boolean;
 
-    /** Holds every reply to the header allow-list, as `start({ strictReplyHeaders: true })` does. */
-    strictReplyHeaders?: boolean;
+    /** Every reply is held to the header allow-list since 9.0; `true` changes nothing, `false` is refused. */
+    strictReplyHeaders?: true;
 
     /** Whether a plugin may ask for work later, as `start({ schedule: true })`. */
     schedule?: boolean;
@@ -115,9 +115,6 @@ export const testTables = {
 /** Every option `startTestKernel` knows. */
 const TAKES: ReadonlySet<string> = new Set(["plugins", "config", "respondWith", "outbox", "schedule", "sockets", "now", "lookup", "strictReplyHeaders"]);
 
-/** Whether this process was already told that the outbox default changes in 9.0. */
-let toldOfOutbox = false;
-
 // example.com's address: public, so the check passes, and never dialled, since the test kernel answers calls itself.
 const PUBLIC_ADDRESS: readonly ResolvedAddress[] = [{ address: "93.184.215.14", family: 4 }];
 
@@ -146,7 +143,6 @@ const asked = new Set<string>();
  */
 export function forgetTestKernelState(): void
 {
-    toldOfOutbox = false;
     resolving = undefined;
     defaults = {};
     discovered.clear();
@@ -412,14 +408,8 @@ export async function startTestKernel(asked: TestKernelOptions): Promise<TestKer
         return Promise.resolve(options.respondWith?.(call) ?? {});
     };
 
-    // off unless asked until 9.0: with one, an event emitted outside a transaction is refused here, not first in production
-    if (options.outbox === undefined && !toldOfOutbox)
-    {
-        toldOfOutbox = true;
-        process.emitWarning("startTestKernel runs without an outbox when none is asked for, and 9.0 turns it on. Pass outbox: true to test as a deployment with an outbox runs, or outbox: false to keep testing without one.", { code: "STACK_API_KIT_TEST_OUTBOX" });
-    }
-
-    const outbox = options.outbox === true ? store.outbox?.() : undefined;
+    // on unless refused, as a deployment runs: an event emitted outside a transaction is refused here, not first in production
+    const outbox = options.outbox === false ? undefined : store.outbox?.();
     const later = options.schedule === true ? store.schedule?.() : undefined;
     const scoping = options.plugins.some((plugin) => plugin.definition.scope !== undefined);
     const keepsRuns = options.plugins.some((plugin) => Object.values(plugin.definition.pipelines ?? {}).some((pipeline) => pipeline.flavour === "durable"));

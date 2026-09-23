@@ -7,7 +7,7 @@ export type HeaderCarrier = {
 };
 
 /** Who a deployment trusts to write `x-forwarded-for`: nobody, anyone (the first hop, as before 8.2), or the proxies named. */
-export type Trusting = boolean | { trustedProxies: readonly string[] };
+export type Trusting = false | { trustedProxies: readonly string[] };
 
 /** Node reports an IPv4 caller on a dual-stack socket as ::ffff:a.b.c.d. */
 function plain(address: string): string
@@ -88,11 +88,16 @@ function peerOf(carrier: HeaderCarrier): string | undefined
  * Who a rate limit counts an unknown caller by.
  *
  * With `{ trustedProxies }` it is the rightmost address in `x-forwarded-for` that no named proxy wrote, from the
- * socket outwards. With `false` it is the socket's own address. `true` keeps the first hop of the chain, which a
- * caller writes themselves: kept for 8.x, refused from 9.0.
+ * socket outwards. With `false` it is the socket's own address.
  */
 export function from(trusting: Trusting): (carrier: HeaderCarrier) => string
 {
+    // the first hop is written by the caller, so trusting it lets every caller choose whose limit it spends
+    if ((trusting as unknown) === true)
+    {
+        throw new TypeError("serve: Server.from(true) is gone in 9.0: it trusted the first x-forwarded-for hop, which a caller writes, so a caller chose whose rate limit it spent. Name the proxies in front: Server.from({ trustedProxies: [\"10.0.0.0/8\"] }), or from(false) for none.");
+    }
+
     if (typeof trusting === "object")
     {
         const trusted = trustedList(trusting.trustedProxies);
@@ -102,10 +107,8 @@ export function from(trusting: Trusting): (carrier: HeaderCarrier) => string
 
     return (carrier: HeaderCarrier): string =>
     {
-        const forwarded = trusting
-            ? carrier.req.header("x-forwarded-for")?.split(",")[0]?.trim()
-            : peerOf(carrier);
+        const peer = peerOf(carrier);
 
-        return forwarded !== undefined && forwarded !== "" ? plain(forwarded) : "anonymous";
+        return peer !== undefined ? plain(peer) : "anonymous";
     };
 }

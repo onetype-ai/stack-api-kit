@@ -17,8 +17,8 @@ function. No shared setup hiding a dependency or helper hiding the claim.
 ## The database is real
 
 `startTestKernel({ plugins })` opens an in-memory SQLite with the real
-migrations, a rate limiter and an http client the test reads; pass
-`outbox: true` to test as a deployment with an outbox runs.
+migrations, an outbox (unless `outbox: false`), a rate limiter and an
+http client the test reads.
 A fake accepting what SQLite rejects hides bugs.
 
 `configureTestKernels({ resolve })` in a setup file adds what a plugin

@@ -38,7 +38,7 @@ framing needs `framable: true`. `file: { types: ["text/csv"] }` answers
 
 ## Headers
 
-`strictReplyHeaders: true` (9.0's default) lets a reply set location,
+Every reply may set location,
 retry-after, content-disposition, vary, etag, cache-control and the session
 headers, plus what `sends` names. `public` caching only on a public route; a
 204 never has a body. `Refusal(…, { retryAfter })` sends retry-after, and

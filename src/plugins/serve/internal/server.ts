@@ -1,5 +1,5 @@
 import { closeOnce, closeOnSignal } from "./closing";
-import { from } from "./from";
+import { from, type Trusting } from "./from";
 import { listen, socketsOf, type SocketOptions } from "./listen";
 import { watch } from "./watch";
 
@@ -11,8 +11,8 @@ export type OpenOptions = {
     port: number;
     log: Logger;
 
-    /** Whether something in front sets `x-forwarded-for`; without one, a caller writes their own address. Kept for 8.x: name `trustedProxies` instead. */
-    behindProxy?: boolean;
+    /** Gone in 9.0 (`true` trusted a hop the caller writes, and is refused): name `trustedProxies` instead. */
+    behindProxy?: false;
 
     /** The proxies in front, as addresses or ranges: a socket's caller is the rightmost hop none of them wrote, as `Server.from` reads it. */
     trustedProxies?: readonly string[];
@@ -41,7 +41,7 @@ export const Server = {
     open: (api: StartedApp, options: OpenOptions): void =>
     {
         const { port, log } = options;
-        const server = listen(api, port, { ...options.sockets, from: from(options.trustedProxies === undefined ? options.behindProxy ?? false : { trustedProxies: options.trustedProxies }), log: (level, line, about) => log[level](line, about) });
+        const server = listen(api, port, { ...options.sockets, from: from(options.trustedProxies === undefined ? (options.behindProxy as Trusting | undefined) ?? false : { trustedProxies: options.trustedProxies }), log: (level, line, about) => log[level](line, about) });
 
         if ((options.watchSeconds ?? 0) > 0)
         {

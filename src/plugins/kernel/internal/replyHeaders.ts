@@ -43,48 +43,10 @@ export function isKitHeader(name: string): boolean
 /** Directives that let a shared cache keep the body: fine for a public route, one caller's answer handed to the next for any other. */
 export const SHARED_CACHE = /(^|,)\s*(public|s-maxage|proxy-revalidate)\b/iu;
 
-/** What a reply was refused before the allow-list, and still is by default until 9.0. */
-const REFUSED_BEFORE_ALLOW_LIST: ReadonlySet<string> = new Set([
-    "set-cookie",
-    "content-security-policy",
-    "x-content-type-options",
-    "x-frame-options",
-    "access-control-allow-origin",
-    "access-control-allow-credentials",
-]);
-
-/** How a kernel holds replies to the header allow-list, and which headers it already warned about. */
-export type ReplyHeaderPolicy = {
-    strict: boolean;
-    warned: Set<string>;
-};
-
-/**
- * The headers a route's reply sends. Held to the allow-list when the kernel is strict; otherwise, until 9.0
- * makes it the default, everything the kit refused before passes, and each header the allow-list will drop
- * is named once, with how to keep it.
- */
-export function replyHeaders(asked: Readonly<Record<string, string>>, plugin: string, route: Route<Context>, log: RequestLog, policy: ReplyHeaderPolicy): Readonly<Record<string, string>>
+/** The headers a route's reply sends: the kit's short list and what the route names in `sends`, nothing else. */
+export function replyHeaders(asked: Readonly<Record<string, string>>, plugin: string, route: Route<Context>, log: RequestLog): Readonly<Record<string, string>>
 {
-    if (policy.strict)
-    {
-        return filterHeaders(asked, plugin, route, log);
-    }
-
-    const sent = filterHeaders(asked, plugin, route, log, (name) => !REFUSED_BEFORE_ALLOW_LIST.has(name));
-
-    for (const name of Object.keys(sent))
-    {
-        const key = `${route.method} ${route.path} ${name}`;
-
-        if (!REPLY_HEADERS.has(name) && !(route.sends ?? []).includes(name) && !policy.warned.has(key))
-        {
-            policy.warned.add(key);
-            log("warn", plugin, `${route.method} ${route.path} sets "${name}", which 9.0 drops: declare it in the route's sends, or pass strictReplyHeaders: true to hold every route to the allow-list now`);
-        }
-    }
-
-    return sent;
+    return filterHeaders(asked, plugin, route, log);
 }
 
 /** The headers a handler asked for, minus the ones it may not set. */

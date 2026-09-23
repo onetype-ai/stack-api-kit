@@ -1,30 +1,34 @@
 import { expect, test } from "vitest";
+import { z } from "zod";
 
 import { definePlugin } from "../../index";
 import { startTestKernel } from "../startTestKernel";
 
-const quiet = definePlugin("quiet", { version: "1.0.0", describe: "Declares nothing." });
+const announcing = definePlugin("announcing", {
+    version: "1.0.0",
+    describe: "Emits outside any transaction.",
+    emits: { "announcing.made": { describe: "Something was made.", schema: z.object({}) } },
+});
 
-test("a test kernel asked for no outbox says once per process that 9.0 turns it on, and how to choose", async () =>
+test("a test kernel keeps events in an outbox unless told not to, as a deployment does, and warns of nothing", async () =>
 {
-    const warnings: { code?: string; message: string }[] = [];
+    const warnings: string[] = [];
     const hear = (warning: Error & { code?: string }): void =>
     {
-        warnings.push({ ...(warning.code !== undefined && { code: warning.code }), message: warning.message });
+        warnings.push(warning.code ?? warning.message);
     };
 
     process.on("warning", hear);
 
-    const first = await startTestKernel({ plugins: [quiet] });
-    const second = await startTestKernel({ plugins: [quiet] });
-    const chosen = await startTestKernel({ plugins: [quiet], outbox: false });
+    const kept = await startTestKernel({ plugins: [announcing] });
+    const refused = await startTestKernel({ plugins: [announcing], outbox: false });
 
-    await Promise.all([first.stop(), second.stop(), chosen.stop()]);
+    expect(() => kept.kernel.context("announcing").events.emit("announcing.made", {})).toThrow(/outside a transaction while an outbox is configured/);
+    expect(() => refused.kernel.context("announcing").events.emit("announcing.made", {})).not.toThrow();
+
+    await Promise.all([kept.stop(), refused.stop()]);
     await new Promise((resolve) => setImmediate(resolve));
     process.off("warning", hear);
 
-    const ours = warnings.filter((warning) => warning.code === "STACK_API_KIT_TEST_OUTBOX");
-
-    expect(ours).toHaveLength(1);
-    expect(ours[0]?.message).toContain("Pass outbox: true");
+    expect(warnings.filter((warning) => warning === "STACK_API_KIT_TEST_OUTBOX")).toEqual([]);
 });

@@ -11,12 +11,12 @@ const announcing = definePlugin("announcing", {
     emits: { "announcing.made": { describe: "Something was made.", schema: z.object({}) } },
 });
 
-test("a suite that asked for an outbox by default gets one", async () =>
+test("a suite that turned the outbox off by default gets none", async () =>
 {
-    configureTestKernels({ defaults: { outbox: true } });
+    configureTestKernels({ defaults: { outbox: false } });
     const api = await startTestKernel({ plugins: [announcing] });
 
-    expect(() => api.kernel.context("announcing").events.emit("announcing.made", {})).toThrow(/outside a transaction/);
+    expect(() => api.kernel.context("announcing").events.emit("announcing.made", {})).not.toThrow();
 
     await api.stop();
 });

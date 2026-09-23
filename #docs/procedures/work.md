@@ -16,8 +16,8 @@ With `start({ outbox: true })` the event is written in the transaction and
 delivered after the commit. A listener that throws is retried with
 backoff, and only the listeners that have not heard it are called again.
 After `mostAttempts` (8) it waits as a dead letter. Emitting outside `tx`
-is refused while an outbox is on; give a test kernel `outbox: true` to
-prove it.
+is refused while an outbox is on, as in a test kernel unless it says
+`outbox: false`.
 
 A listener recognises what it already did: it may hear an event twice.
 

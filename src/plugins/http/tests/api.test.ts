@@ -303,10 +303,29 @@ describe("bodies", () =>
     {
         const app = await startServer(taking);
 
-        const answer = await app.request("/items", { method: "POST", body: "{ broken" });
+        const answer = await app.request("/items", { method: "POST", headers: { "content-type": "application/json" }, body: "{ broken" });
 
         expect(answer.status).toBe(400);
         expect(await answer.json()).toMatchObject({ code: "INVALID_JSON" });
+    });
+
+    test.each(["text/plain", "application/x-www-form-urlencoded", "application/jsonp", ""])("refuses JSON sent as %s, which a page on another site can post", async (type) =>
+    {
+        const app = await startServer(taking);
+
+        const answer = await app.request("/items", { method: "POST", headers: type === "" ? {} : { "content-type": type }, body: JSON.stringify({ title: "a" }) });
+
+        expect(answer.status).toBe(415);
+        expect(await answer.json()).toMatchObject({ code: "UNSUPPORTED_BODY" });
+    });
+
+    test.each(["application/json", "application/json; charset=utf-8", "application/merge-patch+json"])("takes JSON sent as %s", async (type) =>
+    {
+        const app = await startServer(taking);
+
+        const answer = await app.request("/items", { method: "POST", headers: { "content-type": type }, body: JSON.stringify({ title: "a" }) });
+
+        expect(answer.status).not.toBe(415);
     });
 
     test("bounds a DELETE body like any other", async () =>

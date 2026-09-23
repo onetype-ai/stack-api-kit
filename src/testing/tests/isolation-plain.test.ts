@@ -11,11 +11,11 @@ const announcing = definePlugin("announcing", {
     emits: { "announcing.made": { describe: "Something was made.", schema: z.object({}) } },
 });
 
-test("a suite that configured nothing gets a kernel without an outbox, whatever ran before it", async () =>
+test("a suite that configured nothing gets a kernel with an outbox, whatever ran before it", async () =>
 {
     const api = await startTestKernel({ plugins: [announcing] });
 
-    expect(() => api.kernel.context("announcing").events.emit("announcing.made", {})).not.toThrow();
+    expect(() => api.kernel.context("announcing").events.emit("announcing.made", {})).toThrow(/outside a transaction/);
 
     await api.stop();
 });

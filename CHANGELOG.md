@@ -22,6 +22,20 @@
   chosen by the deployment's dialect. One folder of files runs on SQLite
   alone; Postgres refuses it with the fix.
 
+- Every reply is held to the header allow-list: the kit's short list and
+  what a route names in `sends`. `strictReplyHeaders: true` changes
+  nothing; `false` is refused.
+- `startTestKernel` keeps events in an outbox unless given `outbox: false`,
+  so an event emitted outside `ctx.tx` is refused in tests as it is in
+  production (`UNKEPT_EVENT`). The `STACK_API_KIT_TEST_OUTBOX` warning is
+  gone.
+- `Server.from(true)` and `behindProxy: true` are refused: they trusted a
+  forwarded hop the caller writes.
+- A JSON route answers 415 to a body sent as anything but `application/json`
+  or `+json`, `text/plain` included.
+- `Project.findAll()` asks a contract procedure to name every key 8.x added:
+  `watchesWork`, `fake`, `registries`, `pipelines`, `adds`.
+
 ### How to convert
 
 `#docs/procedures/dialects.md` is the rule the conversion follows.
@@ -50,6 +64,15 @@
   files into `migrations/sqlite/` and generate `migrations/postgres/` with
   drizzle-kit. A query ending in `.get()` becomes `const [row] = await ...`,
   `.all()` and `.run()` become a plain `await`.
+
+- A header 8.x named "which 9.0 drops" in the log: add it to the route's
+  `sends`, or stop setting it.
+- A test emitting outside a transaction: emit inside `ctx.tx`, or pass
+  `outbox: false` (or `configureTestKernels({ defaults: { outbox: false } })`).
+- `Server.from(true)`: name the proxies, `Server.from({ trustedProxies })`.
+- A client posting JSON without a content type sends
+  `content-type: application/json`.
+- A contract procedure names the five keys above in backticks.
 
 ### Added
 

@@ -824,8 +824,8 @@
     mostStreamsPerCaller?: number
     // How long `stop` waits for open streams to send their final RESTARTING event, in milliseconds (5000 when left out).
     streamDrainMs?: number
-    // Holds every reply to the header allow-list (the kit's short list plus a route's `sends`) now; 9.0 makes it the default. Left out, a header the list would drop still goes out, named once in the log.
-    strictReplyHeaders?: boolean
+    // Every reply is held to the header allow-list (the kit's short list plus a route's `sends`) since 9.0; `true` says so and changes nothing, `false` is refused.
+    strictReplyHeaders?: true
 
 > One request, as it reaches the kernel.
 ### KernelRequest
@@ -908,8 +908,8 @@
 ### OpenOptions
     port: number
     log: Logger
-    // Whether something in front sets `x-forwarded-for`; without one, a caller writes their own address. Kept for 8.x: name `trustedProxies` instead.
-    behindProxy?: boolean
+    // Gone in 9.0 (`true` trusted a hop the caller writes, and is refused): name `trustedProxies` instead.
+    behindProxy?: false
     // The proxies in front, as addresses or ranges: a socket's caller is the rightmost hop none of them wrote, as `Server.from` reads it.
     trustedProxies?: readonly string[]
     // How often to report listeners that failed; zero never looks.
@@ -1287,7 +1287,7 @@
 ### StartedApp = { kernel: Kernel; store: Store; app: ReturnType<typeof serve>; fetch: (request: Request) => Response | Promise<Response>; sockets: { subscribe: (identity: Identity | undefined, send: (text: string) => void) => Subscription } | undefined; served: { origins: readonly string[]; session: SessionOptions | undefined; bodyBytes: number; from: ServerOptions["from"] }; stop: () => Promise<void> }
 
 > Everything `start` takes; `outbox` and `schedule` are opt-in, while `sockets` and `limits` are on unless set to false.
-### StartOptions = { plugins: readonly Plugin[]; database?: DatabaseOptions | { dialect: "postgres"; url: string; poolSize?: number } | { dialect: "postgres"; pglite: PGlite; schema?: string } | Store | undefined; config?: Readonly<Record<string, unknown>> | undefined; sockets?: boolean | { claim: string } | undefined; pubsub?: PubSub | undefined; identify?: ((kernel: Kernel) => ServerOptions["identify"]) | undefined; http?: Omit<ServerOptions, "kernel" | "identify" | "log"> | undefined; httpClient?: HttpClientOptions | HttpClient | undefined; lookup?: Lookup | undefined; rateLimiter?: RateLimiter | undefined; mostStreamsPerCaller?: number | undefined; streamDrainMs?: number | undefined; strictReplyHeaders?: boolean | undefined; limits?: boolean | undefined; outbox?: boolean | undefined; schedule?: boolean | "enqueue" | undefined; jobLeaseMs?: number | undefined; jobRunMs?: number | undefined; outboxLeaseMs?: number | undefined; log?: Logger | undefined }
+### StartOptions = { plugins: readonly Plugin[]; database?: DatabaseOptions | { dialect: "postgres"; url: string; poolSize?: number } | { dialect: "postgres"; pglite: PGlite; schema?: string } | Store | undefined; config?: Readonly<Record<string, unknown>> | undefined; sockets?: boolean | { claim: string } | undefined; pubsub?: PubSub | undefined; identify?: ((kernel: Kernel) => ServerOptions["identify"]) | undefined; http?: Omit<ServerOptions, "kernel" | "identify" | "log"> | undefined; httpClient?: HttpClientOptions | HttpClient | undefined; lookup?: Lookup | undefined; rateLimiter?: RateLimiter | undefined; mostStreamsPerCaller?: number | undefined; streamDrainMs?: number | undefined; strictReplyHeaders?: true | undefined; limits?: boolean | undefined; outbox?: boolean | undefined; schedule?: boolean | "enqueue" | undefined; jobLeaseMs?: number | undefined; jobRunMs?: number | undefined; outboxLeaseMs?: number | undefined; log?: Logger | undefined }
 
 > What a project holds after opening a database.
 ### Store<Db = unknown> =
@@ -1698,10 +1698,10 @@
     plugins: readonly Plugin[]
     config?: Readonly<Record<string, unknown>>
     respondWith?: (request: HttpRequest) => unknown
-    // Whether events are kept until a listener has recorded them, as `start({ outbox: true })` does. Left out it is off, and 9.0 turns it on: pass `true` to test as a deployment with an outbox runs.
+    // Whether events are kept until a listener has recorded them, as `start({ outbox: true })` does: on unless `false`, as a deployment runs.
     outbox?: boolean
-    // Holds every reply to the header allow-list, as `start({ strictReplyHeaders: true })` does.
-    strictReplyHeaders?: boolean
+    // Every reply is held to the header allow-list since 9.0; `true` changes nothing, `false` is refused.
+    strictReplyHeaders?: true
     // Whether a plugin may ask for work later, as `start({ schedule: true })`.
     schedule?: boolean
     // Whether a plugin may push, as `start({ sockets: true })` does.

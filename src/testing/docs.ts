@@ -100,7 +100,7 @@ export function findUnexplainedPlugins(folder: string): string[]
 }
 
 /** Keys a minor release added: a procedure written for the release before cannot name them, so they are asked for from the next major on. */
-const ADDED_SINCE_MAJOR: ReadonlySet<string> = new Set(["watchesWork", "fake", "registries", "pipelines", "adds"]);
+const ADDED_SINCE_MAJOR: ReadonlySet<string> = new Set([]);
 
 /** Takes the two files' TEXT, not their paths, and answers the keys of `Definition` that the procedure never names in backticks. */
 export function findUndocumentedKeys(contract: string, procedure: string): string[]

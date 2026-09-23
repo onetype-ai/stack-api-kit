@@ -29,8 +29,8 @@ Server.listen(api, port)     // the socket alone, for a caller doing its own
 
 - `from` is who a rate limit counts an unknown caller by: the rightmost
   `x-forwarded-for` hop no named proxy wrote, walked from the socket out.
-  `from(false)` is the socket's address. `from(true)` takes the first hop,
-  which a caller writes: kept for 8.x, refused from 9.0.
+  `from(false)` is the socket's address. `from(true)` is refused: its
+  first hop is one a caller writes.
 - `/ws`, when the kernel carries sockets, is identified on upgrade as an
   HTTP request is; a session cookie from an origin not allowed closes 4003.
   It sends `$ready`, acks each subscribe (or CHANNEL_REFUSED), pings `$ping`,

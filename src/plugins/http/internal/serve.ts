@@ -196,8 +196,11 @@ function isForgeable(request: Request, method: string, session: SessionOptions |
     const contentType = (request.headers.get("content-type") ?? "").toLowerCase();
     const origin = request.headers.get("origin");
 
-    return !/^application\/(?:[\w.+-]+\+)?json\s*(?:;|$)/u.test(contentType) && (origin === null || !origins.includes(origin));
+    return !JSON_TYPE.test(contentType) && (origin === null || !origins.includes(origin));
 }
+
+/** What a JSON body is sent as: application/json, or a type ending in +json, with parameters after. */
+const JSON_TYPE = /^application\/(?:[\w.+-]+\+)?json\s*(?:;|$)/u;
 
 /** The most fields a URL-encoded form may carry, so one request of repeated names costs as much to read as its size. */
 const MOST_FIELDS = 1000;
@@ -324,6 +327,12 @@ async function requestBody(request: Request, route: { method: string; accepts?: 
     if (raw.byteLength === 0)
     {
         return { body: undefined, uploads: {} };
+    }
+
+    // a body named as something else is read as nothing else: text/plain holding JSON is how a form on another site posts
+    if (!JSON_TYPE.test(contentType))
+    {
+        return { refused: { code: "UNSUPPORTED_BODY", message: "This route reads JSON. Send it as application/json." }, status: 415 };
     }
 
     const rawBody = route.keepsRaw === true ? { sent: raw } : {};

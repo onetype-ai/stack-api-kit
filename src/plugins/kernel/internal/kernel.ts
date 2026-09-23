@@ -92,8 +92,8 @@ export type KernelOptions = {
     /** How long `stop` waits for open streams to send their final RESTARTING event, in milliseconds (5000 when left out). */
     streamDrainMs?: number;
 
-    /** Holds every reply to the header allow-list (the kit's short list plus a route's `sends`) now; 9.0 makes it the default. Left out, a header the list would drop still goes out, named once in the log. */
-    strictReplyHeaders?: boolean;
+    /** Every reply is held to the header allow-list (the kit's short list plus a route's `sends`) since 9.0; `true` says so and changes nothing, `false` is refused. */
+    strictReplyHeaders?: true;
 };
 
 /** One channel a plugin declared, as a reader of the api sees it. */
@@ -300,7 +300,11 @@ export function createKernel(options: KernelOptions): Kernel
     });
     const points = hooks<Context>(options.hookTimeoutMs);
     const openStreams: StreamRegistry = { perCaller: new Map(), active: new Set(), most: options.mostStreamsPerCaller ?? 4 };
-    const headerPolicy = { strict: options.strictReplyHeaders === true, warned: new Set<string>() };
+    // 8.x let a reply send headers the allow-list drops; 9.0 holds every reply to it, so asking otherwise is a mistake to name
+    if ((options.strictReplyHeaders as boolean | undefined) === false)
+    {
+        throw new KernelFault("INVALID_CONFIG", "strictReplyHeaders: false is gone in 9.0: every reply is held to the header allow-list. Declare a header a route sets in its sends, and drop the option.");
+    }
     const settings = new Map<string, unknown>();
     const pending = new Map<object, PendingDelivery[]>();
     const lists = registries((plugin, line, about) =>
@@ -1195,7 +1199,6 @@ export function createKernel(options: KernelOptions): Kernel
                 log,
                 options.rateLimiter,
                 openStreams,
-                headerPolicy,
             );
 
             inFlight.add(answer);

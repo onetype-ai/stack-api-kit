@@ -41,8 +41,8 @@ export type StartOptions = {
     /** How long `stop` waits for open streams to end with RESTARTING, in milliseconds; 5000 when left out. */
     streamDrainMs?: number | undefined;
 
-    /** Holds every reply to the header allow-list now; 9.0 makes it the default. */
-    strictReplyHeaders?: boolean | undefined;
+    /** Every reply is held to the header allow-list since 9.0; `true` changes nothing, `false` is refused. */
+    strictReplyHeaders?: true | undefined;
 
     /** Whether anything counts them at all. */
     limits?: boolean | undefined;
