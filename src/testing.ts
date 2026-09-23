@@ -4,6 +4,8 @@ export { findMissingDocs, findOversizedDocs, findUndocumentedKeys, findUnexplain
 export { Project } from "./testing/project";
 export { StoredContracts } from "./testing/storedContracts";
 export { testClock } from "./testing/testClock";
+export { openApi } from "./testing/openApi";
+export type { OpenApiOptions, OpenedApi } from "./testing/openApi";
 export type { TestClock } from "./testing/testClock";
 export { Started } from "./testing/started";
 export { findUnusedFields } from "./testing/wiring";

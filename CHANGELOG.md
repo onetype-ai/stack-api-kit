@@ -1,9 +1,12 @@
 # Changelog
 
-## Unreleased (8.3.0)
+## 9.0.0 (unreleased)
 
 ### Added
 
+- `openApi({ plugins, stands, clock, seed })` in `/testing`, the API twin of
+  the app kit's `openApp`: a test kernel with stand-ins by the name they
+  replace, a test clock, a seed, and `call(identity, method, path, input)`.
 - Registries and pipelines, the same contract as the app kit
   (`#docs/procedures/registries-and-pipelines.md`): `registries`,
   `pipelines` and `adds` on a plugin, `ctx.registry(name)`,

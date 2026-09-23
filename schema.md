@@ -1318,6 +1318,9 @@
 > Fields a contract declares that nothing in production reads.
 ### findUnusedFields(root: string, separately?: boolean): UnusedField[]
 
+> Boots a test kernel with stand-ins, a clock a test moves and a seed, and answers a way to call it as someone. The API twin of the app kit's `openApp`.
+### openApi({ stands, clock, seed, plugins, ...rest }: OpenApiOptions): Promise<OpenedApi>
+
 > Every project-wide check in one object, each answering `ProjectProblem[]`; `findAll` runs the lot against sensible defaults and answers an empty array when a project is clean.
 ### Project: { /** What a project is suggested to require of itself, the same list the app kit names. */ required: readonly ["#docs/usage.md", "#docs/architecture.md"]; findAll: (checking?: ProjectCheckOptions) => ProjectProblem[]; findImportViolations: (root: string, leaving?: readonly string[]) => ProjectProblem[]; /** Where a scoped table is reached without narrowing, which returns another tenant's rows with nothing reporting it. */ findUnscopedReach: (root: string) => ProjectProblem[]; findUnusedFields: (root: string, apart?: boolean) => ProjectProblem[]; findUnexplainedPlugins: (root: string) => ProjectProblem[]; findCopiedVocabulary: (root: string, excused?: readonly string[]) => ProjectProblem[]; findSplitVocabulary: (root: string, excused?: readonly string[]) => ProjectProblem[]; findSharedNames: (root: string, excused?: readonly string[]) => ProjectProblem[]; findOversizedDocs: (root: string, limit: number) => ProjectProblem[]; findUndocumentedKeys: (procedure: string) => ProjectProblem[] }
     // What a project is suggested to require of itself, the same list the app kit names.
@@ -1449,6 +1452,20 @@
 
 > One line a plugin logged, flattened: `level`, `plugin` and `line` are always there, and whatever the call passed as `about` is spread alongside them.
 ### LogLine = { level: string; plugin: string; line: string } & Readonly<Record<string, unknown>>
+
+### OpenApiOptions = Omit<TestKernelOptions, "now"> &
+    // Plugins standing in for real ones, by the name they stand in for: a fake mail sender for "mail".
+    stands?: Readonly<Record<string, Plugin>>
+    // The clock every plugin reads; one starting now, moving only when told, when left out.
+    clock?: TestClock
+    // Writes what every test in the file starts from, once the kernel runs: the project's own fixture.
+    seed?: (api: TestKernel) => void | Promise<void>
+
+### OpenedApi
+    api: TestKernel
+    clock: TestClock
+    // Calls a route as `identity`, or signed out when it is undefined, and answers what the kernel answered.
+    call: (identity: Identity | undefined, method: HttpMethod, path: string, input?: unknown) => Promise<KernelResponse>
 
 > One markdown file over the limit, `size` measured in characters of its whole text rather than lines or bytes.
 ### OversizedDoc
