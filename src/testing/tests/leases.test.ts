@@ -241,7 +241,17 @@ describe("a run whose lease another run took", () =>
         queue(otherProcess());
 
         const working = running.kernel.due();
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        const taken = (): boolean =>
+        {
+            const reading = new Database(file);
+            const row = reading.prepare("SELECT takenAt FROM kit_schedule").get() as { takenAt: number | null } | undefined;
+
+            reading.close();
+
+            return row?.takenAt !== null && row?.takenAt !== undefined;
+        };
+
+        await within(10_000, taken, () => undefined);
         const connection = new Database(file);
         connection.prepare("UPDATE kit_schedule SET takenBy = 'another-run'").run();
         connection.close();

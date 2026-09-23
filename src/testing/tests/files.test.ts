@@ -142,6 +142,17 @@ const get = (path: string, input: Record<string, unknown> = {}, ifNoneMatch?: st
     return (api as TestKernel).kernel.handle({ method: "GET", path, input, ...ifNoneMatch !== undefined && { ifNoneMatch } });
 };
 
+// Waits for what a timer or another side brings about, however long a busy machine takes, rather than a fixed margin.
+async function until(isMet: () => boolean, limitMs = 10_000): Promise<void>
+{
+    const end = Date.now() + limitMs;
+
+    while (!isMet() && Date.now() < end)
+    {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+}
+
 describe("a file route", () =>
 {
     test("answers an attachment of the declared type, keeping only the headers a file may set", async () =>
@@ -336,7 +347,7 @@ describe("over HTTP", () =>
         const response = await fetch(`${base}/export/endless`, { signal: leaving.signal, headers: { connection: "close" } });
         await response.body!.getReader().read();
         leaving.abort();
-        await new Promise((resolve) => setTimeout(resolve, 200));
+        await until(() => stopped);
 
         expect(stopped).toBe(true);
     });

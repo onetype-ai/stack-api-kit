@@ -135,6 +135,17 @@ const drain = async (response: KernelResponse): Promise<Seen[]> =>
 
 const reader = createIdentity(["chat.read"], "ana");
 
+// Waits for what a timer or another side brings about, however long a busy machine takes, rather than a fixed margin.
+async function until(isMet: () => boolean, limitMs = 10_000): Promise<void>
+{
+    const end = Date.now() + limitMs;
+
+    while (!isMet() && Date.now() < end)
+    {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+}
+
 describe("a streamed route", () =>
 {
     test("sends each event filtered by its streams schema, with its SSE fields", async () =>
@@ -259,7 +270,7 @@ describe("an open stream's limits", () =>
         api = await startTestKernel({ plugins: [chat] });
 
         const seen = await drain(await api.kernel.handle({ method: "GET", path: "/chat/brief", input: {} }));
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        await until(() => aborted);
 
         expect(seen.at(-1)).toEqual({ event: "error", id: undefined, data: { code: "EXPIRED", message: "The stream reached its time limit. Reconnect to continue." } });
         expect(aborted).toBe(true);
@@ -369,7 +380,7 @@ describe("over HTTP", () =>
         const body = response.body!.getReader();
         await body.read();
         leaving.abort();
-        await new Promise((resolve) => setTimeout(resolve, 200));
+        await until(() => aborted);
 
         expect(aborted).toBe(true);
     });

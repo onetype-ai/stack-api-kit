@@ -139,6 +139,17 @@ const later = (seconds: number): void =>
     time += seconds * 1_000;
 };
 
+// Waits for what a timer or another side brings about, however long a busy machine takes, rather than a fixed margin.
+async function until(isMet: () => boolean, limitMs = 10_000): Promise<void>
+{
+    const end = Date.now() + limitMs;
+
+    while (!isMet() && Date.now() < end)
+    {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+}
+
 describe("an event one listener refused", () =>
 {
     test("reaches that listener once its backoff is over, without calling the one that already heard it", async () =>
@@ -293,7 +304,7 @@ describe("a process that dies mid-delivery", () =>
 
             return Promise.resolve();
         });
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        await until(() => heardBy.mailer === 1);
         await dying.stop();
         await new Promise((resolve) => setTimeout(resolve, 1_100));
         apps = [await start({ plugins: [orders, mailer, ledger], database: { file }, outbox: true, outboxLeaseMs: 1_000, sockets: false })];
@@ -326,7 +337,7 @@ describe("a listener whose hearing cannot be kept", () =>
 
             return Promise.resolve();
         });
-        await new Promise((resolve) => setTimeout(resolve, 200));
+        await until(() => heardBy.ledger === 1 && lines.some((line) => line.line.includes("could not keep that a listener heard")));
         const warned = lines.filter((line) => line.level === "warn" && line.line.includes("could not keep that a listener heard"));
 
         expect(warned.length).toBeGreaterThanOrEqual(1);

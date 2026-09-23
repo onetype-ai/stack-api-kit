@@ -84,7 +84,7 @@ function opening(url: string, headers: Record<string, string> = { cookie: "sid=k
     });
 }
 
-async function until(check: () => boolean, ms = 2000): Promise<void>
+async function until(check: () => boolean, ms = 10_000): Promise<void>
 {
     const end = Date.now() + ms;
 
@@ -196,7 +196,9 @@ describe("the socket at /ws", () =>
         socket.send(JSON.stringify({ subscribe: "desk.secret" }));
         await until(() => frames.length >= 2);
         granted = new Map();
-        await new Promise((resolve) => setTimeout(resolve, 150));
+        // a frame is answered only after the socket's caller was identified again, so its answer proves the permission is gone
+        socket.send(JSON.stringify({ id: "again", method: "GET", path: "/desk/me" }));
+        await until(() => frames.some((frame) => frame["id"] === "again"));
         (app as StartedApp).kernel.context("desk", { id: "ana", permissions: ["desk.read"], claims: {} }).push("desk.secret", { text: "for readers" });
         await new Promise((resolve) => setTimeout(resolve, 50));
 
