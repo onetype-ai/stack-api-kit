@@ -47,7 +47,9 @@
 - `watchesWork: true` and `ctx.work`.
 - `GET /health` and `ServerOptions.readiness`.
 - `configureTestKernels({ resolve })` and `withDependencies` in `./testing`;
-  `resolve` is given the names missing, wave by wave, each asked once.
+  `resolve` is given the names missing, wave by wave, each asked once, and
+  `defaults` (outbox, strictReplyHeaders, schedule, sockets) apply to every
+  test kernel in the process where a test does not say.
 - `procedures/answers.md`, `procedures/work.md` and `procedures/operations.md`.
 
 ### Fixed

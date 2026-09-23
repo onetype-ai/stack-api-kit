@@ -177,3 +177,29 @@ describe("a fixture that loads plugins by name", () =>
         expect(api.kernel.context("accounts").config).toEqual({ region: "eu", currency: "EUR" });
     });
 });
+
+describe("defaults every test kernel in a process starts from", () =>
+{
+    const notes = definePlugin("notes", {
+        version: "1.0.0",
+        describe: "Announces a note.",
+        emits: { "notes.note.created": { describe: "A note was made.", schema: z.object({ id: z.string() }) } },
+    });
+
+    test("apply where a test says nothing, and a test's own option wins", async () =>
+    {
+        configureTestKernels({ defaults: { outbox: true } });
+
+        const defaulted = await startTestKernel({ plugins: [notes] });
+        const refusing = (): void => defaulted.kernel.context("notes").events.emit("notes.note.created", { id: "1" });
+
+        expect(refusing).toThrow("outside a transaction while an outbox is configured");
+        await defaulted.stop();
+
+        const overridden = await startTestKernel({ plugins: [notes], outbox: false });
+
+        api = overridden;
+
+        expect(() => overridden.kernel.context("notes").events.emit("notes.note.created", { id: "2" })).not.toThrow();
+    });
+});

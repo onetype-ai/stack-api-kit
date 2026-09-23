@@ -5,7 +5,7 @@ export { Project } from "./testing/project";
 export { Started } from "./testing/started";
 export { findUnusedFields } from "./testing/wiring";
 
-export type { TestKernel, TestKernelFixture, TestKernelOptions, SeenEvent, SentRequest, LogLine } from "./testing/startTestKernel";
+export type { TestKernel, TestKernelDefaults, TestKernelFixture, TestKernelOptions, SeenEvent, SentRequest, LogLine } from "./testing/startTestKernel";
 export type { Identity, HttpRequest } from "./plugins/kernel/api";
 export type { ImportEdge, ImportViolation, CopiedVocabulary, DuplicateSignature, SplitVocabulary } from "./testing/boundaries";
 export type { OversizedDoc, UndocumentedKey } from "./testing/docs";

@@ -128,6 +128,11 @@ export type TestKernelFixture = {
 
 let resolving: ((missing: readonly string[]) => Promise<TestKernelFixture>) | undefined;
 
+/** What every test kernel in this process starts from when a test does not say, from `configureTestKernels`. */
+export type TestKernelDefaults = Pick<TestKernelOptions, "outbox" | "strictReplyHeaders" | "schedule" | "sockets">;
+
+let defaults: TestKernelDefaults = {};
+
 /** Every plugin the fixture has handed over in this process, and the config it named for each, by name. */
 const discovered = new Map<string, Plugin>();
 const discoveredConfig = new Map<string, Readonly<Record<string, unknown>>>();
@@ -138,9 +143,10 @@ const asked = new Set<string>();
  * nothing passed provides, in waves as their own dependencies turn up, and each name is asked for once: a resolver
  * may load only those plugins, or answer every plugin it holds. A test that passes every plugin it needs never calls it.
  */
-export function configureTestKernels(configuring: { resolve: (missing: readonly string[]) => Promise<TestKernelFixture> }): void
+export function configureTestKernels(configuring: { resolve?: (missing: readonly string[]) => Promise<TestKernelFixture>; defaults?: TestKernelDefaults }): void
 {
     resolving = configuring.resolve;
+    defaults = { ...configuring.defaults };
     discovered.clear();
     discoveredConfig.clear();
     asked.clear();
@@ -328,7 +334,8 @@ export async function startTestKernel(asked: TestKernelOptions): Promise<TestKer
         );
     }
 
-    const options = await closedOver(asked);
+    // a test's own options win over the process's defaults, key by key
+    const options = await closedOver({ ...defaults, ...asked });
 
     const store = database({ file: ":memory:", tables: testTables.tables(options.plugins) });
 
