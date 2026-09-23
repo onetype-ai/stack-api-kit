@@ -132,6 +132,11 @@
 
 ### Changes you may notice
 
+- `/ws` identifies a socket as HTTP identifies a request: through
+  `start({ identify })` when given, as well as through a plugin that
+  `identifies`. In 8.x a project using `identify` got anonymous sockets,
+  refused every scope channel.
+
 - `Context` and `Declaration` gain those members. A hand-built `Context`
   (a test fake) needs `registry` and `pipeline` to compile.
 

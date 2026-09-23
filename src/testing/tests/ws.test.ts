@@ -266,3 +266,67 @@ describe("the socket at /ws", () =>
         expect((await closed).code).toBe(1012);
     });
 });
+
+describe("a socket in a project identifying callers through start's identify", () =>
+{
+    let bearers = new Set(["t-ana"]);
+
+    const board = definePlugin("board", {
+        version: "1.0.0",
+        describe: "Pushes news, and leaves who is calling to the project.",
+        channels: { "board.news": { describe: "News for the one reading.", schema: z.object({ text: z.string() }), reach: "viewer" } },
+    } as Parameters<typeof definePlugin>[1] & object);
+
+    async function servingBoard(options: SocketOptions = {}): Promise<string>
+    {
+        app = await start({
+            plugins: [board],
+            sockets: true,
+            http: { origins: [APP] },
+            identify: () => (c) =>
+            {
+                const bearer = (c.req.header("authorization") ?? "").replace(/^Bearer /u, "");
+
+                return bearers.has(bearer) ? { id: bearer.slice(2), permissions: [], claims: {} } : undefined;
+            },
+        });
+        server = Server.listen(app, 0, options);
+
+        const listening = server;
+
+        if (!listening.listening)
+        {
+            await new Promise((resolve) => listening.once("listening", resolve));
+        }
+
+        return `ws://127.0.0.1:${String((listening.address() as AddressInfo).port)}/ws`;
+    }
+
+    afterEach(() =>
+    {
+        bearers = new Set(["t-ana"]);
+    });
+
+    test("is identified on upgrade as a request is, and hears what that caller may", async () =>
+    {
+        const url = await servingBoard();
+        const { socket, frames } = await opening(url, { authorization: "Bearer t-ana", origin: APP });
+
+        socket.send(JSON.stringify({ subscribe: "board.news" }));
+        await until(() => frames.some((frame) => frame["channel"] === "board.news" && frame["subscribed"] === true));
+        (app as StartedApp).kernel.context("board", { id: "ana", permissions: [], claims: {} }).push("board.news", { text: "hello" });
+        await until(() => frames.some((frame) => frame["body"] !== undefined));
+
+        expect(frames).toContainEqual({ channel: "board.news", body: { text: "hello" } });
+    });
+
+    test("closes 4001 once start's identify no longer knows the caller", async () =>
+    {
+        const url = await servingBoard({ reidentifyMs: 50 });
+        const { closed } = await opening(url, { authorization: "Bearer t-ana", origin: APP });
+
+        bearers = new Set();
+
+        expect((await closed).code).toBe(4001);
+    });
+});

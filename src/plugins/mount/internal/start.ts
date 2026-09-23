@@ -3,7 +3,7 @@ import { database, migrationSteps, noStore, postgres, postgresPubSub } from "../
 import { limiter, unlimited } from "../../guard/api";
 import { createKernel, order, tableIndexes } from "../../kernel/api";
 import { httpClient } from "../../outbound/api";
-import { currentRequestId, inProcessPubSub, relay, serve, sockets } from "../../http/api";
+import { currentRequestId, inProcessPubSub, relay, serve, sockets, withSessionKey } from "../../http/api";
 import type { DatabaseOptions, Store } from "../../database/api";
 import type { Logger, Plugin } from "../../kernel/api";
 import type { StartedApp, StartOptions } from "../api";
@@ -413,6 +413,9 @@ export async function start(options: StartOptions): Promise<StartedApp>
             session: options.http?.session,
             bodyBytes: options.http?.bodyBytes ?? 1_000_000,
             from: options.http?.from,
+
+            // one answer for HTTP and the socket: a socket identified another way hears nothing a request could
+            identify: async (c) => identify === undefined ? kernel.identify?.(withSessionKey(c.req.raw, options.http?.session)) : identify(c),
         },
 
         stop: async (): Promise<void> =>

@@ -2,8 +2,6 @@ import { serve, upgradeWebSocket } from "@hono/node-server";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
 
-import { withSessionKey } from "../../http/api";
-
 import { socketEvents, type OpenSockets, type SocketLimits, type Upgraded } from "./connection";
 
 import type { WebSocketServerLike } from "@hono/node-server";
@@ -70,20 +68,19 @@ export function listen(api: StartedApp, port: number, options: SocketOptions = {
         const origin = raw.headers.get("origin");
         const refused = ambient && (origin === null || !api.served.origins.includes(origin));
         const address = (api.served.from ?? options.from)?.(c);
-        const asked = withSessionKey(raw, api.served.session);
 
         if (refused)
         {
             log("warn", "socket refused: a session cookie from an origin not allowed", { origin: origin ?? "" });
         }
 
-        const identity = refused || api.kernel.identify === undefined ? undefined : await api.kernel.identify(asked).catch(() => undefined);
+        const identity = refused ? undefined : await api.served.identify(c).catch(() => undefined);
 
         upgrades.set(raw, {
             identity,
             address,
             refused,
-            again: identity === undefined ? undefined : asked,
+            again: identity === undefined ? undefined : c,
         });
 
         return next();

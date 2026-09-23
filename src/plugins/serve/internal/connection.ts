@@ -42,7 +42,7 @@ export type Upgraded = {
     refused: boolean;
 
     /** The upgrade request, kept to identify the caller again. */
-    again: Request | undefined;
+    again: Parameters<StartedApp["served"]["identify"]>[0] | undefined;
 };
 
 /** Every open socket, and how many each caller holds. */
@@ -60,7 +60,6 @@ type Pinging = { ping?: () => void; on?: (event: "pong", listener: () => void) =
  */
 export function socketEvents(api: StartedApp, upgraded: Upgraded, open: OpenSockets, limits: SocketLimits, log: (level: "info" | "warn" | "error", line: string, about?: Readonly<Record<string, unknown>>) => void): WSEvents
 {
-    const identify = api.kernel.identify;
     const caller = upgraded.identity?.id ?? upgraded.address ?? "anonymous";
     const closing = new AbortController();
 
@@ -73,12 +72,12 @@ export function socketEvents(api: StartedApp, upgraded: Upgraded, open: OpenSock
     // false once the credential behind the socket is gone, and the socket closed
     const refresh = async (socket: WSContext): Promise<boolean> =>
     {
-        if (upgraded.again === undefined || identify === undefined)
+        if (upgraded.again === undefined)
         {
             return true;
         }
 
-        identity = await identify(upgraded.again);
+        identity = await api.served.identify(upgraded.again);
 
         if (identity === undefined)
         {

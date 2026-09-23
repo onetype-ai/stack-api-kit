@@ -86,6 +86,9 @@ export type StartedApp = {
         session: SessionOptions | undefined;
         bodyBytes: number;
         from: ServerOptions["from"];
+
+        /** Who a request is, as the HTTP side decides it: `identify` when start was given one, else the plugin that `identifies`. A socket asks the same, on upgrade and again while it lives. */
+        identify: (c: Parameters<NonNullable<ServerOptions["from"]>>[0]) => Promise<Identity | undefined>;
     };
 
     stop: () => Promise<void>;
