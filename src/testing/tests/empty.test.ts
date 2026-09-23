@@ -90,9 +90,9 @@ describe("a status that carries no body", () =>
         expect(api.logLines.some((line) => line.line.includes("with a body"))).toBe(false);
     });
 
-    const serving = async (): Promise<number> =>
+    const serving = async (withSession = true): Promise<number> =>
     {
-        app = await start({ plugins: [things], database: { file: ":memory:" }, sockets: false, http: { session: { name: "sid", secure: true } } });
+        app = await start({ plugins: [things], database: { file: ":memory:" }, sockets: false, ...(withSession && { http: { session: { name: "sid", secure: true } } }) });
         const server = Server.listen(app, 0) as HttpServer;
 
         if (!server.listening)
@@ -131,5 +131,16 @@ describe("a status that carries no body", () =>
         expect(response.status).toBe(204);
         expect(response.headers.get("set-cookie")).toContain("sid=; Path=/; HttpOnly");
         expect(response.headers.get(SessionHeaders.end)).toBeNull();
+    });
+
+    test("passes the session headers of a 204 through untouched where no session is configured", async () =>
+    {
+        const port = await serving(false);
+
+        const response = await fetch(`http://127.0.0.1:${String(port)}/things/out`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+
+        expect(response.status).toBe(204);
+        expect(response.headers.get(SessionHeaders.end)).toBe("1");
+        expect(response.headers.get("set-cookie")).toBeNull();
     });
 });
