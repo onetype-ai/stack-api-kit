@@ -67,7 +67,7 @@ export type { Declaration, DeclaredCommand, DeclaredEntry, DeclaredRoute, Declar
 export { database, MigrationFault, createScopeFilter, outbox, schedule } from "./plugins/database/api";
 export type { DrizzleDb, DatabaseOptions, MigrationSource, MigrationStep, Store, StoreOptions, TablesByName } from "./plugins/database/api";
 
-export { securityHeaders, requestId, serve, sockets, cookieIn, SessionHeaders, isUploadedFile, claimedName } from "./plugins/http/api";
+export { Locale, currentRequestId, securityHeaders, requestId, serve, sockets, cookieIn, SessionHeaders, isUploadedFile, claimedName } from "./plugins/http/api";
 export type { Subscription, HonoApp, ServerOptions, SessionOptions, UploadedFile } from "./plugins/http/api";
 
 export { httpClient, HttpRequestError } from "./plugins/outbound/api";
