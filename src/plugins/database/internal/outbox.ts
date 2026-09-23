@@ -242,7 +242,11 @@ export function outboxOver(sql: Sql, settings: { leaseMs?: number } = {}, around
     };
 }
 
-/** Where events wait, in the same SQLite database as the work they announce. */
+/**
+ * Where events wait, in the same SQLite database as the work they announce. The process writing a row holds it for
+ * `leaseMs` while it delivers; a row one listener refused waits out a backoff and is claimed again, by this process
+ * or another, for the listeners that have not heard it.
+ */
 export function outbox(connection: Database.Database, settings: { leaseMs?: number } = {}): Outbox
 {
     return outboxOver(sqliteSql(connection), settings);

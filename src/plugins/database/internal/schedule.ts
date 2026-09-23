@@ -192,7 +192,13 @@ export function scheduleOver(sql: Sql, settings: { leaseMs?: number } = {}, arou
     };
 }
 
-/** Where later work waits, in the same SQLite database as the work that asked for it. */
+/**
+ * Where later work waits, in the same SQLite database as the work that asked for it.
+ *
+ * A claim is a lease: the process renews it while the command runs, and a lease nobody renewed
+ * means the process died, so the job is taken again and the lost run counted. Only the holder of
+ * a claim may finish or put back what it claimed.
+ */
 export function schedule(connection: Database.Database, settings: { leaseMs?: number } = {}): Schedule
 {
     return scheduleOver(sqliteSql(connection), settings);

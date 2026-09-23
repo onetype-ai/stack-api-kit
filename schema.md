@@ -107,7 +107,7 @@
 > Names a unit, and answers the function that marks a number as one.
 ### measure<Unit extends string>(_unit: Unit): (count: number) => Tagged<Unit>
 
-> Where events wait, in the same database as the work they announce. The process writing a row holds it for
+> Where events wait, in the same SQLite database as the work they announce. The process writing a row holds it for
 > `leaseMs` while it delivers; a row one listener refused waits out a backoff and is claimed again, by this process
 > or another, for the listeners that have not heard it.
 ### outbox(connection: Database.Database, settings?: { leaseMs?: number }): Outbox
@@ -122,7 +122,7 @@
 > Answers the caller's `x-request-id` only when it is 1-64 of `[A-Za-z0-9_-]`, and a fresh UUID otherwise, so a caller cannot write arbitrary text into every log line.
 ### requestId(header: string | undefined): string
 
-> Where later work waits, in the same database as the work that asked for it.
+> Where later work waits, in the same SQLite database as the work that asked for it.
 > A claim is a lease: the process renews it while the command runs, and a lease nobody renewed
 > means the process died, so the job is taken again and the lost run counted. Only the holder of
 > a claim may finish or put back what it claimed.
@@ -624,6 +624,10 @@
     | "UNDECLARED_CHANNEL"
     | "UNDECLARED_EVENT"
     | "UNKEPT_EVENT"
+    | "UNKEPT_JOB"
+    | "UNSTORED_SCHEDULE"
+    | "JOINED_TRANSACTION"
+    | "UNSUPPORTED_DATABASE"
     | "SELF_HEARD_EVENT"
     | "UNDECLARED_HOOK"
     | "UNDECLARED_COMMAND"
@@ -903,7 +907,7 @@
 > Order holds within one event's listeners only: a retried event can reach a listener after a later one.
 ### Outbox
     // Writes events inside the transaction that emitted them.
-    save: (db: unknown, messages: readonly OutboxMessage[]) => void
+    save: (db: unknown, messages: readonly OutboxMessage[]) => Promise<void>
     // Marks one delivered.
     markSent: (id: string) => Promise<void>
     // What was kept but never marked sent. Read once, at startup, by a kernel whose outbox cannot `claim`.
@@ -1129,7 +1133,7 @@
 > Where work waits until it is time.
 ### Schedule
     // Writes one, inside the transaction that asked for it when there is one.
-    save: (db: unknown, job: QueuedJob) => void
+    save: (db: unknown, job: QueuedJob) => Promise<void>
     // Claims what is due, at most `limit`, marking each taken; a job whose lease ran out is claimed again with its lost run counted.
     claim: (now: number, limit: number) => Promise<readonly QueuedJob[]>
     // How long a claim holds without `renew`; the kernel renews every third of it while the command runs.
@@ -1200,8 +1204,8 @@
     tx: <Result>(plugin: string, run: (db: unknown) => Promise<Result>) => Promise<Result>
     write: <Result>(run: () => Promise<Result>) => Promise<Result>
     inTransaction: () => boolean
-    migrate: (sources: readonly MigrationSource[]) => MigrationStep[]
-    close: () => void
+    migrate: (sources: readonly MigrationSource[]) => Promise<MigrationStep[]>
+    close: () => Promise<void>
 
 > What building a store needs: where the file is, and who owns what.
 ### StoreOptions = DatabaseOptions &
