@@ -11,7 +11,7 @@ import { pgOn, pgSql } from "./pgSql";
 import { scheduleOver } from "./schedule";
 import { createScopeFilter } from "./scopeFilter";
 
-import type { Outbox, Schedule, ScopeFilter } from "../../kernel/api";
+import type { Logger, Outbox, Schedule, ScopeFilter } from "../../kernel/api";
 import type { MigrationSource, MigrationStep } from "./migrate";
 import type { PgClient, PgConnections } from "./pgConnections";
 import type { Sql } from "./sql";
@@ -23,7 +23,10 @@ export type PostgresOptions = { tables: Readonly<Record<string, TablesByName>> }
 
     /** `schema`, when named, is where this store keeps its tables in a PGlite database others share; closing drops it and leaves the database open. */
     | { pglite: PGlite; schema?: string }
-);
+) & {
+    /** Where a connection the server dropped is reported. */
+    log?: Logger;
+};
 
 /** What a project holds after opening a Postgres database; the same shape as SQLite's store. */
 export type PostgresStore = {
@@ -53,7 +56,7 @@ export async function postgres(settings: PostgresOptions): Promise<PostgresStore
     const drizzle = single
         ? (await import("drizzle-orm/pglite")).drizzle as (client: PGlite, config: { schema: TablesByName }) => unknown
         : (await import("drizzle-orm/node-postgres")).drizzle as (client: Pool | PoolClient, config: { schema: TablesByName }) => unknown;
-    const connections: PgConnections & { turns?: { run: <Result>(run: () => Promise<Result>) => Promise<Result> } } = single ? singleConnection(settings.pglite) : await poolConnections(settings.url, settings.poolSize);
+    const connections: PgConnections & { turns?: { run: <Result>(run: () => Promise<Result>) => Promise<Result> } } = single ? singleConnection(settings.pglite) : await poolConnections(settings.url, settings.poolSize, settings.log);
     const turns = connections.turns;
     const borrowed = "pglite" in settings ? settings.schema : undefined;
 
@@ -141,7 +144,7 @@ export async function postgres(settings: PostgresOptions): Promise<PostgresStore
             }
             catch (cause)
             {
-                await client.exec(rollback).catch(() => undefined);
+                await client.exec(rollback).catch((failed: unknown) => client.ruin?.(failed));
 
                 throw cause;
             }

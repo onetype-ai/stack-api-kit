@@ -130,7 +130,7 @@ export function pgSql(connections: PgConnections, options: PgSqlOptions = {}): S
                 }
                 catch (cause)
                 {
-                    await client.exec("ROLLBACK");
+                    await client.exec("ROLLBACK").catch((failed: unknown) => client.ruin?.(failed));
 
                     throw cause;
                 }
