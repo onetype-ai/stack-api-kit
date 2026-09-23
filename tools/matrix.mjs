@@ -35,6 +35,8 @@ export const bothDialects = [
     "src/testing/tests/recorder.test.ts",
     "src/testing/tests/records.test.ts",
     "src/testing/tests/redaction.test.ts",
+    "src/testing/tests/isolation-configured.test.ts",
+    "src/testing/tests/isolation-plain.test.ts",
     "src/testing/tests/redelivery.test.ts",
     "src/testing/tests/redirects.test.ts",
     "src/testing/tests/resolving.test.ts",
@@ -70,6 +72,7 @@ export const sqliteOnly = [
     "src/plugins/database/tests/sqlite-store.test.ts",
     "src/plugins/database/tests/sqlite-types.test.ts",
     "src/testing/tests/sqlite-leases.test.ts",
+    "src/testing/tests/sqlite-redelivery.test.ts",
 ];
 
 /** Store suites not yet moved to both databases. Empty before 9.0 ships. */

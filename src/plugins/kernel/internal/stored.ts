@@ -29,3 +29,10 @@ export const Stored = {
         return registered;
     },
 };
+
+/** Forgets every stored schema marked so far, for a test worker that keeps its modules across files. */
+export function forgetStored(): void
+{
+    registered.clear();
+}
+

@@ -140,6 +140,21 @@ const discoveredConfig = new Map<string, Readonly<Record<string, unknown>>>();
 const asked = new Set<string>();
 
 /**
+ * Forgets what one suite left in this module: the fixture, the defaults, what was discovered, and that the outbox
+ * warning was given. A worker keeping its modules across files (the postgres project) calls it before each file, so
+ * each file sees only what it configured itself.
+ */
+export function forgetTestKernelState(): void
+{
+    toldOfOutbox = false;
+    resolving = undefined;
+    defaults = {};
+    discovered.clear();
+    discoveredConfig.clear();
+    asked.clear();
+}
+
+/**
  * Registers, once per test process (a setup file), where missing dependencies come from. `resolve` is given the names
  * nothing passed provides, in waves as their own dependencies turn up, and each name is asked for once: a resolver
  * may load only those plugins, or answer every plugin it holds. A test that passes every plugin it needs never calls it.

@@ -37,3 +37,11 @@ test("the matrix names each suite once, and only suites that exist", () =>
     expect(named.filter((path, index) => named.indexOf(path) !== index)).toEqual([]);
     expect(named.filter((path) => !existsSync(path))).toEqual([]);
 });
+
+test("a suite on SQLite alone says so in its name, and no other suite registers tests by the dialect", () =>
+{
+    const conditional = suitesUnder("src").filter((path) => !/\/sqlite-[^/]+$/u.test(path) && /if \(dialect\(\) ===/u.test(readFileSync(path, "utf8")));
+
+    expect(sqliteOnly.filter((path) => !/\/sqlite-[^/]+\.test\.ts$/u.test(path))).toEqual([]);
+    expect(conditional).toEqual([]);
+});
