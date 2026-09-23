@@ -1,6 +1,6 @@
 {
     "name": "@onetype/stack-api-kit",
-    "version": "8.2.0",
+    "version": "9.0.0-rc.1",
     "type": "module",
     "sideEffects": false,
     "exports": {
