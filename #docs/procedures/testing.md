@@ -19,11 +19,12 @@ function. No shared setup hiding a dependency or helper hiding the claim.
 `startTestKernel({ plugins })` opens an in-memory SQLite with the real
 migrations, a rate limiter and an http client the test reads; pass
 `outbox: true` to test as a deployment with an outbox runs.
-A fake accepting what SQLite rejects is where bugs hide.
+A fake accepting what SQLite rejects hides bugs.
 
 `configureTestKernels({ resolve })` in a setup file adds what a plugin
-`dependsOn`, so a test names only the plugin it proves. Each test builds
-its own kernel and stops it. `testClock()` gives `now` a test moves by hand.
+`dependsOn`. Each test builds and stops its own kernel.
+`openApi({ plugins, stands, clock, seed })` adds stand-ins by name, a
+clock the test moves, and `call(identity, method, path, input)`.
 
 ## What must be proved
 

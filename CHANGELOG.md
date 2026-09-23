@@ -50,6 +50,9 @@
 
 ### Added
 
+- `openApi({ plugins, stands, clock, seed })` in `/testing`, the API twin of
+  the app kit's `openApp`: a test kernel with stand-ins by the name they
+  replace, a test clock, a seed, and `call(identity, method, path, input)`.
 - `@onetype/stack-api-kit/tables`: `table`, `column`, `index`,
   `uniqueIndex`, `dialect` and `PortableDb`. One definition for SQLite and
   Postgres, built for the dialect the process uses (`KIT_DIALECT`, else a
