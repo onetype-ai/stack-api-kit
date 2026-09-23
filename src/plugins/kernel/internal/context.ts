@@ -4,7 +4,8 @@ import type { Identity, Context, HttpRequest, Plugin } from "./contract";
 import type { events, PendingDelivery } from "./events";
 import { Refusal } from "./refusal";
 import { KernelFault } from "./faults";
-import { blockedUrlReason } from "./privateAddress";
+import { blockedUrlReason, refusalReasonOf } from "./privateAddress";
+import { publicAddressOf, type Lookup } from "./resolve";
 import type { hooks } from "./hooks";
 import { createPermissions } from "./permissions";
 import type { HttpClient, ScopeFilter, Outbox, Schedule, Sockets, KernelStore } from "./store";
@@ -31,6 +32,9 @@ export type KernelWiring = {
     outbox: Outbox | undefined;
 
     httpClient: HttpClient | undefined;
+
+    /** How a name becomes the addresses a call to "anywhere" is checked against. */
+    lookup: Lookup;
 
     /** What the project calls the current time. */
     now: () => number;
@@ -321,10 +325,17 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
 
                 if (blocked !== undefined)
                 {
-                    throw new KernelFault("UNDECLARED_HOST", `"${plugin}" called an address it may not reach. ${blocked}`, { plugin });
+                    throw new KernelFault("UNDECLARED_HOST", `"${plugin}" called an address it may not reach. ${blocked}`, { plugin, detail: { reason: refusalReasonOf(call.url) } });
                 }
 
-                return wiring.httpClient === undefined ? absentWiring(plugin, "httpClient", "fetch", "httpClient") : wiring.httpClient(call);
+                if (wiring.httpClient === undefined)
+                {
+                    return absentWiring(plugin, "httpClient", "fetch", "httpClient");
+                }
+
+                const pin = await publicAddressOf(new URL(call.url.trim()).hostname, wiring.lookup, plugin);
+
+                return wiring.httpClient(call, pin);
             }
 
             if (host === undefined)

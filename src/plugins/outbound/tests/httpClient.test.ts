@@ -132,18 +132,19 @@ describe("redirects", () =>
 {
     test("never follows one, so a permitted host cannot hand the call on", async () =>
     {
-        let capturedInit: RequestInit | undefined;
+        const asked: string[] = [];
 
-        vi.stubGlobal("fetch", (_url: string, init?: RequestInit) =>
+        vi.stubGlobal("fetch", (url: string, init?: RequestInit) =>
         {
-            capturedInit = init;
+            asked.push(`${url} ${String(init?.redirect)}`);
 
-            return Promise.resolve(new Response("{}", { status: 200 }));
+            return Promise.resolve(new Response(null, { status: 302, headers: { location: "https://elsewhere.example.test/" } }));
         });
 
-        await httpClient()({ method: "GET", url: "https://api.example.test/x" });
+        const call = httpClient()({ method: "GET", url: "https://api.example.test/x" });
 
-        expect(capturedInit?.redirect).toBe("error");
+        await expect(call).rejects.toMatchObject({ code: "NETWORK", status: 302 });
+        expect(asked).toEqual(["https://api.example.test/x manual"]);
     });
 });
 

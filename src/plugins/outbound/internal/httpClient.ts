@@ -1,4 +1,6 @@
-import type { HttpRequest } from "../../kernel/api";
+import type { HttpClient, HttpRequest } from "../../kernel/api";
+
+import { pinnedFetch } from "./pinned";
 
 /** How the built-in caller is configured: `timeoutMs` defaults to 10000, `maxBytes` to 5000000, and `headers` is called per request so a rotating credential stays fresh. */
 export type HttpClientOptions = {
@@ -43,13 +45,16 @@ function toRequestBody(body: unknown): Uint8Array | ArrayBuffer | Blob | FormDat
     return isBinaryType(body) ? body : JSON.stringify(body);
 }
 
-/** Builds the outbound caller: it follows no redirects, reads at most `maxBytes`, gives up after `timeoutMs`, and throws `HttpRequestError` for every failure including a non-2xx status. */
-export function httpClient(options: HttpClientOptions = {})
+/** Where a call is sent elsewhere; 300 names no one place and 304 answers a conditional request, so neither is one. */
+const REDIRECT_STATUSES: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
+
+/** Builds the outbound caller: it follows no redirects, reads at most `maxBytes`, gives up after `timeoutMs`, dials the address it is pinned to when given one, and throws `HttpRequestError` for every failure including a non-2xx status. */
+export function httpClient(options: HttpClientOptions = {}): HttpClient
 {
     const timeoutMs = options.timeoutMs ?? 10_000;
     const maxBytes = options.maxBytes ?? 5_000_000;
 
-    return async (call: HttpRequest): Promise<unknown> =>
+    return async (call, pin) =>
     {
         const stopper = new AbortController();
         const timer = setTimeout(() => stopper.abort(), timeoutMs);
@@ -62,11 +67,12 @@ export function httpClient(options: HttpClientOptions = {})
 
         try
         {
-            const response = await fetch(call.url, {
+            const response = await (pin === undefined ? fetch : pinnedFetch(pin))(call.url, {
                 method: call.method,
                 signal: stopper.signal,
 
-                redirect: "error",
+                // never followed here: the kernel checked the first url and never sees the second
+                redirect: "manual",
 
                 headers: {
                     accept: call.accepts === "text" ? "*/*" : "application/json",
@@ -76,6 +82,13 @@ export function httpClient(options: HttpClientOptions = {})
                 },
                 ...(call.body !== undefined && { body: toRequestBody(call.body) }),
             });
+
+            if (REDIRECT_STATUSES.has(response.status))
+            {
+                await response.body?.cancel().catch(() => undefined);
+
+                throw new HttpRequestError("NETWORK", `The call was redirected (${response.status}), and redirects are not followed.`, response.status);
+            }
 
             const text = await readResponseBody(response, maxBytes);
 

@@ -13,6 +13,8 @@ export type { DeclaredIndex } from "./internal/tableIndexes";
 
 export type { RefusalBody } from "./internal/refusal";
 export { isPrivateIp } from "./internal/privateAddress";
+export type { RefusalReason } from "./internal/privateAddress";
+export type { Lookup, ResolvedAddress } from "./internal/resolve";
 export type { FaultCode, FaultDetail } from "./internal/faults";
 
 export type {

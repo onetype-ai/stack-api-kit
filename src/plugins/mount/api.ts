@@ -1,6 +1,6 @@
 import type { DatabaseOptions, Store } from "../database/api";
 import type { Subscription, ServerOptions } from "../http/api";
-import type { RateLimiter, HttpClient, Identity, Kernel, Logger, Plugin } from "../kernel/api";
+import type { RateLimiter, HttpClient, Identity, Kernel, Logger, Lookup, Plugin } from "../kernel/api";
 import type { HttpClientOptions } from "../outbound/api";
 import { discover, discoverFrom } from "./internal/discover";
 import { start } from "./internal/start";
@@ -23,6 +23,9 @@ export type StartOptions = {
 
     /** How outbound calls are carried, or how the built-in one is configured. */
     httpClient?: HttpClientOptions | HttpClient | undefined;
+
+    /** How a name becomes addresses for a plugin reaching "anywhere"; the platform's resolver when left out. */
+    lookup?: Lookup | undefined;
 
     /** What counts requests against a route's declared limit. */
     rateLimiter?: RateLimiter | undefined;

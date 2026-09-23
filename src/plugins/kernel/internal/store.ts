@@ -1,4 +1,5 @@
 import type { Identity, HttpRequest, ChannelReach } from "./contract";
+import type { ResolvedAddress } from "./resolve";
 
 /** What the kernel needs to reach storage. */
 export type KernelStore = {
@@ -77,8 +78,8 @@ export type Schedule = {
 /** How a scope becomes a condition the database understands. */
 export type ScopeFilter = (table: string, column: string, value: string) => unknown;
 
-/** What the kernel needs to call another server. */
-export type HttpClient = (call: HttpRequest) => Promise<unknown>;
+/** What the kernel needs to call another server; `pin`, when given, is the address the kernel checked, and the call is dialled there rather than wherever the name resolves now. */
+export type HttpClient = (call: HttpRequest, pin?: ResolvedAddress) => Promise<unknown>;
 
 /** One message on its way out, and how far it goes. */
 export type ChannelMessage = {

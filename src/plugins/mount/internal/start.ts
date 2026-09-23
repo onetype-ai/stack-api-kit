@@ -305,6 +305,7 @@ export async function start(options: StartOptions): Promise<StartedApp>
         ...(scoping && store.createScopeFilter !== undefined && { scopeFilter: store.createScopeFilter() }),
         rateLimiter,
         httpClient: typeof options.httpClient === "function" ? options.httpClient : httpClient(options.httpClient ?? {}),
+        ...(options.lookup !== undefined && { lookup: options.lookup }),
         ...(options.config !== undefined && { config: options.config }),
         ...(log !== undefined && {
             log: (level, plugin, line, about) =>

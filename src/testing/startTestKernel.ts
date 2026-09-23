@@ -4,7 +4,7 @@ import { createKernel } from "../plugins/kernel/api";
 import { SECRET } from "../plugins/kernel/internal/validate";
 
 import type { DrizzleDb, Store } from "../plugins/database/api";
-import type { Identity, HttpClient, Kernel, HttpRequest, Plugin, ChannelMessage } from "../plugins/kernel/api";
+import type { Identity, HttpClient, Kernel, HttpRequest, Lookup, Plugin, ChannelMessage, ResolvedAddress } from "../plugins/kernel/api";
 
 /** One line a plugin logged, flattened: `level`, `plugin` and `line` are always there, and whatever the call passed as `about` is spread alongside them. */
 export type LogLine = {
@@ -21,6 +21,9 @@ export type SentRequest = {
 
     /** What was sent, with a credential's value replaced by `"[redacted]"`. */
     headers: Readonly<Record<string, string>> | undefined;
+
+    /** The address the call was dialled at, for a plugin reaching "anywhere". */
+    address?: string;
 };
 
 /** A credential's value, held back from what a test prints. */
@@ -51,6 +54,9 @@ export type TestKernelOptions = {
 
     /** What the clock answers, so a test can reach tomorrow. */
     now?: () => number;
+
+    /** What a name resolves to for a plugin reaching "anywhere"; every name answers 93.184.215.14 when left out, so no test asks real DNS. */
+    lookup?: Lookup;
 };
 
 /** One event, as a test sees it. */
@@ -103,7 +109,10 @@ export const testTables = {
 };
 
 /** Every option `startTestKernel` knows. */
-const TAKES: ReadonlySet<string> = new Set(["plugins", "config", "respondWith", "outbox", "schedule", "sockets", "now"]);
+const TAKES: ReadonlySet<string> = new Set(["plugins", "config", "respondWith", "outbox", "schedule", "sockets", "now", "lookup"]);
+
+// example.com's address: public, so the check passes, and never dialled, since the test kernel answers calls itself.
+const PUBLIC_ADDRESS: readonly ResolvedAddress[] = [{ address: "93.184.215.14", family: 4 }];
 
 /** Boots a kernel on an in-memory database with migrations already applied, recording every event, log line and outbound call; it throws on an option it does not take, and outbound calls answer `{}` unless `respondWith` says otherwise. */
 export async function startTestKernel(options: TestKernelOptions): Promise<TestKernel>
@@ -145,9 +154,9 @@ export async function startTestKernel(options: TestKernelOptions): Promise<TestK
         },
     };
 
-    const answering: HttpClient = (call) =>
+    const answering: HttpClient = (call, pin) =>
     {
-        calls.push({ method: call.method, url: call.url, body: call.body, headers: redacted(call.headers) });
+        calls.push({ method: call.method, url: call.url, body: call.body, headers: redacted(call.headers), ...(pin !== undefined && { address: pin.address }) });
 
         return Promise.resolve(options.respondWith?.(call) ?? {});
     };
@@ -169,6 +178,7 @@ export async function startTestKernel(options: TestKernelOptions): Promise<TestK
         beatMs: 24 * 60 * 60 * 1000,
         db: store,
         httpClient: answering,
+        lookup: options.lookup ?? (() => Promise.resolve(PUBLIC_ADDRESS)),
         rateLimiter: limiter(),
         config: options.config ?? {},
         log: (level, plugin, line, about) =>

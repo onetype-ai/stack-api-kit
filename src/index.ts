@@ -50,6 +50,9 @@ export type {
     Sockets,
     KernelStore,
     ContractProblem,
+    Lookup,
+    RefusalReason,
+    ResolvedAddress,
 } from "./plugins/kernel/api";
 
 export { declarationsOf } from "./plugins/declared/api";

@@ -11,6 +11,12 @@ const LOOPBACK_NAMES: ReadonlySet<string> = new Set([
     "ip6-loopback",
 ]);
 
+/** Names that never leave the machine or the site (RFC 6761, RFC 6762, RFC 8375, ICANN .internal). */
+const LOCAL_SUFFIXES: readonly string[] = [".localhost", ".local", ".internal", ".home.arpa"];
+
+/** Why a refused address was refused, for a plugin to tell its caller. */
+export type RefusalReason = "unresolvable" | "blocked_address" | "refused_url";
+
 /** Why this url may not be dialled, or undefined when it may. */
 export function blockedUrlReason(rawUrl: string): string | undefined
 {
@@ -43,12 +49,25 @@ export function blockedUrlReason(rawUrl: string): string | undefined
     return isPrivateHost(url.hostname) ? "That address is not on the public internet." : undefined;
 }
 
+/** Which reason a url `blockedUrlReason` refused falls under. */
+export function refusalReasonOf(rawUrl: string): RefusalReason
+{
+    try
+    {
+        return isPrivateHost(new URL(rawUrl.trim()).hostname) ? "blocked_address" : "refused_url";
+    }
+    catch
+    {
+        return "refused_url";
+    }
+}
+
 /** Whether a host, written any of the ways it can be, is not public. */
 export function isPrivateHost(rawHost: string): boolean
 {
     const host = rawHost.toLowerCase().replace(/\.$/u, "");
 
-    if (host === "" || LOOPBACK_NAMES.has(host))
+    if (host === "" || LOOPBACK_NAMES.has(host) || LOCAL_SUFFIXES.some((suffix) => host.endsWith(suffix)))
     {
         return true;
     }
@@ -76,95 +95,115 @@ export function isPrivateIp(address: string): boolean
     return octets === undefined ? true : isPrivateIpv4(octets);
 }
 
+// An allow-list rather than a deny-list: an address is public only when it is
+// global unicast outside every IANA special-purpose block, so a range nobody
+// thought of is refused rather than dialled.
+// https://www.iana.org/assignments/iana-ipv4-special-registry
+const SPECIAL_IPV4: readonly (readonly [number, number, number, number, number])[] = [
+    [0, 0, 0, 0, 8], [10, 0, 0, 0, 8], [100, 64, 0, 0, 10], [127, 0, 0, 0, 8], [169, 254, 0, 0, 16],
+    [172, 16, 0, 0, 12], [192, 0, 0, 0, 24], [192, 0, 2, 0, 24], [192, 31, 196, 0, 24], [192, 52, 193, 0, 24],
+    [192, 88, 99, 0, 24], [192, 168, 0, 0, 16], [192, 175, 48, 0, 24], [198, 18, 0, 0, 15], [198, 51, 100, 0, 24],
+    [203, 0, 113, 0, 24], [224, 0, 0, 0, 4], [240, 0, 0, 0, 4],
+];
+
 function isPrivateIpv4(octets: readonly number[]): boolean
 {
-    const [first = 0, second = 0] = octets;
+    const value = octets.reduce((packed, octet) => packed * 256 + octet, 0);
 
-    if (first === 0 || first === 10 || first === 127)
+    return SPECIAL_IPV4.some(([a, b, c, d, bits]) =>
     {
-        return true;
-    }
+        const base = ((a * 256 + b) * 256 + c) * 256 + d;
 
-    if (first === 169 && second === 254)
-    {
-        return true;
-    }
-
-    if (first === 172 && second >= 16 && second <= 31)
-    {
-        return true;
-    }
-
-    if (first === 192 && (second === 0 || second === 168))
-    {
-        return true;
-    }
-
-    if (first === 100 && second >= 64 && second <= 127)
-    {
-        return true;
-    }
-
-    return first >= 224;
+        return value >= base && value < base + 2 ** (32 - bits);
+    });
 }
 
+// https://www.iana.org/assignments/iana-ipv6-special-registry: global unicast is
+// 2000::/3; inside it the special blocks are refused, and an address carrying an
+// IPv4 one (mapped, NAT64) is judged by the IPv4 it carries.
 function isPrivateIpv6(rawAddress: string): boolean
 {
-    const address = rawAddress.toLowerCase();
+    const groups = toIpv6Groups(rawAddress);
 
-    if (address === "::" || address === "::1")
+    if (groups === undefined)
     {
         return true;
     }
 
-    const mapped = /^(?:::ffff:|64:ff9b::)(.+)$/u.exec(address);
+    const [first = 0, second = 0] = groups;
+    const embedded = (): boolean => isPrivateIpv4([(groups[6] ?? 0) >> 8, (groups[6] ?? 0) & 255, (groups[7] ?? 0) >> 8, (groups[7] ?? 0) & 255]);
 
-    if (mapped?.[1] !== undefined)
+    if (groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff)
     {
-        return isPrivateMappedIpv4(mapped[1]);
+        return embedded();
     }
 
-    const head = address.split(":")[0] ?? "";
+    if (first === 0x64 && second === 0xff9b && groups.slice(2, 6).every((group) => group === 0))
+    {
+        return embedded();
+    }
 
-    if (head.startsWith("fe8") || head.startsWith("fe9") || head.startsWith("fea") || head.startsWith("feb"))
+    if ((first & 0xe000) !== 0x2000)
     {
         return true;
     }
 
-    return head.startsWith("fc") || head.startsWith("fd");
+    // 2001::/23 (protocol assignments), 2001:db8::/32 (documentation), 2002::/16 (6to4), 3fff::/20 (documentation)
+    if (first === 0x2001 && (second < 0x200 || second === 0xdb8))
+    {
+        return true;
+    }
+
+    return first === 0x2002 || (first === 0x3fff && second < 0x1000);
 }
 
-function isPrivateMappedIpv4(tail: string): boolean
+/** The eight groups an IPv6 address names, however it abbreviates them, or undefined when it is not one. */
+function toIpv6Groups(rawAddress: string): number[] | undefined
 {
-    if (tail.includes("."))
+    let text = rawAddress.toLowerCase().split("%")[0] ?? "";
+
+    const dotted = /(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/u.exec(text);
+
+    if (dotted !== null)
     {
-        return isPrivateIp(tail);
+        const [a = 0, b = 0, c = 0, d = 0] = dotted.slice(1).map(Number);
+
+        if ([a, b, c, d].some((octet) => octet > 255))
+        {
+            return undefined;
+        }
+
+        text = `${text.slice(0, dotted.index)}${(a * 256 + b).toString(16)}:${(c * 256 + d).toString(16)}`;
     }
 
-    const groups = tail.split(":");
+    const halves = text.split("::");
 
-    if (groups.length !== 2)
+    if (halves.length > 2)
     {
-        return true;
+        return undefined;
     }
 
-    const [high, low] = groups.map((each) => Number.parseInt(each, 16));
+    const head = halves[0] === "" ? [] : (halves[0] ?? "").split(":");
+    const tail = halves.length === 2 && halves[1] !== "" ? (halves[1] ?? "").split(":") : [];
+    const missing = 8 - head.length - tail.length;
 
-    if (high === undefined || low === undefined || Number.isNaN(high) || Number.isNaN(low))
+    if (halves.length === 1 ? head.length !== 8 : missing < 1)
     {
-        return true;
+        return undefined;
     }
 
-    return isPrivateIpv4([
-        Math.floor(high / 256) % 256,
-        high % 256,
-        Math.floor(low / 256) % 256,
-        low % 256,
-    ]);
+    const groups = [...head, ...Array.from({ length: halves.length === 2 ? missing : 0 }, () => "0"), ...tail];
+
+    if (groups.some((group) => !/^[0-9a-f]{1,4}$/u.test(group)))
+    {
+        return undefined;
+    }
+
+    return groups.map((group) => Number.parseInt(group, 16));
 }
 
 /** The four octets a host names, however it spells them. */
-function toIpv4Octets(host: string): number[] | undefined
+export function toIpv4Octets(host: string): number[] | undefined
 {
     const dotted = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/u.exec(host);
 

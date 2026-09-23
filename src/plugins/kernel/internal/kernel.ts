@@ -9,6 +9,7 @@ import { hooks } from "./hooks";
 import { order } from "./order";
 import { createPermissions } from "./permissions";
 import { type RateLimiter, type KernelRequest, type RouteOwner, notServing, type KernelResponse, respond, unknownRoute } from "./request";
+import { systemLookup, type Lookup } from "./resolve";
 import type { FailedJob, HttpClient, ScopeFilter, Outbox, Schedule, Sockets, KernelStore } from "./store";
 import { validate } from "./validate";
 
@@ -29,6 +30,9 @@ export type KernelOptions = {
     /** What holds the open sockets. Without one, ctx.push throws. */
     sockets?: Sockets;
     httpClient?: HttpClient;
+
+    /** How a name becomes addresses for a plugin reaching "anywhere"; the platform's resolver when left out. */
+    lookup?: Lookup;
     log?: LogFn;
 
     /** What counts requests against a route's declared limit. */
@@ -352,6 +356,7 @@ export function createKernel(options: KernelOptions): Kernel
         db: options.db,
         sockets: options.sockets,
         httpClient: options.httpClient,
+        lookup: options.lookup ?? systemLookup,
         log,
         run: (command, input, identity) => run(command, input, identity),
     };
