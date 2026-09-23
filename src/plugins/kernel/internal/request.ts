@@ -213,15 +213,46 @@ function logRecord(cause: unknown): Readonly<Record<string, unknown>>
     return { error: String(cause) };
 }
 
-/** A header a handler may never set. */
-const OURS: ReadonlySet<string> = new Set([
+/** What a reply may say about itself without declaring it. Everything that governs how a browser treats the response is the kit's. */
+const REPLY_HEADERS: ReadonlySet<string> = new Set([
+    "location",
+    "retry-after",
+    "content-disposition",
+    "vary",
+    "etag",
+    "cache-control",
+    "x-session-key",
+    "x-session-expires",
+    "x-session-end",
+]);
+
+/** Headers the kit answers for: policy, framing, transport, sniffing, cookies and content type. */
+const KIT_HEADERS: ReadonlySet<string> = new Set([
     "set-cookie",
+    "content-type",
+    "content-length",
+    "transfer-encoding",
+    "connection",
     "content-security-policy",
+    "content-security-policy-report-only",
     "x-content-type-options",
     "x-frame-options",
-    "access-control-allow-origin",
-    "access-control-allow-credentials",
+    "referrer-policy",
+    "strict-transport-security",
+    "permissions-policy",
+    "x-xss-protection",
+    "x-permitted-cross-domain-policies",
+    "x-dns-prefetch-control",
 ]);
+
+/** Whether a header is one only the kit may set, CORS and the cross-origin family included. */
+export function isKitHeader(name: string): boolean
+{
+    return KIT_HEADERS.has(name) || name.startsWith("access-control-") || name.startsWith("cross-origin-") || name.startsWith("sec-");
+}
+
+/** Directives that let a shared cache keep the body: fine for a public route, one caller's answer handed to the next for any other. */
+const SHARED_CACHE = /(^|,)\s*(public|s-maxage|proxy-revalidate)\b/iu;
 
 /** The headers a handler asked for, minus the ones it may not set. */
 function filterHeaders(
@@ -237,9 +268,9 @@ function filterHeaders(
     {
         const lower = name.toLowerCase();
 
-        if (OURS.has(lower))
+        if (!REPLY_HEADERS.has(lower) && !(route.sends ?? []).includes(lower))
         {
-            log("warn", plugin, `${route.method} ${route.path} tried to set "${lower}", which the kit answers for`);
+            log("warn", plugin, `${route.method} ${route.path} tried to set "${lower}", which it may not: declare it in sends, unless the kit answers for it`);
 
             continue;
         }
@@ -247,6 +278,13 @@ function filterHeaders(
         if (/[\r\n]/.test(value))
         {
             log("warn", plugin, `${route.method} ${route.path} tried to set "${lower}" to a value carrying a newline`);
+
+            continue;
+        }
+
+        if (lower === "cache-control" && route.public !== true && SHARED_CACHE.test(value))
+        {
+            log("warn", plugin, `${route.method} ${route.path} tried to let a shared cache keep an answer only its caller may see`);
 
             continue;
         }

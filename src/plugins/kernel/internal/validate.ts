@@ -3,6 +3,7 @@ import type { KernelFault } from "./faults";
 import * as names from "./names";
 import { tableName } from "./tableName";
 import { isFilterable, numberRanges } from "./output";
+import { isKitHeader } from "./request";
 
 /** One thing wrong, and everything needed to fix it. */
 export type ContractProblem = {
@@ -329,6 +330,14 @@ function checkHeaders(name: string, route: NonNullable<Plugin["definition"]["rou
         if (SIGNATURE.test(header) && route.keepsRaw !== true)
         {
             report("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" reads "${header}" and does not declare keepsRaw. A signature is checked against the bytes that arrived, and this route never sees them: the body is parsed before the handler runs. Add keepsRaw: true and check ctx.sent, or drop "${header}" from reads and stop claiming the check.`);
+        }
+    }
+
+    for (const header of route.sends ?? [])
+    {
+        if (typeof header !== "string" || !/^[a-z0-9-]+$/u.test(header) || isKitHeader(header))
+        {
+            report("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" sends "${String(header)}". A route sends lowercase header names the kit does not answer for; this one is either not a header name or governs how a browser treats the response.`);
         }
     }
 }

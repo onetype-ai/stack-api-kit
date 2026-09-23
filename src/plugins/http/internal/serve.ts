@@ -248,6 +248,12 @@ export function serve(options: ServerOptions): Hono
 
         for (const [name, value] of Object.entries(securityHeaders))
         {
+            // a cache-control the reply chose survives: the kernel already held it to what its route may say
+            if (name === "cache-control" && c.res.headers.has(name))
+            {
+                continue;
+            }
+
             c.header(name, value);
         }
 

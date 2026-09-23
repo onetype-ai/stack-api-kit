@@ -102,7 +102,7 @@ describe("headers a handler may not set", () =>
             const answer = await kernel.handle({ method: "GET", path: "/thing", input: {} });
 
             expect(answer.headers).toEqual({});
-            expect(JSON.stringify(lines)).toMatch(/which the kit answers for/);
+            expect(JSON.stringify(lines)).toMatch(/which it may not/);
         });
     }
 
@@ -110,7 +110,7 @@ describe("headers a handler may not set", () =>
     {
         const lines: unknown[] = [];
         const kernel = await startServer(
-            () => new Reply(200, { to: "/x" }, { "x-note": "fine\r\nset-cookie: stolen=1" }),
+            () => new Reply(200, { to: "/x" }, { location: "/fine\r\nset-cookie: stolen=1" }),
             lines,
         );
 
@@ -122,10 +122,10 @@ describe("headers a handler may not set", () =>
 
     test("lowercases what it does send", async () =>
     {
-        const kernel = await startServer(() => new Reply(200, { to: "/x" }, { "X-Note": "sent" }));
+        const kernel = await startServer(() => new Reply(200, { to: "/x" }, { Location: "/sent" }));
 
         const answer = await kernel.handle({ method: "GET", path: "/thing", input: {} });
 
-        expect(answer.headers).toEqual({ "x-note": "sent" });
+        expect(answer.headers).toEqual({ location: "/sent" });
     });
 });

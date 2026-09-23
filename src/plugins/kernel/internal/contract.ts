@@ -83,6 +83,9 @@ export type Route<Context, Input extends z.ZodType = z.ZodType> = Describable & 
     /** Named rather than handed the lot: a handler reading any header reads the session cookie, and its log then carries a credential. */
     reads?: readonly string[];
 
+    /** Response headers this route sets beyond the kit's short list (location, retry-after, content-disposition, vary, etag, cache-control and the session headers), lowercase. A header governing how a browser treats the response is never one a route may name. */
+    sends?: readonly string[];
+
     /** Whether this route also sees the bytes exactly as they arrived, as `ctx.sent`; `input` is still parsed and still passes the schema. */
     /** For signature checks: parsing reorders keys and drops whitespace, so `JSON.stringify` of the parsed body is a different string and no canonical form recovers the original. */
     /** Declared rather than always present, because bytes nobody asked for are bytes a log can carry. */
