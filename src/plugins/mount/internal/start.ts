@@ -1,11 +1,11 @@
 import { Env } from "../../boot/api";
-import { database, migrationSteps, noStore } from "../../database/api";
+import { database, migrationSteps, noStore, postgres } from "../../database/api";
 import { limiter, unlimited } from "../../guard/api";
 import { createKernel, order, tableIndexes } from "../../kernel/api";
 import { httpClient } from "../../outbound/api";
 import { currentRequestId, serve, sockets } from "../../http/api";
 import type { DatabaseOptions, Store } from "../../database/api";
-import type { Plugin } from "../../kernel/api";
+import type { Logger, Plugin } from "../../kernel/api";
 import type { StartedApp, StartOptions } from "../api";
 
 /** A line's detail with the id of the request it was written in, when it was written in one. */
@@ -16,8 +16,8 @@ function traced(about: Readonly<Record<string, unknown>> | undefined): Readonly<
     return requestId === undefined || about?.["requestId"] !== undefined ? about : { requestId, ...about };
 }
 
-/** The store to run on: the project's own, one opened here, or none at all. */
-function storeFor(given: StartOptions["database"], withTables: readonly Plugin[]): Store
+/** The store to run on: the project's own, one opened here on SQLite or Postgres, or none at all. */
+async function storeFor(given: StartOptions["database"], withTables: readonly Plugin[], log: Logger | undefined): Promise<Store>
 {
     if (given === undefined)
     {
@@ -29,12 +29,21 @@ function storeFor(given: StartOptions["database"], withTables: readonly Plugin[]
         return given as Store;
     }
 
-    return database({
-        ...given as DatabaseOptions,
-        tables: Object.fromEntries(
-            withTables.map((plugin) => [plugin.name, plugin.definition.tables as Readonly<Record<string, unknown>>]),
-        ),
-    });
+    const tables = Object.fromEntries(
+        withTables.map((plugin) => [plugin.name, plugin.definition.tables as Readonly<Record<string, unknown>>]),
+    );
+
+    if ("dialect" in given && given.dialect === "postgres" && "pglite" in given)
+    {
+        return postgres({ pglite: given.pglite, ...(given.schema === undefined ? {} : { schema: given.schema }), tables });
+    }
+
+    if ("dialect" in given && given.dialect === "postgres" && "url" in given)
+    {
+        return postgres({ url: given.url, ...(given.poolSize === undefined ? {} : { poolSize: given.poolSize }), tables, ...(log === undefined ? {} : { log }) });
+    }
+
+    return database({ ...given as DatabaseOptions, tables });
 }
 
 
@@ -228,7 +237,7 @@ export async function start(options: StartOptions): Promise<StartedApp>
         throw new TypeError(`${fakes.map((name) => `"${name}"`).join(", ")} ${fakes.length === 1 ? "is a stand-in" : "are stand-ins"} for a real provider, and this process runs as production. Configure the real provider, or set ALLOW_FAKE=true where the deployment is decided.`);
     }
 
-    const store = storeFor(options.database, withTables);
+    const store = await storeFor(options.database, withTables, log);
 
     const migrations = order(new Map(options.plugins.map((plugin) => [plugin.name, plugin])))
         .filter((plugin) => plugin.definition.migrations !== undefined)

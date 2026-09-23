@@ -7,6 +7,7 @@ import { definePlugin, defineRoute, Refusal, Server, start } from "../../index";
 
 import type { Server as HttpServer } from "node:http";
 import type { StartedApp } from "../../index";
+import { testDatabase } from "./testDatabase";
 
 
 const route = defineRoute();
@@ -60,7 +61,7 @@ const partner = definePlugin("partner", {
 
 const serve = async (bodyBytes = 2_000): Promise<string> =>
 {
-    app = await start({ plugins: [partner], database: { file: ":memory:" }, sockets: false, http: { bodyBytes } });
+    app = await start({ plugins: [partner], database: await testDatabase(), sockets: false, http: { bodyBytes } });
     const server = Server.listen(app, 0) as HttpServer;
 
     if (!server.listening)

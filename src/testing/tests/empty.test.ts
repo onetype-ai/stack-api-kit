@@ -7,6 +7,7 @@ import { startTestKernel } from "../startTestKernel";
 import type { Server as HttpServer } from "node:http";
 import type { StartedApp } from "../../index";
 import type { TestKernel } from "../startTestKernel";
+import { testDatabase } from "./testDatabase";
 
 const route = defineRoute();
 
@@ -92,7 +93,7 @@ describe("a status that carries no body", () =>
 
     const serving = async (withSession = true): Promise<number> =>
     {
-        app = await start({ plugins: [things], database: { file: ":memory:" }, sockets: false, ...(withSession && { http: { session: { name: "sid", secure: true } } }) });
+        app = await start({ plugins: [things], database: await testDatabase(), sockets: false, ...(withSession && { http: { session: { name: "sid", secure: true } } }) });
         const server = Server.listen(app, 0) as HttpServer;
 
         if (!server.listening)

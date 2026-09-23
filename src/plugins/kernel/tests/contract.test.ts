@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 import { createKernel, definePlugin, KernelFault } from "../api";
 import type { Definition, Plugin } from "../api";
+import { column, table } from "../../database/api";
 
 /** A plugin with only what a case needs, and nothing that distracts from it. */
 function participant(name: string, found: Partial<Definition> = {}): Plugin
@@ -248,8 +248,8 @@ describe("declarations", () =>
     test("refuses two plugins whose tables land on one name in the database", async () =>
     {
         const failed = await refusalFor([
-            participant("auth", { tables: { people: sqliteTable("users", { id: text("id").primaryKey() }) } }),
-            participant("billing", { tables: { payers: sqliteTable("users", { id: text("id").primaryKey() }) } }),
+            participant("auth", { tables: { people: table("users", { id: column.text("id").primaryKey() }) } }),
+            participant("billing", { tables: { payers: table("users", { id: column.text("id").primaryKey() }) } }),
         ]);
 
         expect(failed?.code).toBe("DUPLICATE_TABLE");
@@ -258,8 +258,8 @@ describe("declarations", () =>
     test("allows two plugins declaring one key over tables of their own", async () =>
     {
         const failed = await refusalFor([
-            participant("auth", { tables: { rows: sqliteTable("auth_rows", { id: text("id").primaryKey() }) } }),
-            participant("billing", { tables: { rows: sqliteTable("billing_rows", { id: text("id").primaryKey() }) } }),
+            participant("auth", { tables: { rows: table("auth_rows", { id: column.text("id").primaryKey() }) } }),
+            participant("billing", { tables: { rows: table("billing_rows", { id: column.text("id").primaryKey() }) } }),
         ]);
 
         expect(failed).toBeUndefined();

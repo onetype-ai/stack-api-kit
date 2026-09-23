@@ -4,10 +4,11 @@ import { join } from "node:path";
 
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { z } from "zod";
 
 import { definePlugin, outbox, start } from "../../index";
+import { column, dialect, table } from "../../tables";
+import { testDatabase } from "./testDatabase";
 import { startTestKernel } from "../startTestKernel";
 
 import type { StartedApp } from "../../index";
@@ -24,7 +25,7 @@ let ledgerDelayMs = 0;
 let ledgerHangs = 0;
 
 // A table, so a transaction on a real database has something to hold.
-const notes = sqliteTable("desk_notes", { id: text("id").primaryKey(), workspaceId: text("workspace_id").notNull() });
+const notes = table("desk_notes", { id: column.id().primaryKey(), workspaceId: column.text("workspace_id").notNull() });
 
 const orders = definePlugin("orders", {
     version: "1.0.0",
@@ -268,9 +269,7 @@ describe("a listener slower than the outbox lease", () =>
 {
     test("is not handed the event a second time while the writing process still delivers it", async () =>
     {
-        folder = mkdtempSync(join(tmpdir(), "kit-redelivery-"));
-        const file = join(folder, "app.db");
-        const running = await start({ plugins: [orders, mailer, ledger], database: { file }, outbox: true, outboxLeaseMs: 1_000, sockets: false });
+        const running = await start({ plugins: [orders, mailer, ledger], database: await testDatabase(), outbox: true, outboxLeaseMs: 1_000, sockets: false });
         apps = [running];
         ledgerDelayMs = 2_500;
 
@@ -293,9 +292,8 @@ describe("a process that dies mid-delivery", () =>
 {
     test("leaves the next one to call only the listeners that had not finished", async () =>
     {
-        folder = mkdtempSync(join(tmpdir(), "kit-redelivery-"));
-        const file = join(folder, "app.db");
-        const dying = await start({ plugins: [orders, mailer, ledger], database: { file }, outbox: true, outboxLeaseMs: 1_000, sockets: false });
+        const database = await testDatabase();
+        const dying = await start({ plugins: [orders, mailer, ledger], database, outbox: true, outboxLeaseMs: 1_000, sockets: false });
         ledgerHangs = 1;
 
         await dying.kernel.context("orders").tx((ctx) =>
@@ -307,72 +305,77 @@ describe("a process that dies mid-delivery", () =>
         await until(() => heardBy.mailer === 1);
         await dying.stop();
         await new Promise((resolve) => setTimeout(resolve, 1_100));
-        apps = [await start({ plugins: [orders, mailer, ledger], database: { file }, outbox: true, outboxLeaseMs: 1_000, sockets: false })];
+        apps = [await start({ plugins: [orders, mailer, ledger], database, outbox: true, outboxLeaseMs: 1_000, sockets: false })];
 
         expect(heardBy).toEqual({ mailer: 1, ledger: 1 });
     }, 10_000);
 });
 
-describe("a listener whose hearing cannot be kept", () =>
+// What only SQLite's own file shows: a trigger written in its dialect, a table an 8.x release left, and two processes
+// sharing one file. Registered on SQLite alone; two processes on Postgres are proven against a server (`pnpm test:pg`).
+if (dialect() === "sqlite")
 {
-    test("is logged at warn while the kernel runs, naming the event and listener but not the payload", async () =>
+    describe("a listener whose hearing cannot be kept, on SQLite", () =>
     {
-        folder = mkdtempSync(join(tmpdir(), "kit-redelivery-"));
-        const file = join(folder, "app.db");
-        const lines: { level: string; line: string; about: Readonly<Record<string, unknown>> | undefined }[] = [];
-        const record = (level: string) => (line: string, about?: Readonly<Record<string, unknown>>): void =>
+        test("is logged at warn while the kernel runs, naming the event and listener but not the payload", async () =>
         {
-            lines.push({ level, line, about });
-        };
-        const running = await start({ plugins: [orders, mailer, ledger], database: { file }, outbox: true, sockets: false, log: { debug: record("debug"), info: record("info"), warn: record("warn"), error: record("error") } });
-        apps = [running];
-        const connection = new Database(file);
-        connection.exec("CREATE TRIGGER refuse_heard BEFORE UPDATE OF heard ON kit_outbox BEGIN SELECT RAISE(ABORT, 'no room left'); END;");
-        connection.close();
-        ledgerDelayMs = 50;
+            folder = mkdtempSync(join(tmpdir(), "kit-redelivery-"));
+            const file = join(folder, "app.db");
+            const lines: { level: string; line: string; about: Readonly<Record<string, unknown>> | undefined }[] = [];
+            const record = (level: string) => (line: string, about?: Readonly<Record<string, unknown>>): void =>
+            {
+                lines.push({ level, line, about });
+            };
+            const running = await start({ plugins: [orders, mailer, ledger], database: { file }, outbox: true, sockets: false, log: { debug: record("debug"), info: record("info"), warn: record("warn"), error: record("error") } });
+            apps = [running];
+            const connection = new Database(file);
+            connection.exec("CREATE TRIGGER refuse_heard BEFORE UPDATE OF heard ON kit_outbox BEGIN SELECT RAISE(ABORT, 'no room left'); END;");
+            connection.close();
+            ledgerDelayMs = 50;
 
-        await running.kernel.context("orders").tx((ctx) =>
+            await running.kernel.context("orders").tx((ctx) =>
+            {
+                ctx.events.emit(EVENT, { id: "order-7", workspaceId: WORKSPACE, note: SECRET_NOTE });
+
+                return Promise.resolve();
+            });
+            await until(() => heardBy.ledger === 1 && lines.some((line) => line.line.includes("could not keep that a listener heard")));
+            const warned = lines.filter((line) => line.level === "warn" && line.line.includes("could not keep that a listener heard"));
+
+            expect(warned.length).toBeGreaterThanOrEqual(1);
+            expect(JSON.stringify(warned)).toContain(EVENT);
+            expect(JSON.stringify(lines)).not.toContain(SECRET_NOTE);
+            expect(heardBy).toEqual({ mailer: 1, ledger: 1 });
+        }, 10_000);
+    });
+
+    describe("two processes on one SQLite file", () =>
+    {
+        test("deliver a due event exactly once between them", async () =>
         {
-            ctx.events.emit(EVENT, { id: "order-7", workspaceId: WORKSPACE, note: SECRET_NOTE });
+            folder = mkdtempSync(join(tmpdir(), "kit-redelivery-"));
+            const file = join(folder, "app.db");
+            const connection = new Database(file);
+            await outbox(connection).save(undefined, [{ id: crypto.randomUUID(), plugin: "orders", name: EVENT, payload: { id: "order-3", workspaceId: WORKSPACE, note: "x" } }]);
+            connection.close();
 
-            return Promise.resolve();
+            apps = await Promise.all([1, 2].map(() => start({ plugins: [orders, mailer, ledger], database: { file }, outbox: true, sockets: false })));
+
+            expect(heardBy).toEqual({ mailer: 1, ledger: 1 });
         });
-        await until(() => heardBy.ledger === 1 && lines.some((line) => line.line.includes("could not keep that a listener heard")));
-        const warned = lines.filter((line) => line.level === "warn" && line.line.includes("could not keep that a listener heard"));
 
-        expect(warned.length).toBeGreaterThanOrEqual(1);
-        expect(JSON.stringify(warned)).toContain(EVENT);
-        expect(JSON.stringify(lines)).not.toContain(SECRET_NOTE);
-        expect(heardBy).toEqual({ mailer: 1, ledger: 1 });
-    }, 10_000);
-});
+        test("reads an outbox table from before retries, and delivers what it kept", async () =>
+        {
+            folder = mkdtempSync(join(tmpdir(), "kit-redelivery-"));
+            const file = join(folder, "app.db");
+            const connection = new Database(file);
+            connection.exec("CREATE TABLE kit_outbox (id TEXT PRIMARY KEY, plugin TEXT NOT NULL, name TEXT NOT NULL, payload TEXT NOT NULL, writtenAt TEXT NOT NULL)");
+            connection.prepare("INSERT INTO kit_outbox VALUES (?, ?, ?, ?, ?)").run(crypto.randomUUID(), "orders", EVENT, JSON.stringify({ id: "order-4", workspaceId: WORKSPACE, note: "x" }), new Date().toISOString());
+            connection.close();
 
-describe("two processes on one database", () =>
-{
-    test("deliver a due event exactly once between them", async () =>
-    {
-        folder = mkdtempSync(join(tmpdir(), "kit-redelivery-"));
-        const file = join(folder, "app.db");
-        const connection = new Database(file);
-        await outbox(connection).save(undefined, [{ id: crypto.randomUUID(), plugin: "orders", name: EVENT, payload: { id: "order-3", workspaceId: WORKSPACE, note: "x" } }]);
-        connection.close();
+            apps = [await start({ plugins: [orders, mailer, ledger], database: { file }, outbox: true, sockets: false })];
 
-        apps = await Promise.all([1, 2].map(() => start({ plugins: [orders, mailer, ledger], database: { file }, outbox: true, sockets: false })));
-
-        expect(heardBy).toEqual({ mailer: 1, ledger: 1 });
+            expect(heardBy).toEqual({ mailer: 1, ledger: 1 });
+        });
     });
-
-    test("reads an outbox table from before retries, and delivers what it kept", async () =>
-    {
-        folder = mkdtempSync(join(tmpdir(), "kit-redelivery-"));
-        const file = join(folder, "app.db");
-        const connection = new Database(file);
-        connection.exec("CREATE TABLE kit_outbox (id TEXT PRIMARY KEY, plugin TEXT NOT NULL, name TEXT NOT NULL, payload TEXT NOT NULL, writtenAt TEXT NOT NULL)");
-        connection.prepare("INSERT INTO kit_outbox VALUES (?, ?, ?, ?, ?)").run(crypto.randomUUID(), "orders", EVENT, JSON.stringify({ id: "order-4", workspaceId: WORKSPACE, note: "x" }), new Date().toISOString());
-        connection.close();
-
-        apps = [await start({ plugins: [orders, mailer, ledger], database: { file }, outbox: true, sockets: false })];
-
-        expect(heardBy).toEqual({ mailer: 1, ledger: 1 });
-    });
-});
+}

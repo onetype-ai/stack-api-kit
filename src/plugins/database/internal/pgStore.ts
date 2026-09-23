@@ -21,7 +21,7 @@ import type { TablesByName } from "./store";
 export type PostgresOptions = { tables: Readonly<Record<string, TablesByName>> } & (
     { url: string; poolSize?: number }
 
-    /** `schema`, when named, is where this store keeps its tables in a PGlite database others share; closing drops it and leaves the database open. */
+    /** `schema`, when named, is where this store keeps its tables in a PGlite database others share; closing leaves both, so a store opened again on it finds its rows. */
     | { pglite: PGlite; schema?: string }
 ) & {
     /** Where a connection the server dropped is reported. */
@@ -200,7 +200,7 @@ export async function postgres(settings: PostgresOptions): Promise<PostgresStore
                 return;
             }
 
-            await connections.any.exec(`DROP SCHEMA "${borrowed}" CASCADE; SET search_path TO public`);
+            await connections.any.exec("SET search_path TO public");
         },
         outbox: (leasing = {}) => outboxOver(sql, leasing, around),
         schedule: (leasing = {}) => scheduleOver(sql, leasing, around),

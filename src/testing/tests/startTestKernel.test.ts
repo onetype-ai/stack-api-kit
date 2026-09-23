@@ -1,16 +1,16 @@
-import { sqliteTable, text } from "drizzle-orm/sqlite-core";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { z } from "zod";
 
+import { column, table } from "../../plugins/database/api";
 import { definePlugin } from "../../plugins/kernel/api";
 import { startTestKernel, testTables, createIdentity } from "../startTestKernel";
 
 import type { Plugin } from "../../plugins/kernel/api";
 
-const items = sqliteTable("note_items", { id: text("id").primaryKey() });
+const items = table("note_items", { id: column.id().primaryKey() });
 
 let at = "";
 
@@ -27,7 +27,11 @@ function createScheduled(): Plugin
 {
     at = mkdtempSync(join(tmpdir(), "startTestKernel-"));
 
-    writeFileSync(join(at, "0001-init.sql"), "CREATE TABLE note_items (id TEXT PRIMARY KEY)");
+    for (const which of ["sqlite", "postgres"])
+    {
+        mkdirSync(join(at, which));
+        writeFileSync(join(at, which, "0001-init.sql"), "CREATE TABLE note_items (id TEXT PRIMARY KEY)");
+    }
 
     return definePlugin("found", {
         version: "1.0.0",

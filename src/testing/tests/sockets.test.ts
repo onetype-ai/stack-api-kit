@@ -1,4 +1,3 @@
-import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { afterEach, describe, expect, test } from "vitest";
 import { z } from "zod";
 
@@ -6,12 +5,14 @@ import { definePlugin, start } from "../../index";
 import { createIdentity, startTestKernel } from "../startTestKernel";
 
 import type { Identity, StartedApp, Subscription } from "../../index";
+import { testDatabase } from "./testDatabase";
+import { column, table } from "../../tables";
 
 
 const A = "11111111-1111-4111-8111-111111111111";
 const B = "22222222-2222-4222-8222-222222222222";
 
-const notes = sqliteTable("desk_notes", { id: text("id").primaryKey(), workspaceId: text("workspace_id").notNull() });
+const notes = table("desk_notes", { id: column.id().primaryKey(), workspaceId: column.text("workspace_id").notNull() });
 
 const desk = definePlugin("desk", {
     version: "1.0.0",
@@ -41,7 +42,7 @@ const person = (id: string, workspace: string, permissions: readonly string[] = 
 
 const boot = async (): Promise<StartedApp> =>
 {
-    app = await start({ plugins: [desk], database: { file: ":memory:" }, sockets: { claim: "workspace" } });
+    app = await start({ plugins: [desk], database: await testDatabase(), sockets: { claim: "workspace" } });
 
     return app;
 };

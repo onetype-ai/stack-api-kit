@@ -7,6 +7,7 @@ import { createIdentity, startTestKernel } from "../startTestKernel";
 import type { Server as HttpServer } from "node:http";
 import type { KernelResponse, StartedApp } from "../../index";
 import type { TestKernel } from "../startTestKernel";
+import { testDatabase } from "./testDatabase";
 
 
 const route = defineRoute();
@@ -295,7 +296,7 @@ describe("over HTTP", () =>
 {
     const serve = async (): Promise<string> =>
     {
-        app = await start({ plugins: [pages], database: { file: ":memory:" }, sockets: false });
+        app = await start({ plugins: [pages], database: await testDatabase(), sockets: false });
         const server = Server.listen(app, 0) as HttpServer;
 
         if (!server.listening)
@@ -512,7 +513,7 @@ describe("over HTTP, a route that is not a document", () =>
 {
     const serveHeaders = async (): Promise<string> =>
     {
-        app = await start({ plugins: [headers], database: { file: ":memory:" }, sockets: false, strictReplyHeaders: true, identify: () => () => createIdentity([], "ana") });
+        app = await start({ plugins: [headers], database: await testDatabase(), sockets: false, strictReplyHeaders: true, identify: () => () => createIdentity([], "ana") });
         const server = Server.listen(app, 0) as HttpServer;
 
         if (!server.listening)

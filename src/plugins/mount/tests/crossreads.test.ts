@@ -1,14 +1,15 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
-import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 import { definePlugin } from "../../kernel/api";
 import { start } from "../api";
+import { testDatabase } from "../../../testing/tests/testDatabase";
+import { column, table } from "../../database/api";
 
 const from = fileURLToPath(new URL("./migrations", import.meta.url));
 
-const holders = sqliteTable("holders", { id: text("id").primaryKey() });
-const abbot = sqliteTable("abbot", { id: text("id").primaryKey() });
+const holders = table("holders", { id: column.text("id").primaryKey() });
+const abbot = table("abbot", { id: column.text("id").primaryKey() });
 
 const holding = definePlugin("holding", {
     version: "1.0.0",
@@ -29,10 +30,10 @@ describe("a migration reading another plugin's table", () =>
 {
     test("refuses to start when nothing declared the dependency", async () =>
     {
-        await expect(start({ plugins: [holding, sneaking], database: { file: ":memory:" } }))
+        await expect(start({ plugins: [holding, sneaking], database: await testDatabase() }))
             .rejects.toThrow(/reads "holders", which "holding" creates/);
 
-        await expect(start({ plugins: [holding, sneaking], database: { file: ":memory:" } }))
+        await expect(start({ plugins: [holding, sneaking], database: await testDatabase() }))
             .rejects.toThrow(/Add "holding" to dependsOn/);
     });
 });

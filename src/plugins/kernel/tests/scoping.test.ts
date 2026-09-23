@@ -1,16 +1,18 @@
 import { describe, expect, test } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 
-import { database } from "../../database/api";
+import { column, table } from "../../database/api";
+import { migrationsOf, openStore } from "../../database/tests/openStore";
+
+import type { PortableDb } from "../../database/api";
 import { createKernel, definePlugin, KernelFault, Refusal } from "../api";
 
 import type { Identity, Plugin } from "../api";
 
-const notes = sqliteTable("billing_notes", {
-    id: text("id").primaryKey(),
-    tenantId: text("tenant_id").notNull(),
-    body: text("body").notNull(),
+const notes = table("billing_notes", {
+    id: column.id().primaryKey(),
+    tenantId: column.text("tenant_id").notNull(),
+    body: column.text("body").notNull(),
 });
 
 function createBilling(): Plugin
@@ -50,13 +52,11 @@ function createBilling(): Plugin
     });
 }
 
-function startServer()
+async function startServer(): ReturnType<typeof openStore>
 {
-    const store = database({ file: ":memory:", tables: { billing: { notes } } });
+    const store = await openStore({ billing: { notes } });
 
-    store.forPlugin("billing").$client.exec(
-        "CREATE TABLE billing_notes (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, body TEXT NOT NULL)",
-    );
+    await store.migrate([{ plugin: "billing", from: migrationsOf("CREATE TABLE billing_notes (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, body TEXT NOT NULL)") }]);
 
     return store;
 }
@@ -70,11 +70,9 @@ describe("a table a plugin scoped", () =>
 {
     test("answers only the caller's rows, and the same 404 for another's", async () =>
     {
-        const store = startServer();
+        const store = await startServer();
 
-        store.forPlugin("billing").$client.exec(
-            "INSERT INTO billing_notes VALUES ('a', 'acme', 'ours'), ('b', 'other', 'theirs')",
-        );
+        await (store.forPlugin("billing") as PortableDb).insert(notes).values([{ id: "a", tenantId: "acme", body: "ours" }, { id: "b", tenantId: "other", body: "theirs" }]);
 
         const kernel = createKernel({
             plugins: [createBilling()],
@@ -95,12 +93,12 @@ describe("a table a plugin scoped", () =>
         expect(await mine.one("b")).toBeUndefined();
 
         await kernel.stop();
-        store.close();
+        await store.close();
     });
 
     test("faults when a signed-in caller carries no such claim, naming both sides", async () =>
     {
-        const store = startServer();
+        const store = await startServer();
 
         const kernel = createKernel({
             plugins: [createBilling()],
@@ -117,12 +115,12 @@ describe("a table a plugin scoped", () =>
         await expect(nobody.list()).rejects.toThrow(/scopes by "tenantId".*carries no such claim/s);
 
         await kernel.stop();
-        store.close();
+        await store.close();
     });
 
     test("faults when the claim is there but not a string, naming what it got", async () =>
     {
-        const store = startServer();
+        const store = await startServer();
 
         const kernel = createKernel({
             plugins: [createBilling()],
@@ -139,12 +137,12 @@ describe("a table a plugin scoped", () =>
         await expect(wrong.list()).rejects.toThrow(/carries it as number, and a scope narrows by a string/);
 
         await kernel.stop();
-        store.close();
+        await store.close();
     });
 
     test("refuses a caller whose claim is there but empty, rather than defaulting", async () =>
     {
-        const store = startServer();
+        const store = await startServer();
 
         const kernel = createKernel({
             plugins: [createBilling()],
@@ -159,12 +157,12 @@ describe("a table a plugin scoped", () =>
         await expect(blank.list()).rejects.toThrow(Refusal);
 
         await kernel.stop();
-        store.close();
+        await store.close();
     });
 
     test("faults when nothing is calling and no scope was acted for", async () =>
     {
-        const store = startServer();
+        const store = await startServer();
 
         const kernel = createKernel({
             plugins: [createBilling()],
@@ -180,7 +178,7 @@ describe("a table a plugin scoped", () =>
         await expect(nobody.list()).rejects.toThrow(/where nobody is calling.*ctx\.forScope/s);
 
         await kernel.stop();
-        store.close();
+        await store.close();
     });
 
     test("refuses at startup when it scopes a table it does not own", async () =>

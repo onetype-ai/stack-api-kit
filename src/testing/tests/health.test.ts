@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { definePlugin, start } from "../../index";
 
 import type { StartedApp } from "../../index";
+import { testDatabase } from "./testDatabase";
 
 
 let app: StartedApp | undefined;
@@ -17,7 +18,7 @@ const quiet = definePlugin("quiet", { version: "1.0.0", describe: "Declares noth
 
 const boot = async (readiness?: () => Promise<{ ready: boolean } & Record<string, unknown>>): Promise<StartedApp> =>
 {
-    app = await start({ plugins: [quiet], database: { file: ":memory:" }, sockets: false, http: { ...(readiness !== undefined && { readiness }) } });
+    app = await start({ plugins: [quiet], database: await testDatabase(), sockets: false, http: { ...(readiness !== undefined && { readiness }) } });
 
     return app;
 };

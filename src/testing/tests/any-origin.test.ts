@@ -6,6 +6,7 @@ import { createIdentity, startTestKernel } from "../startTestKernel";
 
 import type { Server as HttpServer } from "node:http";
 import type { StartedApp } from "../../index";
+import { testDatabase } from "./testDatabase";
 
 
 const route = defineRoute();
@@ -60,7 +61,7 @@ const look = definePlugin("look", {
 
 const serve = async (): Promise<string> =>
 {
-    app = await start({ plugins: [look], database: { file: ":memory:" }, sockets: false, http: { origins: [TRUSTED] }, identify: () => () => createIdentity(["look.write"], "ana") });
+    app = await start({ plugins: [look], database: await testDatabase(), sockets: false, http: { origins: [TRUSTED] }, identify: () => () => createIdentity(["look.write"], "ana") });
     const server = Server.listen(app, 0) as HttpServer;
 
     if (!server.listening)

@@ -1,5 +1,8 @@
-import { PGlite } from "@electric-sql/pglite";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+import { sharedPglite } from "../../../testing/pglite";
 import { database, dialect, postgres } from "../api";
 
 import type { TablesByName } from "../internal/store";
@@ -7,7 +10,6 @@ import type { TablesByName } from "../internal/store";
 /** A store's shape, whichever database a suite runs on. */
 export type OpenedStore = Awaited<ReturnType<typeof postgres>> | ReturnType<typeof database>;
 
-let shared: Promise<PGlite> | undefined;
 let count = 0;
 
 /**
@@ -21,8 +23,22 @@ export async function openStore(tables: Readonly<Record<string, TablesByName>>):
         return database({ file: ":memory:", tables });
     }
 
-    shared ??= PGlite.create();
     count += 1;
 
-    return postgres({ pglite: await shared, schema: `store_${String(count)}`, tables });
+    return postgres({ pglite: await sharedPglite(), schema: `store_${String(process.pid)}_${String(count)}`, tables });
 }
+
+/** A migrations folder holding the same SQL for both dialects, for a suite whose table needs nothing either lacks. */
+export function migrationsOf(sql: string): string
+{
+    const from = mkdtempSync(join(tmpdir(), "kit-migrations-"));
+
+    for (const which of ["sqlite", "postgres"])
+    {
+        mkdirSync(join(from, which));
+        writeFileSync(join(from, which, "0001-create.sql"), sql);
+    }
+
+    return from;
+}
+

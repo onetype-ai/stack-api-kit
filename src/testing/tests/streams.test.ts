@@ -7,6 +7,7 @@ import { createIdentity, startTestKernel } from "../startTestKernel";
 import type { Server as HttpServer } from "node:http";
 import type { KernelResponse, StartedApp } from "../../index";
 import type { TestKernel } from "../startTestKernel";
+import { testDatabase } from "./testDatabase";
 
 
 type Seen = { event: string | undefined; id: string | undefined; data: unknown };
@@ -339,7 +340,7 @@ describe("over HTTP", () =>
 {
     const serve = async (): Promise<string> =>
     {
-        app = await start({ plugins: [chat], database: { file: ":memory:" }, sockets: false });
+        app = await start({ plugins: [chat], database: await testDatabase(), sockets: false });
         const server = Server.listen(app, 0) as HttpServer;
 
         if (!server.listening)

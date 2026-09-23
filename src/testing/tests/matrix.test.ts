@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { expect, test } from "vitest";
 
-import { bothDialects, eachDatabaseItself, notYetOnPostgres, postgresServer, sqliteOnly } from "../../../tools/matrix.mjs";
+import { bothDialects, eachDatabaseItself, freshProcess, notYetOnPostgres, postgresServer, sqliteOnly } from "../../../tools/matrix.mjs";
 
 // what opens a store in a suite: a test kernel, a database, or the matrix's own helper
 const REACHES_A_STORE = /startTestKernel\(|\bdatabase\(\s*\{|\bpostgres\(\s*\{|openStore\(|\bdb:\s/u;
@@ -23,7 +23,7 @@ function suitesUnder(folder: string): string[]
     });
 }
 
-const named = [...bothDialects, ...eachDatabaseItself, ...postgresServer, ...sqliteOnly, ...notYetOnPostgres];
+const named = [...bothDialects, ...eachDatabaseItself, ...freshProcess, ...postgresServer, ...sqliteOnly, ...notYetOnPostgres];
 
 test("every suite that reaches a store says which databases it runs on, in tools/matrix.mjs", () =>
 {

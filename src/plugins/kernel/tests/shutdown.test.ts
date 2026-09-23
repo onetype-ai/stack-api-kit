@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { z } from "zod";
 
-import { database } from "../../database/api";
+import { openStore } from "../../database/tests/openStore";
 import { createKernel, definePlugin } from "../api";
 
 import type { Definition, Plugin } from "../api";
@@ -14,7 +14,7 @@ function participant(name: string, found: Partial<Definition> = {}): Plugin
 test("a request in flight is answered before the plugins are torn down", async () =>
 {
     const order: string[] = [];
-    const store = database({ file: ":memory:", tables: { a: {} } });
+    const store = await openStore({ a: {} });
 
     const kernel = createKernel({
         plugins: [participant("a", {
@@ -53,7 +53,7 @@ test("a request in flight is answered before the plugins are torn down", async (
     order.push("stop-called");
     await kernel.stop();
     order.push("stop-returned");
-    store.close();
+    await store.close();
 
     const answer = await inFlight;
 

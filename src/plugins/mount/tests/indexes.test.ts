@@ -1,20 +1,21 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
-import { sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 import { definePlugin } from "../../kernel/api";
 import { start } from "../api";
+import { testDatabase } from "../../../testing/tests/testDatabase";
+import { column, table, uniqueIndex } from "../../database/api";
 
 const from = fileURLToPath(new URL("./migrations", import.meta.url));
 
-const seats = sqliteTable("seats", {
-    id: text("id").primaryKey(),
-    email: text("email").notNull(),
+const seats = table("seats", {
+    id: column.text("id").primaryKey(),
+    email: column.text("email").notNull(),
 }, (table) => [uniqueIndex("seats_email").on(table.email)]);
 
-const chairs = sqliteTable("chairs", {
-    id: text("id").primaryKey(),
-    email: text("email").notNull(),
+const chairs = table("chairs", {
+    id: column.text("id").primaryKey(),
+    email: column.text("email").notNull(),
 }, (table) => [uniqueIndex("chairs_email").on(table.email)]);
 
 /** Declares an index its migration creates. */
@@ -37,7 +38,7 @@ describe("an index a table declares", () =>
 {
     test("boots when a migration creates it", async () =>
     {
-        const api = await start({ plugins: [seating], database: { file: ":memory:" } });
+        const api = await start({ plugins: [seating], database: await testDatabase() });
 
         await api.stop();
     });
@@ -45,16 +46,16 @@ describe("an index a table declares", () =>
     test("refuses to start when no migration creates it, naming both sides", async () =>
     {
         // Never a warning: a uniqueIndex nobody created reads as a guarantee and accepts the duplicate it was declared to stop, with nothing failing.
-        await expect(start({ plugins: [sitting], database: { file: ":memory:" } }))
+        await expect(start({ plugins: [sitting], database: await testDatabase() }))
             .rejects.toThrow(/uniqueIndex "chairs_email" on "chairs"/);
 
-        await expect(start({ plugins: [sitting], database: { file: ":memory:" } }))
+        await expect(start({ plugins: [sitting], database: await testDatabase() }))
             .rejects.toThrow(/CREATE UNIQUE INDEX chairs_email/);
     });
 });
 
 /** Declares a table no migration creates, so the first query finds nothing. */
-const stools = sqliteTable("stools", { id: text("id").primaryKey() });
+const stools = table("stools", { id: column.text("id").primaryKey() });
 
 const stooling = definePlugin("stooling", {
     version: "1.0.0",
@@ -67,7 +68,7 @@ describe("a table a plugin declares", () =>
 {
     test("refuses the boot when no migration creates it", async () =>
     {
-        const failed = await start({ plugins: [stooling], database: { file: ":memory:" } })
+        const failed = await start({ plugins: [stooling], database: await testDatabase() })
             .catch((cause: unknown) => cause);
 
         expect(failed).toBeInstanceOf(TypeError);

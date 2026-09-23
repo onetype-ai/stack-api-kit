@@ -1,0 +1,2 @@
+CREATE TABLE abbot (id TEXT PRIMARY KEY);
+INSERT INTO abbot (id) SELECT id FROM holders;

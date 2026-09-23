@@ -8,3 +8,5 @@ export declare const postgresServer: readonly string[];
 export declare const sqliteOnly: readonly string[];
 /** Store suites not yet moved to both databases. */
 export declare const notYetOnPostgres: readonly string[];
+/** Suites about what happens once in a fresh process. */
+export declare const freshProcess: readonly string[];

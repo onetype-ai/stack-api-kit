@@ -7,28 +7,6 @@
 
 /** Suites run on SQLite and on Postgres. */
 export const bothDialects = [
-    "src/plugins/database/tests/store.test.ts",
-];
-
-/** Suites that open each database themselves, so they run once. */
-export const eachDatabaseItself = [
-    "src/plugins/database/tests/sql.test.ts",
-];
-
-/** Suites against a real Postgres server (`pnpm test:pg`, with KIT_PG_URL), where concurrency between connections shows. */
-export const postgresServer = [
-    "src/plugins/database/tests/workers.server.ts",
-];
-
-/** Suites about SQLite's own behaviour: its busy wait, its one connection, the layout before 9.0. */
-export const sqliteOnly = [];
-
-/** Store suites not yet moved to both databases. Empty before 9.0 ships. */
-export const notYetOnPostgres = [
-    "src/plugins/database/tests/api.test.ts",
-    "src/plugins/database/tests/concurrency.test.ts",
-    "src/plugins/database/tests/database-types.test.ts",
-    "src/plugins/database/tests/portable.test.ts",
     "src/plugins/http/tests/sockets.test.ts",
     "src/plugins/kernel/tests/context.test.ts",
     "src/plugins/kernel/tests/inference.test.ts",
@@ -42,7 +20,6 @@ export const notYetOnPostgres = [
     "src/plugins/mount/tests/database.test.ts",
     "src/testing/tests/any-origin.test.ts",
     "src/testing/tests/anywhere.test.ts",
-    "src/testing/tests/closure.test.ts",
     "src/testing/tests/documents.test.ts",
     "src/testing/tests/egress-csv.test.ts",
     "src/testing/tests/either.test.ts",
@@ -52,10 +29,8 @@ export const notYetOnPostgres = [
     "src/testing/tests/files.test.ts",
     "src/testing/tests/flush-hops.test.ts",
     "src/testing/tests/flush.test.ts",
-    "src/testing/tests/later.test.ts",
     "src/testing/tests/options.test.ts",
     "src/testing/tests/outbound-faults.test.ts",
-    "src/testing/tests/outbox-default.test.ts",
     "src/testing/tests/recorder.test.ts",
     "src/testing/tests/records.test.ts",
     "src/testing/tests/redaction.test.ts",
@@ -67,4 +42,34 @@ export const notYetOnPostgres = [
     "src/testing/tests/started.test.ts",
     "src/testing/tests/streams.test.ts",
     "src/testing/tests/work.test.ts",
+    "src/testing/tests/later.test.ts",
+    "src/testing/tests/closure.test.ts",
+    "src/plugins/database/tests/store.test.ts",
 ];
+
+/** Suites about what happens once in a fresh process, which one worker keeping its modules across files would hide. */
+export const freshProcess = [
+    "src/testing/tests/outbox-default.test.ts",
+];
+
+/** Suites that open each database themselves, so they run once. */
+export const eachDatabaseItself = [
+    "src/plugins/database/tests/portable.test.ts",
+    "src/plugins/database/tests/sql.test.ts",
+];
+
+/** Suites against a real Postgres server (`pnpm test:pg`, with KIT_PG_URL), where concurrency between connections shows. */
+export const postgresServer = [
+    "src/plugins/database/tests/workers.server.ts",
+];
+
+/** Suites about SQLite's own behaviour: its busy wait, its one connection, the layout before 9.0. */
+export const sqliteOnly = [
+    "src/plugins/database/tests/sqlite-concurrency.test.ts",
+    "src/plugins/database/tests/sqlite-store.test.ts",
+    "src/plugins/database/tests/sqlite-types.test.ts",
+    "src/testing/tests/sqlite-leases.test.ts",
+];
+
+/** Store suites not yet moved to both databases. Empty before 9.0 ships. */
+export const notYetOnPostgres = [];

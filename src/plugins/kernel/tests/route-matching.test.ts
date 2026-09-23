@@ -1,9 +1,8 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 
-import Database from "better-sqlite3";
 
-import { database, schedule } from "../../database/api";
+import { openStore } from "../../database/tests/openStore";
 import { createKernel, definePlugin } from "../api";
 
 function startServer(): ReturnType<typeof createKernel>
@@ -89,7 +88,8 @@ describe("a name that lives on every object", () =>
             },
         });
 
-        const kernel = createKernel({ plugins: [billing], db: database({ file: ":memory:", tables: {} }), schedule: schedule(new Database(":memory:")) });
+        const store = await openStore({});
+        const kernel = createKernel({ plugins: [billing], db: store, schedule: store.schedule?.() ?? expect.unreachable("a store keeps a schedule") });
 
         await kernel.start();
 

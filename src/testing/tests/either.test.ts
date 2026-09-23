@@ -7,6 +7,7 @@ import { createIdentity, startTestKernel } from "../startTestKernel";
 import type { Server as HttpServer } from "node:http";
 import type { StartedApp } from "../../index";
 import type { TestKernel } from "../startTestKernel";
+import { testDatabase } from "./testDatabase";
 
 
 const route = defineRoute();
@@ -109,7 +110,7 @@ afterEach(async () =>
 
 const serve = async (): Promise<string> =>
 {
-    app = await start({ plugins: [assistant], database: { file: ":memory:" }, sockets: false });
+    app = await start({ plugins: [assistant], database: await testDatabase(), sockets: false });
     const server = Server.listen(app, 0) as HttpServer;
 
     if (!server.listening)

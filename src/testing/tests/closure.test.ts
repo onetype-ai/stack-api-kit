@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { z } from "zod";
 
 import { definePlugin } from "../../index";
@@ -7,6 +6,7 @@ import { configureTestKernels, startTestKernel, withDependencies } from "../star
 
 import type { Plugin } from "../../index";
 import type { TestKernel } from "../startTestKernel";
+import { column, table } from "../../plugins/database/api";
 
 const accounts = definePlugin("accounts", {
     version: "1.0.0",
@@ -215,7 +215,7 @@ describe("the scope a plugin acts in", () =>
         const holding = definePlugin("halls", {
             version: "1.0.0",
             describe: "Holds halls and scopes none.",
-            tables: { halls: sqliteTable("halls", { id: text("id").primaryKey(), workspace: text("workspace").notNull() }) },
+            tables: { halls: table("halls", { id: column.text("id").primaryKey(), workspace: column.text("workspace").notNull() }) },
             scope: { describe: "A workspace's halls.", claim: "workspace", tables: {} },
         });
 

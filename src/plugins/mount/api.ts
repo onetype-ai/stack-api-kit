@@ -1,3 +1,4 @@
+import type { PGlite } from "@electric-sql/pglite";
 import type { DatabaseOptions, Store } from "../database/api";
 import type { Subscription, ServerOptions, SessionOptions } from "../http/api";
 import type { RateLimiter, HttpClient, Identity, Kernel, Logger, Lookup, Plugin } from "../kernel/api";
@@ -10,7 +11,8 @@ export type StartOptions = {
     plugins: readonly Plugin[];
 
     /** Where the database is, or a store the project built itself. */
-    database?: DatabaseOptions | Store | undefined;
+    /** SQLite by file, a Postgres server by URL (`dialect: "postgres"`), or a store of the project's own. */
+    database?: DatabaseOptions | { dialect: "postgres"; url: string; poolSize?: number } | { dialect: "postgres"; pglite: PGlite; schema?: string } | Store | undefined;
 
     config?: Readonly<Record<string, unknown>> | undefined;
 

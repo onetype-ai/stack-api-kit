@@ -1,13 +1,12 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import Database from "better-sqlite3";
-import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 
-import { database, outbox } from "../../database/api";
 import { createKernel, definePlugin } from "../api";
 
 import type { Outbox, Plugin } from "../api";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import type { PortableDb } from "../../database/api";
+import { column, table } from "../../database/api";
+import { migrationsOf, openStore } from "../../database/tests/openStore";
 
 function emitter(): Plugin
 {
@@ -36,8 +35,8 @@ describe("an event kept in an outbox", () =>
 {
     test("outlives the process that emitted it, and reaches the next one", async () =>
     {
-        const connection = new Database(":memory:");
-        const unsent = outbox(connection);
+        const store = await openStore({ orders: {} });
+        const unsent = store.outbox?.() ?? expect.unreachable("a store keeps an outbox");
         const heard: string[] = [];
 
         // A process that committed the work and stopped before delivering: the row is what it left behind.
@@ -53,14 +52,13 @@ describe("an event kept in an outbox", () =>
         expect(await unsent.pending()).toHaveLength(0);
 
         await restarted.stop();
-        connection.close();
+        await store.close();
     });
 
     test("is forgotten only once a listener has heard it", async () =>
     {
-        const connection = new Database(":memory:");
-        const unsent = outbox(connection);
-        const store = database({ file: ":memory:", tables: { orders: {} } });
+        const store = await openStore({ orders: {} });
+        const unsent = store.outbox?.() ?? expect.unreachable("a store keeps an outbox");
 
         let released: (() => void) | undefined;
         const slow = new Promise<void>((done) => { released = done; });
@@ -96,15 +94,13 @@ describe("an event kept in an outbox", () =>
         expect(await unsent.pending()).toHaveLength(0);
 
         await kernel.stop();
-        store.close();
-        connection.close();
+        await store.close();
     });
 
     test("is never kept at all when the work rolled back", async () =>
     {
-        const connection = new Database(":memory:");
-        const unsent = outbox(connection);
-        const store = database({ file: ":memory:", tables: { orders: {} } });
+        const store = await openStore({ orders: {} });
+        const unsent = store.outbox?.() ?? expect.unreachable("a store keeps an outbox");
 
         const kernel = createKernel({ plugins: [emitter(), recorder([])], db: store, outbox: unsent });
 
@@ -120,15 +116,14 @@ describe("an event kept in an outbox", () =>
         expect(await unsent.pending()).toHaveLength(0);
 
         await kernel.stop();
-        store.close();
-        connection.close();
+        await store.close();
     });
 
     test("takes the work down with it when it cannot be kept, so neither exists without the other", async () =>
     {
-        const rows = sqliteTable("orders_rows", { id: text("id").primaryKey() });
-        const store = database({ file: ":memory:", tables: { orders: { rows } } });
-        const db = store.forPlugin("orders") as BetterSQLite3Database & { $client: Database.Database };
+        const rows = table("orders_rows", { id: column.text("id").primaryKey() });
+        const store = await openStore({ orders: { rows } });
+        const db = store.forPlugin("orders") as PortableDb;
         const refusing: Outbox = { save: () => Promise.reject(new Error("the outbox could not be written")), markSent: () => Promise.resolve(), pending: () => Promise.resolve([]) };
         const orders = definePlugin("orders", {
             version: "1.0.0",
@@ -137,7 +132,7 @@ describe("an event kept in an outbox", () =>
             emits: { "orders.placed": { describe: "An order was placed.", schema: z.object({ id: z.string() }) } },
         });
 
-        db.$client.exec("CREATE TABLE orders_rows (id TEXT PRIMARY KEY)");
+        await store.migrate([{ plugin: "orders", from: migrationsOf("CREATE TABLE orders_rows (id TEXT PRIMARY KEY)") }]);
 
         const kernel = createKernel({ plugins: [orders], db: store, outbox: refusing });
 
@@ -145,7 +140,7 @@ describe("an event kept in an outbox", () =>
 
         await expect(kernel.context("orders").tx(async (inside) =>
         {
-            await (inside.db as BetterSQLite3Database).insert(rows).values({ id: "order-5" });
+            await (inside.db as PortableDb).insert(rows).values({ id: "order-5" });
             inside.events.emit("orders.placed", { id: "order-5" });
         })).rejects.toThrow("the outbox could not be written");
 
@@ -157,8 +152,8 @@ describe("an event kept in an outbox", () =>
 
     test("stays delivered when another transaction, open while it was delivered, rolls back", async () =>
     {
-        const rows = sqliteTable("orders_rows", { id: text("id").primaryKey() });
-        const store = database({ file: ":memory:", tables: { orders: { rows }, ledger: { rows } } });
+        const rows = table("orders_rows", { id: column.text("id").primaryKey() });
+        const store = await openStore({ orders: { rows }, ledger: { rows } });
         const kept: Outbox = store.outbox?.() ?? expect.unreachable("a SQLite store keeps an outbox");
         let release: () => void = () => undefined;
         const listening = new Promise<void>((resolve) =>
@@ -210,9 +205,8 @@ describe("an event kept in an outbox", () =>
 
     test("and never once a listener threw, so the next start tries again", async () =>
     {
-        const connection = new Database(":memory:");
-        const unsent = outbox(connection);
-        const store = database({ file: ":memory:", tables: { orders: {} } });
+        const store = await openStore({ orders: {} });
+        const unsent = store.outbox?.() ?? expect.unreachable("a store keeps an outbox");
 
         const broken = definePlugin("ledger", {
             version: "1.0.0",
@@ -248,6 +242,6 @@ describe("an event kept in an outbox", () =>
         expect(heard).toEqual(["order-3"]);
 
         await restarted.stop();
-        connection.close();
+        await store.close();
     });
 });

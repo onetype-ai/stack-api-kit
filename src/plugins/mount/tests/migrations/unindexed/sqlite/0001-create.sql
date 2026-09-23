@@ -1,0 +1,1 @@
+CREATE TABLE chairs (id TEXT PRIMARY KEY, email TEXT NOT NULL);

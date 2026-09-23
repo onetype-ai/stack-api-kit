@@ -1,12 +1,12 @@
-import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 
 import { createKernel, definePlugin } from "../api";
+import { column, table } from "../../database/api";
 
-const items = sqliteTable("probe_items", { id: text("id").primaryKey(), title: text("title").notNull() });
+const items = table("probe_items", { id: column.text("id").primaryKey(), title: column.text("title").notNull() });
 
 type ItemsDb = BetterSQLite3Database<{ items: typeof items }>;
 

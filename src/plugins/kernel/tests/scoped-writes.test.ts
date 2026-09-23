@@ -1,22 +1,22 @@
 import { expect, test } from "vitest";
-import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 
-import { database } from "../../database/api";
+import { migrationsOf, openStore } from "../../database/tests/openStore";
 import { createKernel, definePlugin } from "../api";
+import { column, table } from "../../database/api";
 
-const notes = sqliteTable("billing_notes", {
-    id: text("id").primaryKey(),
-    tenantId: text("tenant_id").notNull(),
-    body: text("body").notNull(),
+import type { PortableDb } from "../../database/api";
+
+const notes = table("billing_notes", {
+    id: column.text("id").primaryKey(),
+    tenantId: column.text("tenant_id").notNull(),
+    body: column.text("body").notNull(),
 });
 
 test("a write carries the caller's scope, not the one it asked for", async () =>
 {
-    const store = database({ file: ":memory:", tables: { billing: { notes } } });
+    const store = await openStore({ billing: { notes } });
 
-    store.forPlugin("billing").$client.exec(
-        "CREATE TABLE billing_notes (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, body TEXT NOT NULL)",
-    );
+    await store.migrate([{ plugin: "billing", from: migrationsOf("CREATE TABLE billing_notes (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, body TEXT NOT NULL)") }]);
 
     const kernel = createKernel({
         plugins: [definePlugin("billing", {
@@ -44,10 +44,10 @@ test("a write carries the caller's scope, not the one it asked for", async () =>
 
     await (mine.services as { plant: () => Promise<void> }).plant();
 
-    const rows = store.forPlugin("billing").$client.prepare("SELECT tenant_id FROM billing_notes").all();
+    const rows = await (store.forPlugin("billing") as PortableDb).select({ tenant_id: notes.tenantId }).from(notes);
 
-        await kernel.stop();
-    store.close();
+    await kernel.stop();
+    await store.close();
 
     expect(rows).toEqual([{ tenant_id: "acme" }]);
 });

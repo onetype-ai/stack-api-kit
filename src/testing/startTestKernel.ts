@@ -1,4 +1,5 @@
-import { database } from "../plugins/database/api";
+import { database, dialect, postgres } from "../plugins/database/api";
+import { sharedPglite } from "./pglite";
 import { limiter } from "../plugins/guard/api";
 import { createKernel } from "../plugins/kernel/api";
 import { SECRET } from "../plugins/kernel/internal/validate";
@@ -322,6 +323,24 @@ async function closedOver(options: TestKernelOptions): Promise<TestKernelOptions
     return { ...options, plugins, config };
 }
 
+let kernels = 0;
+
+/**
+ * A test kernel's store on the database this run tests: SQLite in memory, or, under KIT_DIALECT=postgres, a schema
+ * of its own in the one PGlite database this worker keeps. Starting PGlite takes seconds; a schema takes none.
+ */
+async function testStore(tables: Readonly<Record<string, Readonly<Record<string, unknown>>>>): Promise<Store>
+{
+    if (dialect() === "sqlite")
+    {
+        return database({ file: ":memory:", tables });
+    }
+
+    kernels += 1;
+
+    return postgres({ pglite: await sharedPglite(), schema: `kernel_${String(process.pid)}_${String(kernels)}`, tables });
+}
+
 /** Boots a kernel on an in-memory database with migrations already applied; a dependency the test did not pass is added from the fixture `configureTestKernels` registered, with the fixture's config under the test's own, field by field. It records every event, log line and outbound call, throws on an option it does not take, and outbound calls answer `{}` unless `respondWith` says otherwise. */
 export async function startTestKernel(asked: TestKernelOptions): Promise<TestKernel>
 {
@@ -337,7 +356,7 @@ export async function startTestKernel(asked: TestKernelOptions): Promise<TestKer
     // a test's own options win over the process's defaults, key by key
     const options = await closedOver({ ...defaults, ...asked });
 
-    const store = database({ file: ":memory:", tables: testTables.tables(options.plugins) });
+    const store = await testStore(testTables.tables(options.plugins));
 
     await store.migrate(testTables.migrations(options.plugins));
 
@@ -416,7 +435,8 @@ export async function startTestKernel(asked: TestKernelOptions): Promise<TestKer
 
     return {
         kernel,
-        store,
+        // typed as SQLite's on either database, as PortableDb is: the queries both answer read the same
+        store: store as Store<DrizzleDb>,
         logLines: lines,
         sentRequests: () => [...calls],
         emittedEvents: () => [...events],

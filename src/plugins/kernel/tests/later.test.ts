@@ -1,14 +1,10 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import Database from "better-sqlite3";
 
-import { schedule } from "../../database/api";
+import { openStore } from "../../database/tests/openStore";
 import { Refusal, createKernel, definePlugin } from "../api";
 
-import type { Kernel, KernelStore, Plugin } from "../api";
-
-// A store whose transaction only runs the work: a job is written by the transaction that asks for it, so asking needs one.
-const bare: KernelStore = { forPlugin: () => undefined, tx: (_plugin, run) => run(undefined) };
+import type { Kernel, Plugin } from "../api";
 
 function later(kernel: Kernel, command: string, input: unknown, inSeconds: number): Promise<void>
 {
@@ -51,15 +47,15 @@ describe("work asked for later", () =>
 {
     test("does not run before its time, and runs after it", async () =>
     {
-        const connection = new Database(":memory:");
-        const jobs = schedule(connection);
+        const store = await openStore({});
+        const jobs = store.schedule?.() ?? expect.unreachable("a store keeps a schedule");
         const ran: string[] = [];
 
         let clock = 1_000_000;
 
         const kernel = createKernel({
             plugins: [createScheduled(ran)],
-            db: bare,
+            db: store,
             schedule: jobs,
             now: () => clock,
             beatMs: 5,
@@ -80,20 +76,20 @@ describe("work asked for later", () =>
         expect(ran).toEqual(["one"]);
 
         await kernel.stop();
-        connection.close();
+        await store.close();
     });
 
     test("is tried again when it throws", async () =>
     {
-        const connection = new Database(":memory:");
-        const jobs = schedule(connection);
+        const store = await openStore({});
+        const jobs = store.schedule?.() ?? expect.unreachable("a store keeps a schedule");
         const ran: string[] = [];
 
         let clock = 1_000_000;
 
         const kernel = createKernel({
             plugins: [createScheduled(ran, true)],
-            db: bare,
+            db: store,
             schedule: jobs,
             now: () => clock,
             beatMs: 5,
@@ -115,13 +111,13 @@ describe("work asked for later", () =>
         expect(ran).toEqual(["two"]);
 
         await kernel.stop();
-        connection.close();
+        await store.close();
     });
 
     test("gives up after enough attempts, rather than trying forever", async () =>
     {
-        const connection = new Database(":memory:");
-        const jobs = schedule(connection);
+        const store = await openStore({});
+        const jobs = store.schedule?.() ?? expect.unreachable("a store keeps a schedule");
         const tried: number[] = [];
 
         let clock = 1_000_000;
@@ -138,7 +134,7 @@ describe("work asked for later", () =>
                     },
                 },
             })],
-            db: bare,
+            db: store,
             schedule: jobs,
             now: () => clock,
             mostAttempts: 3,
@@ -159,15 +155,15 @@ describe("work asked for later", () =>
         expect(await jobs.claim(clock, 10)).toEqual([]);
 
         await kernel.stop();
-        connection.close();
+        await store.close();
     });
 
     test("stops trying when the command refuses for good, and keeps trying when it does not", async () =>
     {
         async function attemptsFor(status: number): Promise<number>
         {
-            const connection = new Database(":memory:");
-            const jobs = schedule(connection);
+            const store = await openStore({});
+            const jobs = store.schedule?.() ?? expect.unreachable("a store keeps a schedule");
             const tried: number[] = [];
 
             let clock = 1_000_000;
@@ -189,7 +185,7 @@ describe("work asked for later", () =>
                         },
                     },
                 })],
-                db: bare,
+                db: store,
             schedule: jobs,
                 now: () => clock,
                 mostAttempts: 4,
@@ -207,7 +203,7 @@ describe("work asked for later", () =>
             }
 
             await kernel.stop();
-            connection.close();
+            await store.close();
 
             return tried.length;
         }
@@ -224,7 +220,7 @@ describe("work asked for later", () =>
 
     test("says why a command with requires can never run on a schedule", async () =>
     {
-        const connection = new Database(":memory:");
+        const store = await openStore({});
 
         const kernel = createKernel({
             plugins: [definePlugin("holds", {
@@ -240,8 +236,8 @@ describe("work asked for later", () =>
                     },
                 },
             })],
-            db: bare,
-            schedule: schedule(connection),
+            db: store,
+            schedule: store.schedule?.() ?? expect.unreachable("a store keeps a schedule"),
         });
 
         await kernel.start();
@@ -252,7 +248,7 @@ describe("work asked for later", () =>
         expect(failed.message).toMatch(/declares no requires/);
 
         await kernel.stop();
-        connection.close();
+        await store.close();
     });
 
     test("names the plugin when nothing was given to schedule with", async () =>
@@ -279,8 +275,8 @@ describe("work asked for later", () =>
 
     test("refuses a command the plugin does not declare", async () =>
     {
-        const connection = new Database(":memory:");
-        const kernel = createKernel({ plugins: [createScheduled([])], db: bare, schedule: schedule(connection) });
+        const store = await openStore({});
+        const kernel = createKernel({ plugins: [createScheduled([])], db: store, schedule: store.schedule?.() ?? expect.unreachable("a store keeps a schedule") });
 
         await kernel.start();
 
@@ -288,13 +284,13 @@ describe("work asked for later", () =>
             .toThrow(/does not declare/);
 
         await kernel.stop();
-        connection.close();
+        await store.close();
     });
 
     test("what gave up is readable, so a repetition that ended is not silent", async () =>
     {
-        const connection = new Database(":memory:");
-        const jobs = schedule(connection);
+        const store = await openStore({});
+        const jobs = store.schedule?.() ?? expect.unreachable("a store keeps a schedule");
 
         let clock = 1_000_000;
 
@@ -310,7 +306,7 @@ describe("work asked for later", () =>
                     },
                 },
             })],
-            db: bare,
+            db: store,
             schedule: jobs,
             now: () => clock,
             mostAttempts: 3,
@@ -339,14 +335,14 @@ describe("work asked for later", () =>
         expect((dead[0]?.error as Error).message).toBe("the store was locked");
 
         await kernel.stop();
-        connection.close();
+        await store.close();
     });
 
     test("refuses work asked for outside a transaction, naming the fix, and keeps none of it", async () =>
     {
-        const connection = new Database(":memory:");
-        const jobs = schedule(connection);
-        const kernel = createKernel({ plugins: [createScheduled([])], db: bare, schedule: jobs });
+        const store = await openStore({});
+        const jobs = store.schedule?.() ?? expect.unreachable("a store keeps a schedule");
+        const kernel = createKernel({ plugins: [createScheduled([])], db: store, schedule: jobs });
 
         await kernel.start();
 
@@ -355,14 +351,14 @@ describe("work asked for later", () =>
         expect(await jobs.counts?.(Date.now())).toEqual({ due: 0, later: 0, running: 0, abandoned: 0 });
 
         await kernel.stop();
-        connection.close();
+        await store.close();
     });
 
     test("keeps no work asked for by a transaction that rolled back", async () =>
     {
-        const connection = new Database(":memory:");
-        const jobs = schedule(connection);
-        const kernel = createKernel({ plugins: [createScheduled([])], db: bare, schedule: jobs });
+        const store = await openStore({});
+        const jobs = store.schedule?.() ?? expect.unreachable("a store keeps a schedule");
+        const kernel = createKernel({ plugins: [createScheduled([])], db: store, schedule: jobs });
 
         await kernel.start();
 
@@ -376,16 +372,16 @@ describe("work asked for later", () =>
         expect(await jobs.counts?.(Date.now())).toEqual({ due: 0, later: 0, running: 0, abandoned: 0 });
 
         await kernel.stop();
-        connection.close();
+        await store.close();
     });
 
     test("refuses to start with a schedule and no store, naming the fix", async () =>
     {
-        const connection = new Database(":memory:");
-        const kernel = createKernel({ plugins: [createScheduled([])], schedule: schedule(connection) });
+        const store = await openStore({});
+        const kernel = createKernel({ plugins: [createScheduled([])], schedule: store.schedule?.() ?? expect.unreachable("a store keeps a schedule") });
 
         await expect(kernel.start()).rejects.toThrow(/schedule but no db.*Pass db/);
 
-        connection.close();
+        await store.close();
     });
 });

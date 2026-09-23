@@ -1,13 +1,14 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 import { definePlugin, defineRoute } from "../../kernel/api";
 import { start } from "../api";
 
 import type { Context } from "../../kernel/api";
 import type { Store } from "../../database/api";
+import { testDatabase } from "../../../testing/tests/testDatabase";
+import { column, table } from "../../database/api";
 
 const from = fileURLToPath(new URL("./migrations", import.meta.url));
 
@@ -26,7 +27,7 @@ const pages = definePlugin("pages", {
     ],
 });
 
-const notes = sqliteTable("notes", { id: text("id").primaryKey() });
+const notes = table("notes", { id: column.id().primaryKey() });
 
 /** One that does keep rows, so it needs a database wherever it runs. */
 const keeping = definePlugin("keeping", {
@@ -74,7 +75,7 @@ describe("a plugin that declares tables", () =>
         const second = definePlugin("archive", {
             version: "1.0.0",
             describe: "Keeps more notes.",
-            tables: { archived: sqliteTable("archived", { id: text("id").primaryKey() }) },
+            tables: { archived: table("archived", { id: column.id().primaryKey() }) },
         });
 
         const failed = await start({ plugins: [keeping, second] }).catch((cause: unknown) => cause);
@@ -85,7 +86,7 @@ describe("a plugin that declares tables", () =>
 
     test("but runs once it has one", async () =>
     {
-        const api = await start({ plugins: [keeping], database: { file: ":memory:" } });
+        const api = await start({ plugins: [keeping], database: await testDatabase() });
 
         expect(api.kernel.started()).toBe(true);
 

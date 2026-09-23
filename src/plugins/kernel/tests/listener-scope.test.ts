@@ -1,16 +1,16 @@
 import { describe, expect, test } from "vitest";
-import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { z } from "zod";
 
-import { database } from "../../database/api";
+import { migrationsOf, openStore } from "../../database/tests/openStore";
 import { createKernel, definePlugin } from "../api";
 
 import type { Plugin } from "../api";
+import { column, table } from "../../database/api";
 
-const notes = sqliteTable("acting_notes", {
-    id: text("id").primaryKey(),
-    shopId: text("shop_id").notNull(),
-    body: text("body").notNull(),
+const notes = table("acting_notes", {
+    id: column.text("id").primaryKey(),
+    shopId: column.text("shop_id").notNull(),
+    body: column.text("body").notNull(),
 });
 
 function recorder(heard: string[]): Plugin[]
@@ -47,13 +47,11 @@ function recorder(heard: string[]): Plugin[]
     ];
 }
 
-function startServer()
+async function startServer(): ReturnType<typeof openStore>
 {
-    const store = database({ file: ":memory:", tables: { keeper: { notes } } });
+    const store = await openStore({ keeper: { notes } });
 
-    store.forPlugin("keeper").$client.exec(
-        "CREATE TABLE acting_notes (id TEXT PRIMARY KEY, shop_id TEXT NOT NULL, body TEXT NOT NULL)",
-    );
+    await store.migrate([{ plugin: "keeper", from: migrationsOf("CREATE TABLE acting_notes (id TEXT PRIMARY KEY, shop_id TEXT NOT NULL, body TEXT NOT NULL)") }]);
 
     return store;
 }
@@ -62,7 +60,7 @@ describe("a listener acting for a scope", () =>
 {
     test("reaches the scope its payload named", async () =>
     {
-        const store = startServer();
+        const store = await startServer();
         const heard: string[] = [];
 
         const kernel = createKernel({
@@ -80,12 +78,12 @@ describe("a listener acting for a scope", () =>
         expect(heard).toEqual(["acme"]);
 
         await kernel.stop();
-        store.close();
+        await store.close();
     });
 
     test("is refused inside a request, where the caller decides the scope", async () =>
     {
-        const store = startServer();
+        const store = await startServer();
 
         const kernel = createKernel({
             plugins: recorder([]),
@@ -101,6 +99,6 @@ describe("a listener acting for a scope", () =>
             .toThrow(/a scope of their own/);
 
         await kernel.stop();
-        store.close();
+        await store.close();
     });
 });
