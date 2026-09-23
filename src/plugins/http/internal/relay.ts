@@ -11,16 +11,17 @@ const SILENT_MS = 30_000;
  * What crosses between processes for one push: everything the pusher decided, so the receiver only picks its sockets
  * by it and never works out a scope of its own. "connection" never crosses: that socket is in the pushing process.
  */
-const Envelope = z.object({
-    origin: z.string().min(1),
-    channel: z.string().min(1),
-    reach: z.enum(["viewer", "scope", "identity", "everyone"]),
-    requires: z.array(z.string()),
-    scope: z.string().optional(),
-    to: z.string().optional(),
-    from: z.string().optional(),
-    message: z.unknown(),
-}).strict();
+const Variant = z.object({ requires: z.array(z.string()), message: z.unknown() }).strict();
+
+const common = { origin: z.string().min(1), channel: z.string().min(1), requires: z.array(z.string()), message: z.unknown(), variants: z.array(Variant).optional() };
+
+// each reach carries exactly what it needs to pick its sockets: a frame short of it is refused, never read as a wider reach
+const Envelope = z.discriminatedUnion("reach", [
+    z.object({ ...common, reach: z.literal("scope"), scope: z.string().min(1) }).strict(),
+    z.object({ ...common, reach: z.literal("identity"), scope: z.string().min(1), to: z.string().min(1) }).strict(),
+    z.object({ ...common, reach: z.literal("viewer"), from: z.string().min(1) }).strict(),
+    z.object({ ...common, reach: z.literal("everyone") }).strict(),
+]);
 
 const Snapshot = z.object({
     origin: z.string().min(1),
@@ -57,6 +58,32 @@ export function inProcessPubSub(): PubSub
 }
 
 type Hub = Sockets & { present: () => Present[] };
+
+/** The envelope a push crosses in: exactly what its reach needs, or none when it reaches nobody elsewhere. */
+function envelopeOf(message: ChannelMessage, origin = ""): Record<string, unknown> | undefined
+{
+    const base = {
+        origin,
+        channel: message.channel,
+        requires: message.requires,
+        message: message.message,
+        ...(message.variants === undefined ? {} : { variants: message.variants.map((variant) => ({ requires: variant.requires, message: variant.message })) }),
+    };
+
+    switch (message.reach)
+    {
+        case "scope":
+            return message.scope === undefined ? undefined : { ...base, reach: "scope", scope: message.scope };
+        case "identity":
+            return message.scope === undefined || message.to === undefined ? undefined : { ...base, reach: "identity", scope: message.scope, to: message.to };
+        case "viewer":
+            return message.from === undefined ? undefined : { ...base, reach: "viewer", from: message.from.id };
+        case "everyone":
+            return { ...base, reach: "everyone" };
+        default:
+            return undefined;
+    }
+}
 
 /**
  * The sockets of every process serving one application, as the kernel sees them. A push reaches this process's
@@ -118,9 +145,10 @@ export function relay(hub: Hub, pubsub: PubSub, log?: Logger)
             message: heard.message,
             reach: heard.reach,
             requires: heard.requires,
-            scope: heard.scope,
-            to: heard.to,
-            from: heard.from === undefined ? undefined : { id: heard.from, permissions: [], claims: {} },
+            ...(heard.variants === undefined ? {} : { variants: heard.variants }),
+            scope: "scope" in heard ? heard.scope : undefined,
+            to: "to" in heard ? heard.to : undefined,
+            from: "from" in heard ? { id: heard.from, permissions: [], claims: {} } : undefined,
             fromConnection: undefined,
         });
     });
@@ -154,16 +182,12 @@ export function relay(hub: Hub, pubsub: PubSub, log?: Logger)
                 return;
             }
 
-            pubsub.publish("kit.push", JSON.stringify({
-                origin,
-                channel: message.channel,
-                reach: message.reach,
-                requires: message.requires,
-                ...(message.scope === undefined ? {} : { scope: message.scope }),
-                ...(message.to === undefined ? {} : { to: message.to }),
-                ...(message.from === undefined ? {} : { from: message.from.id }),
-                message: message.message,
-            }));
+            const envelope = envelopeOf(message, origin);
+
+            if (envelope !== undefined)
+            {
+                pubsub.publish("kit.push", JSON.stringify(envelope));
+            }
         },
 
         connected: (scope: string, permission: string): readonly string[] =>

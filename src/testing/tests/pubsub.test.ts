@@ -140,6 +140,9 @@ describe("a frame that is not what the kit sends", () =>
         ["text that is no JSON", "{not json"],
         ["a push with a field the kit never writes", JSON.stringify({ origin: "x", channel: "desk.queue", reach: "everyone", requires: [], message: {}, extra: 1 })],
         ["a push reaching a socket by its connection", JSON.stringify({ origin: "x", channel: "desk.queue", reach: "connection", requires: [], message: {} })],
+        ["a push to a scope naming none", JSON.stringify({ origin: "x", channel: "desk.queue", reach: "scope", requires: [], message: { size: 1 } })],
+        ["a push to one identity naming nobody", JSON.stringify({ origin: "x", channel: "desk.queue", reach: "identity", scope: "11111111-1111-4111-8111-111111111111", requires: [], message: { size: 1 } })],
+        ["a push to the viewer naming no one who pushed", JSON.stringify({ origin: "x", channel: "desk.queue", reach: "viewer", requires: [], message: { size: 1 } })],
     ])("is dropped, reaches nobody, and is logged once without its text: %s", async (_what, frame) =>
     {
         const pubsub = inProcessPubSub();

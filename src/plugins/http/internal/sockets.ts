@@ -125,13 +125,33 @@ export function sockets(kernel: { channels: () => readonly RegisteredChannel[] }
     return {
         push: (message: ChannelMessage): void =>
         {
-            const text = JSON.stringify({ channel: message.channel, body: message.message });
+            const texts = new Map<unknown, string>();
+
+            // the first variant whose permissions the socket holds, else the message itself: each text written once
+            const textFor = (listener: SocketState): string =>
+            {
+                const granted = Array.isArray(listener.identity?.permissions) ? listener.identity.permissions : [];
+                const chosen = message.variants?.find((variant) => variant.requires.every((permission) => granted.includes(permission)));
+                const body = chosen === undefined ? message.message : chosen.message;
+                const kept = texts.get(chosen ?? message);
+
+                if (kept !== undefined)
+                {
+                    return kept;
+                }
+
+                const text = JSON.stringify({ channel: message.channel, body });
+
+                texts.set(chosen ?? message, text);
+
+                return text;
+            };
 
             for (const listener of open)
             {
                 if (reaches(message, listener) && mayHear(message.channel, listener.identity))
                 {
-                    listener.send(text);
+                    listener.send(textFor(listener));
                 }
             }
         },

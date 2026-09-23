@@ -315,6 +315,11 @@
     fromConnection: string | undefined
     // The identity it is for, for a reach of "identity".
     to?: string | undefined
+    // What a socket holding each set of permissions hears instead: the first whose permissions it holds, else `message`.
+    variants?: readonly {
+    requires: readonly string[]
+    message: unknown
+    }[] | undefined
 
 > `connection` is the one socket that asked, `viewer` every socket one person has open, `scope` everyone the claim puts together, `everyone` all of them.
 > `everyone` is written out, like `public` on a route, so a world-readable channel is a decision rather than an oversight.

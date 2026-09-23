@@ -170,10 +170,11 @@ test("two servers on one database: a push reaches its workspace in the other, ne
     expect(bystander).toEqual([]);
 });
 
-test("a notification that is not what the kit sends reaches nobody, and the server lives on", async () =>
+test("a notification that is not what the kit sends reaches nobody, one naming another tenant reaches that tenant alone, and the server lives on", async () =>
 {
     const receiving = await serve();
     const heard = listen(receiving, person("agent-1", A), "desk.queue");
+    const otherTenant = listen(receiving, person("agent-2", B), "desk.queue");
     await new Promise((resolve) => setTimeout(resolve, 200));
 
     const { default: pg } = await import("pg");
@@ -181,9 +182,16 @@ test("a notification that is not what the kit sends reaches nobody, and the serv
     await intruder.connect();
     await intruder.query(`SELECT pg_notify('kit.push', '{"reach":"everyone","channel":"desk.queue","message":{"size":9}}')`);
     await intruder.query(`SELECT pg_notify('kit.push', 'not json at all')`);
+    for (const forged of [{ reach: "scope" }, { reach: "identity", scope: A }, { reach: "viewer" }])
+    {
+        await intruder.query("SELECT pg_notify('kit.push', $1)", [JSON.stringify({ origin: "forger", channel: "desk.queue", requires: [], message: { size: 7 }, ...forged })]);
+    }
+
+    await intruder.query("SELECT pg_notify('kit.push', $1)", [JSON.stringify({ origin: "forger", channel: "desk.queue", reach: "scope", scope: B, requires: [], message: { size: 8 } })]);
     await intruder.end();
     await new Promise((resolve) => setTimeout(resolve, 300));
 
     expect(heard).toEqual([]);
+    expect(otherTenant).toEqual([{ channel: "desk.queue", body: { size: 8 } }]);
     expect(receiving.kernel.started()).toBe(true);
 });

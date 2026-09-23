@@ -169,6 +169,9 @@ export type ChannelMessage = {
 
     /** The identity it is for, for a reach of "identity". */
     to?: string | undefined;
+
+    /** What a socket holding each set of permissions hears instead: the first whose permissions it holds, else `message`. */
+    variants?: readonly { requires: readonly string[]; message: unknown }[] | undefined;
 };
 
 /** What holds the open sockets, when anything does. */
