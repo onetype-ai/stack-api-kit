@@ -60,6 +60,9 @@ export const notServing: KernelResponse = {
     body: { code: "NOT_SERVING", message: "The service is shutting down." },
 };
 
+/** Statuses HTTP sends without a body; one written into them fails on the wire. */
+const EMPTY_STATUSES: ReadonlySet<number> = new Set([204, 205]);
+
 /** Answers one request. */
 export async function respond(
     mounted: RouteOwner,
@@ -149,6 +152,16 @@ export async function respond(
         if (spent !== undefined && route.limit?.countSuccess === false && status < 400)
         {
             rateLimiter?.refund?.(spent);
+        }
+
+        if (EMPTY_STATUSES.has(status))
+        {
+            if (filtered.data !== undefined && filtered.data !== null)
+            {
+                log("warn", plugin, `${route.method} ${route.path} answered ${String(status)} with a body, which that status never carries; it was dropped`);
+            }
+
+            return { status, body: null, ...(reply !== undefined && { headers: filterHeaders(reply.headers, plugin, route, log) }) };
         }
 
         if (reply !== undefined)

@@ -359,6 +359,11 @@ export function serve(options: ServerOptions): Hono
                 c.header("set-cookie", session.cookie, { append: true });
             }
 
+            if (answer.status === 204 || answer.status === 205)
+            {
+                return c.body(null, answer.status);
+            }
+
             return c.json(answer.body as Record<string, unknown>, answer.status as 200);
         });
     }
