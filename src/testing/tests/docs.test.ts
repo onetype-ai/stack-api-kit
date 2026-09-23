@@ -88,4 +88,11 @@ describe("undocumented", () =>
     {
         expect(findUndocumentedKeys(contract, "- `version` and `grants`.")).toEqual([]);
     });
+
+    test("does not ask a procedure written for the last major to name a key a minor release added", () =>
+    {
+        const contract = "export type Definition<Schema> = {\n    version: string;\n    watchesWork?: boolean;\n};";
+
+        expect(findUndocumentedKeys(contract, "- `version`.")).toEqual([]);
+    });
 });

@@ -18,8 +18,8 @@
   the status; the built-in client asks fetch for redirects by hand.
 - `Route.output` is optional in the type, and a route declaring none of
   `output`, `streams`, `document` or `file` is refused at startup.
-- `Project.findAll()` counts `watchesWork` as a contract key: a project's
-  contract procedure must name it.
+- `Project.findAll()` does not yet ask a project's contract procedure to
+  name `watchesWork`; from 9.0 it will, as for every other key.
 - `HttpRequestError` is exported from the kernel as well as from `outbound`.
 
 ### Added

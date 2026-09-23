@@ -39,7 +39,7 @@ function createProject(docs: Readonly<Record<string, string>> = {}): string
 function procedure(): string
 {
     return ["version", "describe", "dependsOn", "config", "permissions", "tables", "migrations",
-        "allowedHosts", "watchesWork", "scope", "services", "routes", "emits", "channels", "listens", "hooks", "participates",
+        "allowedHosts", "scope", "services", "routes", "emits", "channels", "listens", "hooks", "participates",
         "commands", "identifies", "grants", "grantsSupported",
         "setup", "teardown"].map((key) => `- \`${key}\``).join("\n");
 }
