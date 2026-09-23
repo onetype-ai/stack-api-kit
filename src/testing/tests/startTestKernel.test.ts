@@ -156,7 +156,11 @@ describe("what startTestKernel gives a test", () =>
 
         const api = await startTestKernel({ plugins: [announcing] });
 
-        api.kernel.context("announcing").events.emit("announcing.done", { id: "one" });
+        await api.kernel.context("announcing").tx(async (inside) =>
+        {
+            inside.events.emit("announcing.done", { id: "one" });
+        });
+        await api.flush();
 
         expect(api.emittedEvents()).toEqual([{ plugin: "announcing", event: "announcing.done", payload: { id: "one" } }]);
 

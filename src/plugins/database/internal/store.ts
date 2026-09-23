@@ -59,7 +59,8 @@ export function store(holding: StoreInternals)
     /** One transaction, or a savepoint when one is already open. */
     async function inTx<Result>(plugin: string, run: (db: unknown) => Promise<Result>): Promise<Result>
     {
-        const db = forPlugin(plugin);
+        // a plugin with no tables still opens one, to emit through the outbox; it is handed no handle
+        const db = holding.tables[plugin] === undefined ? undefined : forPlugin(plugin);
         const nested = inside.getStore() !== undefined;
 
         counter += 1;

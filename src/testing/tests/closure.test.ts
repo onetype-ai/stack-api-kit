@@ -1,0 +1,152 @@
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { z } from "zod";
+
+import { definePlugin } from "../../index";
+import { configureTestKernels, startTestKernel, withDependencies } from "../startTestKernel";
+
+import type { Plugin } from "../../index";
+import type { TestKernel } from "../startTestKernel";
+
+const accounts = definePlugin("accounts", {
+    version: "1.0.0",
+    describe: "Holds accounts.",
+    config: z.object({ region: z.string(), currency: z.string() }).strict(),
+});
+
+const catalog = definePlugin("catalog", { version: "1.0.0", describe: "Lists what is sold.", dependsOn: ["accounts"] });
+const items = definePlugin("items", { version: "1.0.0", describe: "Holds items.", dependsOn: ["catalog", "accounts"] });
+
+let api: TestKernel | undefined;
+let asked = 0;
+
+beforeEach(() =>
+{
+    asked = 0;
+
+    configureTestKernels({
+        resolve: () =>
+        {
+            asked += 1;
+
+            return Promise.resolve({ plugins: [accounts, catalog, items], config: { accounts: { region: "eu", currency: "EUR" } } });
+        },
+    });
+});
+
+afterEach(async () =>
+{
+    await api?.stop();
+    api = undefined;
+});
+
+const namesOf = (plugins: readonly Plugin[]): string[] =>
+{
+    return plugins.map((plugin) => plugin.name);
+};
+
+describe("a kernel that names only the plugin under test", () =>
+{
+    test("boots with every plugin it depends on, each before the plugin that needs it", async () =>
+    {
+        const shop = definePlugin("shop", { version: "1.0.0", describe: "Sells items.", dependsOn: ["items"] });
+
+        api = await startTestKernel({ plugins: [shop] });
+
+        expect(api.kernel.started()).toBe(true);
+        expect(namesOf(await withDependencies([shop]))).toEqual(["accounts", "catalog", "items", "shop"]);
+    });
+
+    test("adds each dependency once, however many plugins name it", async () =>
+    {
+        const names = namesOf(await withDependencies([items, catalog]));
+
+        expect(names).toEqual(["accounts", "catalog", "items"]);
+    });
+
+    test("configures an added plugin from the fixture, under the test's own config field by field", async () =>
+    {
+        api = await startTestKernel({ plugins: [catalog], config: { accounts: { currency: "USD" } } });
+
+        expect(api.kernel.context("accounts").config).toEqual({ region: "eu", currency: "USD" });
+    });
+
+    test("keeps exactly the config a test gave a plugin it passed, so a test proving that config wrong still sees it refused", async () =>
+    {
+        const booting = startTestKernel({ plugins: [accounts, catalog], config: { accounts: { region: "eu" } } });
+
+        await expect(booting).rejects.toThrow();
+    });
+
+    test("keeps a stand-in the test passed over the discovered plugin of that name, and closes over its own dependencies", async () =>
+    {
+        const standIn = definePlugin("catalog", { version: "1.0.0", describe: "Lists nothing, for a test.", dependsOn: ["accounts"] });
+
+        const plugins = await withDependencies([items, standIn]);
+
+        expect(plugins).toContain(standIn);
+        expect(plugins).not.toContain(catalog);
+        expect(namesOf(plugins)).toEqual(["accounts", "catalog", "items"]);
+    });
+
+    test("refuses a dependency neither the test nor the fixture has, naming both ends and the fix", async () =>
+    {
+        const lonely = definePlugin("lonely", { version: "1.0.0", describe: "Needs what nobody ships.", dependsOn: ["nowhere"] });
+
+        await expect(startTestKernel({ plugins: [lonely] })).rejects.toThrow("\"lonely\" depends on \"nowhere\", which the test did not pass and no discovered plugin is named. Pass a plugin named \"nowhere\"");
+    });
+});
+
+describe("a kernel that passes everything it needs", () =>
+{
+    test("boots exactly as before, never asking for the fixture", async () =>
+    {
+        const standalone = definePlugin("standalone", { version: "1.0.0", describe: "Depends on nothing." });
+
+        api = await startTestKernel({ plugins: [standalone] });
+
+        expect(await withDependencies([standalone])).toEqual([standalone]);
+        expect(asked).toBe(0);
+    });
+});
+
+describe("a test kernel's outbox", () =>
+{
+    const notes = definePlugin("notes", {
+        version: "1.0.0",
+        describe: "Announces a note.",
+        emits: { "notes.note.created": { describe: "A note was made.", schema: z.object({ id: z.string() }) } },
+    });
+
+    test("refuses an event emitted outside a transaction, as a deployment with an outbox does", async () =>
+    {
+        const started = await startTestKernel({ plugins: [notes] });
+
+        api = started;
+
+        expect(() => started.kernel.context("notes").events.emit("notes.note.created", { id: "1" })).toThrow("outside a transaction while an outbox is configured");
+    });
+
+    test("lets a plugin with no tables emit inside a transaction", async () =>
+    {
+        const started = await startTestKernel({ plugins: [notes] });
+
+        api = started;
+
+        await started.kernel.context("notes").tx(async (inside) =>
+        {
+            inside.events.emit("notes.note.created", { id: "1" });
+        });
+        await started.flush();
+
+        expect(started.emittedEvents()).toEqual([{ plugin: "notes", event: "notes.note.created", payload: { id: "1" } }]);
+    });
+
+    test("lets a test that means it run without one", async () =>
+    {
+        const started = await startTestKernel({ plugins: [notes], outbox: false });
+
+        api = started;
+
+        expect(() => started.kernel.context("notes").events.emit("notes.note.created", { id: "1" })).not.toThrow();
+    });
+});

@@ -43,7 +43,7 @@ export type TestKernelOptions = {
     config?: Readonly<Record<string, unknown>>;
     respondWith?: (request: HttpRequest) => unknown;
 
-    /** Whether events are kept until a listener has recorded them, as `start({ outbox: true })` does. */
+    /** Whether events are kept until a listener has recorded them, as `start({ outbox: true })` does; on unless `false`, as a deployment runs. */
     outbox?: boolean;
 
     /** Whether a plugin may ask for work later, as `start({ schedule: true })`. */
@@ -114,10 +114,139 @@ const TAKES: ReadonlySet<string> = new Set(["plugins", "config", "respondWith", 
 // example.com's address: public, so the check passes, and never dialled, since the test kernel answers calls itself.
 const PUBLIC_ADDRESS: readonly ResolvedAddress[] = [{ address: "93.184.215.14", family: 4 }];
 
-/** Boots a kernel on an in-memory database with migrations already applied, recording every event, log line and outbound call; it throws on an option it does not take, and outbound calls answer `{}` unless `respondWith` says otherwise. */
-export async function startTestKernel(options: TestKernelOptions): Promise<TestKernel>
+/** Where a test kernel finds the plugins a test did not pass: every plugin the project holds, and the config each boots with there (a non-secret fixture). */
+export type TestKernelFixture = {
+    plugins: readonly Plugin[];
+    config: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+};
+
+let resolving: (() => Promise<TestKernelFixture>) | undefined;
+let resolved: Promise<TestKernelFixture> | undefined;
+
+/**
+ * Registers, once per test process (a setup file), where missing dependencies come from. `resolve` runs only when a kernel names a
+ * dependency the test did not pass, and once: a test that passes every plugin it needs boots exactly as before.
+ */
+export function configureTestKernels(configuring: { resolve: () => Promise<TestKernelFixture> }): void
 {
-    const unknown = Object.keys(options).filter((key) => !TAKES.has(key));
+    resolving = configuring.resolve;
+    resolved = undefined;
+}
+
+/** The registered fixture, read once and kept; a failed read is tried again next time. */
+function fixture(): Promise<TestKernelFixture> | undefined
+{
+    if (resolving === undefined)
+    {
+        return undefined;
+    }
+
+    resolved ??= resolving().catch((cause: unknown) =>
+    {
+        resolved = undefined;
+
+        throw cause;
+    });
+
+    return resolved;
+}
+
+/** Whether any plugin names a dependency the list does not hold. */
+function isMissingAny(plugins: readonly Plugin[]): boolean
+{
+    const names = new Set(plugins.map((plugin) => plugin.name));
+
+    return plugins.some((plugin) => (plugin.definition.dependsOn ?? []).some((name) => !names.has(name)));
+}
+
+/**
+ * The plugins with every transitive dependsOn added from the fixture: a plugin passed wins by name (a stand-in stays one, its own
+ * dependsOn closed over too), dependencies come first, and otherwise the order given holds. Unchanged when nothing is missing or
+ * no fixture is registered; throws naming the plugin and the dependency when neither the test nor the fixture has it.
+ */
+export async function withDependencies(plugins: readonly Plugin[]): Promise<Plugin[]>
+{
+    const known = isMissingAny(plugins) ? await fixture() : undefined;
+
+    if (known === undefined)
+    {
+        return [...plugins];
+    }
+
+    const discovered = new Map(known.plugins.map((plugin) => [plugin.name, plugin]));
+    const chosen = new Map(plugins.map((plugin) => [plugin.name, plugin]));
+    const ordered: Plugin[] = [];
+    const placed = new Set<string>();
+    const visiting = new Set<string>();
+
+    const visit = (plugin: Plugin): void =>
+    {
+        if (placed.has(plugin.name) || visiting.has(plugin.name))
+        {
+            return;
+        }
+
+        visiting.add(plugin.name);
+
+        for (const name of plugin.definition.dependsOn ?? [])
+        {
+            const next = chosen.get(name) ?? discovered.get(name);
+
+            if (next === undefined)
+            {
+                throw new TypeError(`startTestKernel: "${plugin.name}" depends on "${name}", which the test did not pass and no discovered plugin is named. Pass a plugin named "${name}", or remove it from dependsOn.`);
+            }
+
+            chosen.set(name, next);
+            visit(next);
+        }
+
+        visiting.delete(plugin.name);
+        placed.add(plugin.name);
+        ordered.push(plugin);
+    };
+
+    for (const plugin of plugins)
+    {
+        visit(plugin);
+    }
+
+    return ordered;
+}
+
+// The fixture's config reaches only the plugins the closure added, never one the test passed (a stand-in, or a plugin
+// whose config the test is proving wrong), and the test's own config for an added plugin wins field by field.
+async function closedOver(options: TestKernelOptions): Promise<TestKernelOptions>
+{
+    const plugins = await withDependencies(options.plugins);
+
+    if (plugins.length === options.plugins.length)
+    {
+        return options;
+    }
+
+    const known = await fixture();
+    const config: Record<string, unknown> = { ...options.config };
+
+    for (const plugin of plugins)
+    {
+        const added = !options.plugins.includes(plugin);
+        const base = added && known?.plugins.includes(plugin) === true ? known.config[plugin.name] : undefined;
+        const given = options.config?.[plugin.name];
+
+        if (base !== undefined)
+        {
+            config[plugin.name] = typeof given === "object" && given !== null ? { ...base, ...given } : given ?? base;
+        }
+    }
+
+    return { ...options, plugins, config };
+}
+
+/** Boots a kernel on an in-memory database with migrations already applied; a dependency the test did not pass is added from the fixture `configureTestKernels` registered, with the fixture's config under the test's own, field by field. It records every event, log line and outbound call, throws on an option it does not take, and outbound calls answer `{}` unless `respondWith` says otherwise. */
+export async function startTestKernel(asked: TestKernelOptions): Promise<TestKernel>
+{
+    const unknown = Object.keys(asked).filter((key) => !TAKES.has(key));
 
     if (unknown.length > 0)
     {
@@ -125,6 +254,8 @@ export async function startTestKernel(options: TestKernelOptions): Promise<TestK
             `startTestKernel was given ${unknown.map((key) => `"${key}"`).join(", ")}, which it does not take. It takes ${[...TAKES].join(", ")}.`,
         );
     }
+
+    const options = await closedOver(asked);
 
     const store = database({ file: ":memory:", tables: testTables.tables(options.plugins) });
 
@@ -161,7 +292,9 @@ export async function startTestKernel(options: TestKernelOptions): Promise<TestK
         return Promise.resolve(options.respondWith?.(call) ?? {});
     };
 
-    const outbox = options.outbox === true ? store.outbox?.() : undefined;
+    // on unless a test says otherwise, as a deployment runs it: an event emitted
+    // outside a transaction is then refused here, not first in production
+    const outbox = options.outbox === false ? undefined : store.outbox?.();
     const later = options.schedule === true ? store.schedule?.() : undefined;
     const scoping = options.plugins.some((plugin) => plugin.definition.scope !== undefined);
 

@@ -232,7 +232,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
 
         get db(): unknown
         {
-            if (openTransaction !== undefined)
+            if (openTransaction !== undefined && openTransaction.db !== undefined)
             {
                 return openTransaction.db;
             }

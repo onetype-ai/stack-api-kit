@@ -99,6 +99,18 @@ describe("transactions", () =>
         store.close();
     });
 
+    test("opens one for a plugin with no tables, handing it no handle, so it can still emit through an outbox", async () =>
+    {
+        let handed: unknown = "not called";
+
+        await store.tx("notes", async (db) =>
+        {
+            handed = db;
+        });
+
+        expect(handed).toBeUndefined();
+    });
+
     test("keeps every write when the work finishes", async () =>
     {
         await store.tx("items", async (db) =>

@@ -38,7 +38,10 @@ test("what a listener wrote is there once the test waits for it", async () =>
 
     for (const id of ["a", "b", "c"])
     {
-        api.kernel.context("source").events.emit("source.happened", { id });
+        await api.kernel.context("source").tx(async (inside) =>
+        {
+            inside.events.emit("source.happened", { id });
+        });
 
         lengths.push(written.length);
     }
@@ -68,11 +71,14 @@ test("a chain of two listeners settles too", async () =>
                 listens: {
                     "first.done": {
                         describe: "Passes it on.",
-                        handle: (payload, ctx) =>
+                        handle: async (payload, ctx) =>
                         {
                             arrivals.push("second");
 
-                            ctx.events.emit("second.done", payload as { id: string });
+                            await ctx.tx(async (inside) =>
+                            {
+                                inside.events.emit("second.done", payload as { id: string });
+                            });
                         },
                     },
                 },
@@ -90,7 +96,10 @@ test("a chain of two listeners settles too", async () =>
         ],
     });
 
-    api.kernel.context("first").events.emit("first.done", { id: "one" });
+    await api.kernel.context("first").tx(async (inside) =>
+    {
+        inside.events.emit("first.done", { id: "one" });
+    });
 
     await api.flush();
 
@@ -121,7 +130,10 @@ test("a listener that throws is raised where the test waited, not left silent", 
         ],
     });
 
-    api.kernel.context("source").events.emit("source.happened", { id: "one" });
+    await api.kernel.context("source").tx(async (inside) =>
+    {
+        inside.events.emit("source.happened", { id: "one" });
+    });
 
     await expect(api.flush()).rejects.toThrow(/sink listening to "source.happened": the sink broke/);
 
@@ -150,7 +162,10 @@ test("a failure already read is not raised again", async () =>
         ],
     });
 
-    api.kernel.context("source").events.emit("source.happened", { id: "one" });
+    await api.kernel.context("source").tx(async (inside) =>
+    {
+        inside.events.emit("source.happened", { id: "one" });
+    });
 
     await expect(api.flush()).rejects.toThrow(/expected/);
 
