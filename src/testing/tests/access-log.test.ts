@@ -74,3 +74,14 @@ test("a probe that answers leaves no line", async () =>
 
     expect(lines.filter((line) => line.line === "request")).toEqual([]);
 });
+
+test("a path no route declares is logged as unmatched, whatever it carries", async () =>
+{
+    const { lines, running } = await serving();
+
+    await running.fetch(new Request("http://localhost/tok_PLANTED/ana@example.test"));
+    const access = lines.filter((line) => line.line === "request");
+
+    expect(access.map((line) => line.about?.["path"])).toEqual(["(unmatched)"]);
+    expect(JSON.stringify(lines)).not.toMatch(/tok_PLANTED|ana@example/u);
+});
