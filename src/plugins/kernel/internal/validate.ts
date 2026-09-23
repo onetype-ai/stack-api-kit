@@ -627,6 +627,17 @@ function checkReferences(name: string, plugin: Plugin, by: ReadonlyMap<string, P
         {
             report("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" is public and also requires ${(route.requires ?? []).map((permission) => `"${permission}"`).join(", ")}. It is one or the other.`);
         }
+
+        // another site must never change anything or act as someone, so what it may read is the same for everyone
+        if (route.anyOrigin === true && (route.method !== "GET" || route.public !== true))
+        {
+            report("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" lets any site read it, and only a public GET may: another site must never change anything or act as someone. Make it a public GET, or drop anyOrigin.`);
+        }
+
+        if (route.anyOrigin === true && (route.reads ?? []).some((header) => header === "cookie" || header === "authorization"))
+        {
+            report("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" lets any site read it and reads a credential header. Its answer must be the same for everyone: drop "cookie" and "authorization" from reads, or drop anyOrigin.`);
+        }
     }
 
     for (const command of Object.values(plugin.definition.commands ?? {}))

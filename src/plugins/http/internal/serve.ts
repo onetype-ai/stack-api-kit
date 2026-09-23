@@ -240,6 +240,19 @@ export function serve(options: ServerOptions): Hono
 
     const requestIds = new WeakMap<Request, string>();
 
+    /** Requests a route any site may read answered, which get `*` and no credentials whoever asked. */
+    const shared = new WeakSet<Request>();
+
+    const anyOrigin = new Map<string, Set<string>>();
+
+    for (const route of options.kernel.routes())
+    {
+        if (route.anyOrigin)
+        {
+            anyOrigin.set(route.path, new Set(["GET", "HEAD"]));
+        }
+    }
+
     /** Requests a declared document answered, whose policy and framing the middleware leaves alone. */
     const documents = new WeakSet<Request>();
 
@@ -265,7 +278,10 @@ export function serve(options: ServerOptions): Hono
             c.header(name, value);
         }
 
-        for (const [name, value] of Object.entries(cors(policy, c.req.header("origin"))))
+        // Vary stays: a handler may still answer by the Origin it reads, and a shared cache must keep those apart
+        const allowed = shared.has(c.req.raw) ? { "access-control-allow-origin": "*", vary: "Origin" } : cors(policy, c.req.header("origin"));
+
+        for (const [name, value] of Object.entries(allowed))
         {
             if (name === "access-control-allow-methods" && c.req.method === "OPTIONS" && c.res.headers.has(name))
             {
@@ -306,6 +322,18 @@ export function serve(options: ServerOptions): Hono
             return c.json({ code: "NOT_FOUND", message: "No such route." }, 404);
         }
 
+        const asked = (c.req.header("access-control-request-method") ?? "").toUpperCase();
+
+        // a preflight for a read any site may make gets `*`; a write at the same path gets the ordinary policy
+        if (methodsFor(anyOrigin, c.req.path)?.has(asked) === true)
+        {
+            shared.add(c.req.raw);
+            c.header("access-control-allow-methods", "GET, HEAD");
+            c.header("access-control-max-age", String(policy.maxAge));
+
+            return c.body(null, 204);
+        }
+
         c.header("access-control-allow-methods", [...methods].sort().join(", "));
 
         return c.body(null, 204);
@@ -319,9 +347,15 @@ export function serve(options: ServerOptions): Hono
 
             let identity: Identity | undefined;
 
+            if (route.anyOrigin)
+            {
+                shared.add(c.req.raw);
+            }
+
             try
             {
-                identity = options.identify === undefined
+                // a route any site may read never reads a session, so its answer is the same for everyone
+                identity = route.anyOrigin ? undefined : options.identify === undefined
                     ? await options.kernel.identify?.(withSessionKey(c.req.raw, options.session))
                     : await options.identify(c);
             }

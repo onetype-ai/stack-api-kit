@@ -103,6 +103,9 @@ export type RegisteredRoute = {
     describe: string;
     requires: readonly string[];
     public: boolean;
+
+    /** Whether any website may read it from a browser, never with credentials. */
+    anyOrigin: boolean;
     limit: { requests: number; seconds: number } | undefined;
 
     /** What kind of body it takes: JSON unless it declared a form. */
@@ -832,6 +835,7 @@ export function createKernel(options: KernelOptions): Kernel
                 describe: route.describe,
                 requires: route.requires ?? [],
                 public: route.public === true,
+                anyOrigin: route.anyOrigin === true,
                 limit: route.limit,
                 accepts: route.accepts ?? "json",
                 reads: route.reads ?? [],

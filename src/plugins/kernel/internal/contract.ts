@@ -105,6 +105,9 @@ export type Route<Context, Input extends z.ZodType = z.ZodType> = Describable & 
     /** Whether an unauthenticated caller may reach this. Absent means no, so forgetting to think about it fails shut. */
     public?: boolean;
 
+    /** Whether any website may read the answer from a browser: CORS `*`, never with credentials, and the server reads no session for it. Only a public GET that reads no credential header; anything else is refused at startup. For what an embed on another site fetches, the same for everyone. */
+    anyOrigin?: boolean;
+
     /** Requests per window for one caller. */
     /** `countSuccess: false` counts only failed calls, for a route guarding a secret: five wrong passwords is an attack, five right ones is five devices. */
     limit?: { requests: number; seconds: number; countSuccess?: boolean };
