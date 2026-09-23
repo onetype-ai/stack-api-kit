@@ -411,6 +411,13 @@ function checkLimit(name: string, route: NonNullable<Plugin["definition"]["route
     {
         report("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" declares a window of ${limit.seconds} seconds. A window without length is one that never resets.`);
     }
+
+    const key: unknown = limit.key;
+
+    if (key !== undefined && key !== "identity" && key !== "address" && typeof key !== "function")
+    {
+        report("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" counts its limit by ${JSON.stringify(key)}. Count by "identity", "address", or a function of the input.`);
+    }
 }
 
 /** What a route answers with: one answer, a stream of events, or either per request, each through a schema that filters. */

@@ -115,7 +115,10 @@ export async function respond(
 
         if (route.limit !== undefined && rateLimiter !== undefined)
         {
-            spent = `${identityId ?? incoming.from ?? "anonymous"}:${route.method} ${route.path}`;
+            const key = route.limit.key;
+            const counted = typeof key === "function" ? keyedBy(key, route, incoming) : key === "address" ? incoming.from ?? "anonymous" : identityId ?? incoming.from ?? "anonymous";
+
+            spent = `${counted}:${route.method} ${route.path}`;
 
             const verdict = rateLimiter.spend(spent, route.limit);
 
@@ -319,8 +322,24 @@ export async function respond(
                 message: refusal.message,
                 ...(refusal.fields !== undefined && { fields: refusal.fields }),
             },
+            ...(cause instanceof Refusal && cause.retryAfter !== undefined && { headers: { "retry-after": String(cause.retryAfter) } }),
         };
     }
+}
+
+/** Who a keyed limit counts: the key its function reads off the input, which must parse first; a bad input is refused as any is. */
+function keyedBy(key: (input: never) => string, route: Route<Context>, incoming: KernelRequest): string
+{
+    const parsed = route.input.safeParse(incoming.input);
+
+    if (!parsed.success)
+    {
+        throw new Refusal(400, "INVALID_INPUT", "The request is not valid.", fieldErrors(parsed.error));
+    }
+
+    const named = key(parsed.data as never);
+
+    return `key:${typeof named === "string" && named !== "" ? named.normalize("NFC") : "none"}`;
 }
 
 /** The headers a route named, and nothing else. */

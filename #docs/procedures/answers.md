@@ -24,10 +24,9 @@ route({
 });
 ```
 
-Sent as Server-Sent Events. Everything is checked before the first event;
-a failure after it ends the stream with an `error` event. `ctx.signal`
-aborts when the caller leaves. A stream lives `streamSeconds` (300), a
-caller holds at most `mostStreamsPerCaller` (4).
+Sent as Server-Sent Events, all checks done before the first; a failure
+after it ends with an `error` event. `ctx.signal` aborts when the caller
+leaves. A stream lives `streamSeconds` (300); a caller holds at most 4.
 
 Declare `output` too and the route answers either: a value is JSON, an
 iterable or `Reply.events` a stream.
@@ -40,14 +39,14 @@ framing needs `framable: true`. `file: { types: ["text/csv"] }` answers
 
 ## Headers
 
-A reply sets location, retry-after, content-disposition, vary, etag,
-cache-control and the session headers, plus what `sends` names.
-`public` caching only on a public route. A 204 or 205 never has a body.
-`anyOrigin: true` lets any site read a public GET, with no credentials.
+`strictReplyHeaders: true` (9.0's default) lets a reply set location,
+retry-after, content-disposition, vary, etag, cache-control and the session
+headers, plus what `sends` names. `public` caching only on a public route; a
+204 never has a body. `Refusal(…, { retryAfter })` sends retry-after, and
+`limit.key` counts by `"address"` or a function of the input. `anyOrigin`
+lets any site read a public GET, without credentials.
 
 ## Refuses
 
-- Two ways to answer, except output with streams.
-- An output or streams schema that cannot filter.
-- A policy with `'unsafe-eval'`, inline script, or framing undeclared.
-- A file type a browser would run.
+- Two ways to answer, except output with streams; a schema that cannot filter.
+- `'unsafe-eval'`, inline script, undeclared framing, or a file a browser runs.

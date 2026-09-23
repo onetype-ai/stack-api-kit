@@ -110,7 +110,10 @@ export class Refusal extends Error
 
     readonly fields: Readonly<Record<string, string>> | undefined;
 
-    constructor(status: number, code: string, message: string, fields?: Readonly<Record<string, string>>)
+    /** How many seconds the caller should wait before trying again, sent as `retry-after`. */
+    readonly retryAfter: number | undefined;
+
+    constructor(status: number, code: string, message: string, fields?: Readonly<Record<string, string>>, options: { retryAfter?: number } = {})
     {
         super(message);
 
@@ -118,6 +121,7 @@ export class Refusal extends Error
         this.status = status;
         this.code = code;
         this.fields = fields;
+        this.retryAfter = options.retryAfter !== undefined && Number.isFinite(options.retryAfter) && options.retryAfter >= 0 ? Math.ceil(options.retryAfter) : undefined;
     }
 }
 

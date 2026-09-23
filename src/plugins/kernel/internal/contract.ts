@@ -110,7 +110,8 @@ export type Route<Context, Input extends z.ZodType = z.ZodType> = Describable & 
 
     /** Requests per window for one caller. */
     /** `countSuccess: false` counts only failed calls, for a route guarding a secret: five wrong passwords is an attack, five right ones is five devices. */
-    limit?: { requests: number; seconds: number; countSuccess?: boolean };
+    /** `key` is who a window counts: the caller's identity (or address, when signed out) by default, `"address"` for the address alone, or a function of the parsed input, as a sign-in counts per email; the input is then parsed before the limit is spent. */
+    limit?: { requests: number; seconds: number; countSuccess?: boolean; key?: "identity" | "address" | ((input: never) => string) };
 
     /** What kind of body this takes, JSON unless it says otherwise; `"form"` reads `multipart/form-data`, file parts as `UploadedFile`s; `"urlencoded"` reads `application/x-www-form-urlencoded` as string fields (a name sent twice as a list), its bytes in `ctx.sent` with `keepsRaw`, as a provider signs them. */
     /** Declared rather than sniffed, so a route expecting JSON can never be handed a file. */
