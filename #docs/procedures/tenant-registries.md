@@ -29,6 +29,9 @@ await ctx.tx((inside) => inside.scopedRegistry("editor.blocks").remove("x"));
 
 - `GET /registries/<name>` answers `{ version, entries }`: what this
   caller may see, in its scope, at most `cap` (256) entries.
+- Channel `registry.<name>` carries each change to sockets in the scope:
+  `set` to who may see the entry, `remove` to who could, `skip` to the
+  rest, so a key never reaches a socket that may not see it.
 - An exposed static registry is what `adds` declare, at version 0: a
   runtime `set` on it is refused, since each process would differ.
 

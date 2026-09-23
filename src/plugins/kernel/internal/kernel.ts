@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 import { Refusal } from "./refusal";
 import { context, type KernelWiring } from "./context";
-import type { Identity, Context, HttpMethod, Pipeline, PipelineStep, Plugin, ChannelReach, Route } from "./contract";
+import type { Identity, Context, HttpMethod, Pipeline, PipelineStep, Plugin, ChannelReach, Registry, Route } from "./contract";
 import { events, type ListenerFailure, type PendingDelivery } from "./events";
 import { KernelFault } from "./faults";
 import { hooks } from "./hooks";
@@ -710,6 +710,51 @@ export function createKernel(options: KernelOptions): Kernel
         }
     }
 
+    /**
+     * One frame per socket in the change's scope, first match wins: the entry to who may see it, its removal to who
+     * could before, a skip to the rest, so a key never reaches a socket that may not see it. An entry changed again
+     * before this ran is skipped here: the later change sends it, under its own permissions.
+     */
+    async function pushChange(name: string, registry: Registry, payload: unknown): Promise<void>
+    {
+        const change = RegistryChange.parse(payload);
+        const sockets = options.sockets;
+
+        if (sockets === undefined || registry.expose === undefined)
+        {
+            return;
+        }
+
+        const skip = { version: change.version, op: "skip" };
+        const removed = { version: change.version, op: "remove", key: change.key };
+        const sending = { channel: `registry.${name}`, reach: "scope" as const, requires: registry.expose.requires, scope: change.scope, from: undefined, fromConnection: undefined, message: skip };
+
+        if (change.op === "remove")
+        {
+            sockets.push({ ...sending, variants: [{ requires: change.before ?? [], message: removed }] });
+
+            return;
+        }
+
+        const row = await options.registries?.get(name, change.scope, change.key);
+        const parsed = registry.entry.safeParse(row?.entry);
+
+        if (row === undefined || row.version !== change.version || !parsed.success)
+        {
+            sockets.push(sending);
+
+            return;
+        }
+
+        sockets.push({
+            ...sending,
+            variants: [
+                { requires: change.requires, message: { version: change.version, op: "set", key: change.key, entry: parsed.data } },
+                ...(change.before === undefined ? [] : [{ requires: change.before, message: removed }]),
+            ],
+        });
+    }
+
     /** Declares what the kit announces and serves for each registry: its change event, and for an exposed one its route. */
     function serveRegistries(plugins: readonly Plugin[]): void
     {
@@ -725,6 +770,11 @@ export function createKernel(options: KernelOptions): Kernel
                     }
 
                     bus.declare(plugin.name, `${name}.changed`, { describe: `An entry of registry "${name}" was set or removed in one scope.`, schema: RegistryChange });
+
+                    if (registry.expose !== undefined)
+                    {
+                        bus.listen("kernel", `${name}.changed`, { describe: `Pushes each change of registry "${name}" to the sockets in its scope.`, handle: (payload: never) => pushChange(name, registry, payload) });
+                    }
                 }
 
                 if (registry.expose !== undefined)

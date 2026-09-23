@@ -4,7 +4,7 @@ import { z } from "zod";
 import { definePlugin, defineRoute } from "../../index";
 import { startTestKernel } from "../startTestKernel";
 
-import type { Context, Definition, Identity, Plugin, Registry } from "../../index";
+import type { ChannelMessage, Context, Definition, Identity, Plugin, Registry } from "../../index";
 import type { TestKernel } from "../startTestKernel";
 
 const Block = z.object({ id: z.string(), label: z.string(), order: z.number().optional(), requires: z.array(z.string()).optional() });
@@ -174,6 +174,91 @@ describe("a tenant registry refuses", () =>
 
         await expect(startTestKernel({ plugins: [unscoped] })).rejects.toThrow(/declares no scope/);
         await expect(startTestKernel({ plugins: [squatter] })).rejects.toThrow(/under \/registries\/, where the kit serves/);
+    });
+});
+
+/** What a socket holding these permissions hears of one push: the first variant it may, else the message. */
+function heardBy(push: ChannelMessage, permissions: readonly string[]): unknown
+{
+    return (push.variants ?? []).find((variant) => variant.requires.every((one) => permissions.includes(one)))?.message ?? push.message;
+}
+
+describe("a tenant registry's pushes", () =>
+{
+    const plain = ["editor.use"];
+    const admin = ["editor.use", "editor.admin"];
+
+    async function pushedAfter(changes: (inside: Context) => Promise<unknown>): Promise<ChannelMessage[]>
+    {
+        api = await startTestKernel({ plugins: [createEditor(), quotes], outbox: true, sockets: true });
+
+        await api.kernel.context("quotes", member("a")).tx(async (inside) => changes(inside));
+        await api.flush();
+
+        return pushesOf(api);
+    }
+
+    // pushes of one commit are delivered side by side, so a test finds each by its version, never by its place
+    function pushesOf(kernel: TestKernel | undefined): ChannelMessage[]
+    {
+        const versionOf = (push: ChannelMessage): number => (push.message as { version: number }).version;
+
+        return (kernel?.pushed() ?? []).filter((push) => push.channel === "registry.editor.blocks").sort((first, second) => versionOf(first) - versionOf(second));
+    }
+
+    test("stay in the scope of the change, held to expose.requires", async () =>
+    {
+        const [push] = await pushedAfter((inside) => inside.scopedRegistry("editor.blocks").set({ id: "quote", label: "Quote" }));
+
+        expect(push).toMatchObject({ reach: "scope", scope: "a", requires: ["editor.use"] });
+        expect(heardBy(push!, plain)).toEqual({ version: 1, op: "set", key: "quote", entry: { id: "quote", label: "Quote" } });
+    });
+
+    test("take an entry away from a viewer whose permission it no longer matches, and give it to one it now does", async () =>
+    {
+        const pushes = await pushedAfter(async (inside) =>
+        {
+            await inside.scopedRegistry("editor.blocks").set({ id: "draft", label: "Draft", requires: ["editor.admin"] });
+            await inside.scopedRegistry("editor.blocks").set({ id: "other", label: "Other" });
+        });
+        await api?.kernel.context("quotes", member("a")).tx(async (inside) =>
+        {
+            await inside.scopedRegistry("editor.blocks").set({ id: "other", label: "Other", requires: ["editor.admin"] });
+            await inside.scopedRegistry("editor.blocks").set({ id: "draft", label: "Draft" });
+        });
+        await api?.flush();
+        const [tightened, loosened] = pushesOf(api).slice(pushes.length);
+
+        expect(heardBy(tightened!, plain)).toEqual({ version: 3, op: "remove", key: "other" });
+        expect(heardBy(tightened!, admin)).toMatchObject({ version: 3, op: "set", key: "other" });
+        expect(heardBy(loosened!, plain)).toEqual({ version: 4, op: "set", key: "draft", entry: { id: "draft", label: "Draft" } });
+    });
+
+    test("tell a removal only to viewers who could see the entry, and a skip to the rest", async () =>
+    {
+        const pushes = await pushedAfter(async (inside) =>
+        {
+            await inside.scopedRegistry("editor.blocks").set({ id: "table", label: "Table", requires: ["editor.admin"] });
+            await inside.scopedRegistry("editor.blocks").remove("table");
+        });
+        const removal = pushes[1]!;
+
+        expect(heardBy(removal, admin)).toEqual({ version: 2, op: "remove", key: "table" });
+        expect(heardBy(removal, plain)).toEqual({ version: 2, op: "skip" });
+        expect(JSON.stringify(heardBy(pushes[0]!, plain))).not.toContain("table");
+    });
+
+    test("skip an entry changed again before its push, which the later change sends under its own permissions", async () =>
+    {
+        const pushes = await pushedAfter(async (inside) =>
+        {
+            await inside.scopedRegistry("editor.blocks").set({ id: "draft", label: "Open" });
+            await inside.scopedRegistry("editor.blocks").set({ id: "draft", label: "Secret", requires: ["editor.admin"] });
+        });
+
+        expect(heardBy(pushes[0]!, plain)).toEqual({ version: 1, op: "skip" });
+        expect(JSON.stringify(pushes[0])).not.toContain("Secret");
+        expect(heardBy(pushes[1]!, plain)).toEqual({ version: 2, op: "remove", key: "draft" });
     });
 });
 
