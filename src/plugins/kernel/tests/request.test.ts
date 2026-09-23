@@ -86,7 +86,7 @@ describe("authentication", () =>
 
         const answer = await kernel.handle({ method: "GET", path: "/health", input: {} });
 
-        expect(answer).toEqual({ status: 200, body: { up: true } });
+        expect(answer).toEqual({ status: 200, body: { up: true }, headers: { etag: expect.stringMatching(/^W\/"/u) } });
     });
 
     test("never reaches the handler when the caller is refused", async () =>
@@ -145,7 +145,7 @@ describe("permissions", () =>
 
         const answer = await kernel.handle({ method: "GET", path: "/items", input: {}, identity: createIdentity(["items.read"]) });
 
-        expect(answer).toEqual({ status: 200, body: { ok: true } });
+        expect(answer).toEqual({ status: 200, body: { ok: true }, headers: { etag: expect.stringMatching(/^W\/"/u) } });
     });
 
     test("never names the permission a caller lacks", async () =>

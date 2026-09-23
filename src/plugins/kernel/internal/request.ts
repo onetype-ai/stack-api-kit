@@ -1,4 +1,5 @@
 import { refusalBodyFor, Reply, Refusal } from "./refusal";
+import { documentAnswer, tagged } from "./document";
 import { eventsRefusal, openStream, STREAM_SECONDS, streamedEvents, type OpenStream, type StreamRegistry } from "./streams";
 import type { z } from "zod";
 
@@ -34,6 +35,9 @@ export type KernelRequest = {
 
     /** Aborts when the caller goes away; handed to the route as `ctx.signal`. */
     signal?: AbortSignal | undefined;
+
+    /** The request's If-None-Match, which the kit answers itself: a GET whose ETag matches gets a 304. */
+    ifNoneMatch?: string | undefined;
 };
 
 /** What the kernel answers: a status, and a body already safe to send. */
@@ -41,6 +45,9 @@ export type KernelResponse = {
     status: number;
     body: unknown;
     headers?: Readonly<Record<string, string>>;
+
+    /** Whether a declared document answered, so the body is sent as HTML under its own policy. */
+    document?: boolean;
 };
 
 /** A route the kernel holds, and who declared it. */
@@ -219,7 +226,19 @@ export async function respond(
             };
         }
 
+        if (route.document !== undefined)
+        {
+            return documentAnswer(returned, route as Route<Context> & { document: NonNullable<Route<Context>["document"]> }, plugin, log, incoming);
+        }
+
         const reply = returned instanceof Reply ? returned : undefined;
+
+        if (reply?.document !== undefined)
+        {
+            log("error", plugin, `${route.method} ${route.path} answered a document, and declares no document`);
+
+            return { status: 500, body: { code: "INTERNAL", message: "The request could not be completed." } };
+        }
 
         if (route.output === undefined)
         {
@@ -258,10 +277,10 @@ export async function respond(
 
         if (reply !== undefined)
         {
-            return { status, body: filtered.data, headers: filterHeaders(reply.headers, plugin, route, log) };
+            return tagged({ status, body: filtered.data, headers: filterHeaders(reply.headers, plugin, route, log) }, route, incoming);
         }
 
-        return { status, body: filtered.data };
+        return tagged({ status, body: filtered.data }, route, incoming);
     }
     catch (cause)
     {

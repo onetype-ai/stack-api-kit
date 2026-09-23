@@ -3,6 +3,7 @@ import type { KernelFault } from "./faults";
 import * as names from "./names";
 import { tableName } from "./tableName";
 import { isFilterable, numberRanges } from "./output";
+import { policyFor } from "./document";
 import { isKitHeader } from "./replyHeaders";
 
 /** One thing wrong, and everything needed to fix it. */
@@ -413,11 +414,27 @@ function checkLimit(name: string, route: NonNullable<Plugin["definition"]["route
 /** What a route answers with: one answer, a stream of events, or either per request, each through a schema that filters. */
 function checkAnswers(name: string, route: NonNullable<Plugin["definition"]["routes"]>[number], report: ProblemReport): void
 {
-    const answers = (["output", "streams"] as const).filter((key) => route[key] !== undefined);
+    const answers = (["output", "streams", "document"] as const).filter((key) => route[key] !== undefined);
+    const answersEither = answers.length === 2 && answers.includes("output") && answers.includes("streams");
 
     if (answers.length === 0)
     {
-        report("INVALID_OUTPUT", name, `Route ${route.method} "${route.path}" declares no output. Name what an answer may carry with output, or what each event may carry with streams.`);
+        report("INVALID_OUTPUT", name, `Route ${route.method} "${route.path}" declares no output. Name what an answer may carry with output, what each event may carry with streams, or declare a document.`);
+    }
+
+    if (answers.length > 1 && !answersEither)
+    {
+        report("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" declares ${answers.join(" and ")}. A route answers once, streams, or serves a document: keep the one it does, or declare output and streams alone to answer either per request.`);
+    }
+
+    if (route.document !== undefined)
+    {
+        const policy = policyFor(route.document.policy, route.document.framable === true);
+
+        if (policy.refused !== undefined)
+        {
+            report("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" declares a document policy that ${policy.refused}.`);
+        }
     }
 
     if (route.streamSeconds !== undefined && !(typeof route.streamSeconds === "number" && route.streamSeconds > 0 && route.streamSeconds <= 86_400))

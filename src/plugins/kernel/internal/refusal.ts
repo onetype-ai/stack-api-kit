@@ -1,3 +1,4 @@
+import type { DocumentPolicy } from "./contract";
 import { KernelFault } from "./faults";
 
 /** What a client is told: a status, a stable code, and one sentence. */
@@ -29,10 +30,23 @@ export class Reply
     /** What `Reply.events` gave, read by the kit. */
     events?: EventsReply;
 
+    /** What `Reply.document` gave, read by the kit. */
+    document?: { policy: DocumentPolicy | undefined; etag: string | undefined };
+
     /** Sends the caller somewhere else. */
     static redirect(to: string, permanent = false): Reply
     {
         return new Reply(permanent ? 308 : 307, { to }, { location: to });
+    }
+
+    /** An HTML page, for a route declaring `document`: its policy and etag, when given, replace the route's; `headers` takes only cache-control, vary and content-language. */
+    static document(html: string, options: { policy?: DocumentPolicy; status?: number; etag?: string; headers?: Readonly<Record<string, string>> } = {}): Reply
+    {
+        const reply = new Reply(options.status ?? 200, html, options.headers ?? {});
+
+        reply.document = { policy: options.policy, etag: options.etag };
+
+        return reply;
     }
 
     /**

@@ -239,6 +239,9 @@ export function serve(options: ServerOptions): Hono
 
     const requestIds = new WeakMap<Request, string>();
 
+    /** Requests a declared document answered, whose policy and framing the middleware leaves alone. */
+    const documents = new WeakSet<Request>();
+
     app.use("*", async (c, next) =>
     {
         const traced = requestId(c.req.header("x-request-id"));
@@ -247,10 +250,13 @@ export function serve(options: ServerOptions): Hono
 
         await next();
 
+        const document = documents.has(c.req.raw);
+
         for (const [name, value] of Object.entries(securityHeaders))
         {
-            // a cache-control the reply chose survives: the kernel already held it to what its route may say
-            if (name === "cache-control" && c.res.headers.has(name))
+            // always the kit's, with two exceptions it decided itself: a declared document's policy and
+            // framing, and a cache-control the reply chose within what its route may say
+            if ((document && (name === "content-security-policy" || name === "x-frame-options")) || (name === "cache-control" && c.res.headers.has(name)))
             {
                 continue;
             }
@@ -346,6 +352,7 @@ export function serve(options: ServerOptions): Hono
                 ...("sent" in read && read.sent !== undefined && { sent: read.sent }),
                 ...(options.from !== undefined && { from: options.from(c) }),
                 signal: c.req.raw.signal,
+                ifNoneMatch: c.req.header("if-none-match"),
             });
 
             if (answer.status >= 500)
@@ -367,9 +374,19 @@ export function serve(options: ServerOptions): Hono
                 c.header("set-cookie", session.cookie, { append: true });
             }
 
-            if (answer.status === 204 || answer.status === 205)
+            if (answer.document === true)
+            {
+                documents.add(c.req.raw);
+            }
+
+            if (answer.status === 204 || answer.status === 205 || answer.status === 304)
             {
                 return c.body(null, answer.status);
+            }
+
+            if (answer.document === true && typeof answer.body === "string")
+            {
+                return c.body(answer.body, answer.status as 200);
             }
 
             if (answer.body !== null && typeof answer.body === "object" && Symbol.asyncIterator in answer.body)

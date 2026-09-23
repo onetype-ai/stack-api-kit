@@ -59,6 +59,19 @@ export type Command<Context, Input extends z.ZodType = z.ZodType> = Describable 
 /** The verbs a route may answer. */
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
+/** A page's content security policy as named source lists; each is written as one directive, `'none'` where left out for default-src, base-uri and frame-ancestors. A source holding `;`, `,` or whitespace is refused, as are 'unsafe-eval' anywhere and 'unsafe-inline' in scriptSrc. */
+export type DocumentPolicy = {
+    defaultSrc?: readonly string[];
+    scriptSrc?: readonly string[];
+    styleSrc?: readonly string[];
+    fontSrc?: readonly string[];
+    connectSrc?: readonly string[];
+    imgSrc?: readonly string[];
+    frameAncestors?: readonly string[];
+    baseUri?: readonly string[];
+    formAction?: readonly string[];
+};
+
 /** One endpoint: `output` is a whitelist of what may leave, so a column added to a table tomorrow does not appear in a response by itself. */
 export type Route<Context, Input extends z.ZodType = z.ZodType> = Describable & {
     method: HttpMethod;
@@ -70,6 +83,9 @@ export type Route<Context, Input extends z.ZodType = z.ZodType> = Describable & 
 
     /** What each event of a streamed answer may carry, parsed like `output`: `handle` answers an iterable, sync or async, of values or `ServerEvent`s, sent as Server-Sent Events. Requires, limit, input and scope are decided before the first event; a failure after it ends the stream with an `error` event. */
     streams?: z.ZodType;
+
+    /** Declares an HTML page instead of `output`: `handle` answers `Reply.document(html, …)` or a string. Only such a route may send a policy of its own; frame-ancestors other than 'none' needs `framable: true`. */
+    document?: { policy?: DocumentPolicy; framable?: boolean };
 
     /** How long one stream of this route may stay open, in seconds (300 when left out); it then ends with an `error` event of code EXPIRED, and the client reconnects, which checks the caller again. */
     streamSeconds?: number;

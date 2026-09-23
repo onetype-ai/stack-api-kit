@@ -43,7 +43,7 @@ describe("what a reply may say about itself", () =>
     {
         const { headers } = await headersOf(answering({ location: "/items/1", "retry-after": "5", vary: "Accept-Language" }));
 
-        expect(headers).toEqual({ location: "/items/1", "retry-after": "5", vary: "Accept-Language" });
+        expect(headers).toEqual({ location: "/items/1", "retry-after": "5", vary: "Accept-Language", etag: expect.stringMatching(/^W\/"/u) });
     });
 
     test.each(["content-security-policy", "referrer-policy", "strict-transport-security", "permissions-policy", "cross-origin-opener-policy", "access-control-allow-origin", "content-type", "x-trace"])("drops %s unless the route declares it, and says so", async (name) =>

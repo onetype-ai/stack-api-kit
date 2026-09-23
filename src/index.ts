@@ -52,6 +52,7 @@ export type {
     ContractProblem,
     Lookup,
     RefusalReason,
+    DocumentPolicy,
     ResolvedAddress,
     StreamedResponse,
 } from "./plugins/kernel/api";
