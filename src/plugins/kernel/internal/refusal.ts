@@ -63,6 +63,25 @@ export class Reply
     }
 
     /**
+     * A CSV download, for a route declaring `file` with "text/csv": RFC 4180 quoting, one header row from `columns`,
+     * and every cell a spreadsheet would run as a formula (starting with =, +, -, @, a tab or a return) kept as text.
+     */
+    static csv(rows: readonly Readonly<Record<string, unknown>>[], options: { columns: readonly string[]; filename: string }): Reply
+    {
+        const cell = (value: unknown): string =>
+        {
+            const text = value === null || value === undefined ? "" : typeof value === "string" ? value : typeof value === "number" || typeof value === "boolean" || typeof value === "bigint" ? String(value) : JSON.stringify(value);
+            const safe = /^[=+\-@\t\r]/u.test(text) ? `'${text}` : text;
+
+            return /[",\r\n;]/u.test(safe) || safe !== text ? `"${safe.replaceAll("\"", "\"\"")}"` : safe;
+        };
+
+        const lines = [options.columns.map(cell).join(","), ...rows.map((row) => options.columns.map((column) => cell(row[column])).join(","))];
+
+        return Reply.file(`${lines.join("\r\n")}\r\n`, { type: "text/csv", filename: options.filename });
+    }
+
+    /**
      * Events, for a route declaring `streams`: `headers` only names the route `sends`, printable, up to 256 characters each;
      * `end` (1 to 64 printable characters) is written raw as the last `data:` line when the events finish, never after a failure;
      * `error`, given the neutral message, becomes the data-only frame an unexpected failure ends the stream with, instead of `event: error`.

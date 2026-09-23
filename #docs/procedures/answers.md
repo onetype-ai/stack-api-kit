@@ -1,11 +1,10 @@
 # Procedure: answers
 
-A route answers one way, declared, and the kit writes the wire.
+A route answers one declared way; the kit writes the wire.
 
 ## One answer
 
-`output` is a whitelist: what it does not name does not leave. A
-`z.record` passes only keyed by an enum, literals or an anchored pattern.
+`output` is a whitelist. A `z.record` passes keyed by an enum or pattern.
 
 ## A stream
 
@@ -28,14 +27,14 @@ Sent as Server-Sent Events, all checks done before the first; a failure
 after it ends with an `error` event. `ctx.signal` aborts when the caller
 leaves. A stream lives `streamSeconds` (300); a caller holds at most 4.
 
-Declare `output` too and the route answers either: a value is JSON, an
-iterable or `Reply.events` a stream.
+With `output` too it answers either: a value as JSON, an iterable as events.
 
 ## A page, or a download
 
 `document: { policy }` answers `Reply.document(html)` under that policy;
 framing needs `framable: true`. `file: { types: ["text/csv"] }` answers
-`Reply.file(body, { type, filename })`, always an attachment.
+`Reply.file(body, { type, filename })`, always an attachment; `Reply.csv(rows,
+{ columns, filename })` keeps formula-looking cells as text.
 
 ## Headers
 

@@ -29,6 +29,7 @@ export default definePlugin("items", {
 - `ctx.fetch` refuses an undeclared host before it dials; https only.
 - `"anywhere"` resolves the name, refuses it if any answer is not public, and
   dials the address it checked; `detail.reason` says why it refused.
+  `Egress.check(url)` answers the same at save time.
 - A redirect is refused. Under `"anywhere"`, `redirects: "follow"` checks and
   pins every hop (`mostRedirects`, 5), and `"manual"` hands the 3xx back.
 - The answer is JSON; `accepts: "text"` reads a string, and `"stream"` hands

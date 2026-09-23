@@ -6,11 +6,12 @@ import { HttpRequestError } from "./internal/httpError";
 import { REDIRECT_STATUSES } from "./internal/redirects";
 import { measure } from "./internal/measure";
 import { Stored } from "./internal/stored";
+import { Egress } from "./internal/egress";
 import { order } from "./internal/order";
 import { tableIndexes } from "./internal/tableIndexes";
 import { tableName } from "./internal/tableName";
 
-export { HttpRequestError, REDIRECT_STATUSES, refusalBodyFor, Reply, ServerEvent, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, order, Stored, Refusal, tableIndexes, tableName };
+export { Egress, HttpRequestError, REDIRECT_STATUSES, refusalBodyFor, Reply, ServerEvent, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, order, Stored, Refusal, tableIndexes, tableName };
 export type { Tagged } from "./internal/measure";
 export type { DeclaredIndex } from "./internal/tableIndexes";
 
@@ -18,6 +19,7 @@ export type { RefusalBody } from "./internal/refusal";
 export { isPrivateIp } from "./internal/privateAddress";
 export type { RefusalReason } from "./internal/privateAddress";
 export type { Lookup, ResolvedAddress } from "./internal/resolve";
+export type { EgressVerdict } from "./internal/egress";
 export type { FaultCode, FaultDetail } from "./internal/faults";
 export type { HttpRequestErrorCode } from "./internal/httpError";
 
