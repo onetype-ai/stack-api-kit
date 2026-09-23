@@ -6,15 +6,18 @@
     "exports": {
         ".": {
             "types": "./dist/index.d.ts",
-            "import": "./dist/index.js"
+            "import": "./dist/index.js",
+            "default": "./dist/index.js"
         },
         "./testing": {
             "types": "./dist/testing.d.ts",
-            "import": "./dist/testing.js"
+            "import": "./dist/testing.js",
+            "default": "./dist/testing.js"
         },
         "./tables": {
             "types": "./dist/tables.d.ts",
-            "import": "./dist/tables.js"
+            "import": "./dist/tables.js",
+            "default": "./dist/tables.js"
         }
     },
     "scripts": {

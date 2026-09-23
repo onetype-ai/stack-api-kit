@@ -74,6 +74,15 @@
   `content-type: application/json`.
 - A contract procedure names the five keys above in backticks.
 
+- On Postgres: add `pg`, and `@electric-sql/pglite` to run tests on PGlite.
+  Map the environment to `start` as `table()` reads it, so the two agree:
+  `database: process.env.DATABASE_URL?.startsWith("postgres") ? { dialect:
+  "postgres", url: process.env.DATABASE_URL } : { file: process.env.DATABASE_FILE }`.
+- Migrations: `drizzle-kit` as a devDependency, one config a dialect
+  (`dialect: "sqlite"` / `"postgresql"`, `out: "…/migrations/<dialect>"`),
+  run with `KIT_DIALECT` set to match. It numbers the first step `0000_`;
+  keep both folders on the same numbers, or `[migrations]` names the gap.
+
 ### Added
 
 - Several processes on one Postgres server serve one application: `ctx.push`
