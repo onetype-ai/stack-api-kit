@@ -573,6 +573,36 @@ describe("a scoped table reached without narrowing", () =>
         expect(found?.table).toBe("rooms");
     });
 
+    test("is not named when a row built with the scope above is what the insert writes", () =>
+    {
+        const root = scoped(`export class Rooms
+{
+    async create(title: string)
+    {
+        const row = { id: crypto.randomUUID(), title, ...this.#ctx.stamped("rooms") };
+
+        await this.#ctx.db.insert(rooms).values(row);
+    }
+}`);
+
+        expect(findUnscopedReach(root)).toEqual([]);
+    });
+
+    test("is named when the row written is not the one the scope was spread into", () =>
+    {
+        const root = scoped(`export class Rooms
+{
+    async create(title: string, given: Row)
+    {
+        const stampedRow = { id: crypto.randomUUID(), title, ...this.#ctx.stamped("rooms") };
+
+        await this.#ctx.db.insert(rooms).values(given);
+    }
+}`);
+
+        expect(findUnscopedReach(root)).toHaveLength(1);
+    });
+
     test("is not named when a scheduled run narrows by the claim it was given", () =>
     {
         const root = scoped(`export class Rooms

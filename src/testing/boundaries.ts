@@ -528,6 +528,25 @@ const NARROWING = /\b(scoped|stamped|forScope|unscoped)\s*[<(]/u;
 // check watching only for the word cannot tell from the safe one.
 const APPLIED = /\.(?:where|set)\s*\(|\bvalues\s*\(\s*\{[\s\S]*?\.\.\./u;
 
+/**
+ * Whether a narrowing reaches the query: passed to `.where`/`.set`, spread inline into `.values({ ... })`, or
+ * spread into the object a local name holds that `.values(name)` then writes, as a row built a line above is.
+ */
+function isApplied(body: string): boolean
+{
+    if (APPLIED.test(body))
+    {
+        return true;
+    }
+
+    return [...body.matchAll(/\bvalues\s*\(\s*([A-Za-z_$][\w$]*)\s*\)/gu)].some((written) =>
+    {
+        const name = written[1] ?? "";
+
+        return new RegExp(`\\b(?:const|let)\\s+${name}\\b[^=]*=\\s*\\{[^;]*\\.\\.\\.[^;]*\\bstamped\\s*\\(`, "u").test(body);
+    });
+}
+
 /** Reads each plugin's declared scope, then answers where its tables are reached without narrowing: such a query returns every tenant's rows, and nothing at compile time, boot or request says so. */
 export function findUnscopedReach(root: string): UnscopedReach[]
 {
@@ -617,7 +636,7 @@ export function findUnscopedReach(root: string): UnscopedReach[]
                     const closed = source.indexOf("\n    }", query.index);
                     const body = source.slice(opened === -1 ? 0 : opened, closed === -1 ? undefined : closed);
 
-                    return !NARROWING.test(body) || !APPLIED.test(body);
+                    return !NARROWING.test(body) || !isApplied(body);
                 });
 
                 if (unnarrowed.length > 0)
