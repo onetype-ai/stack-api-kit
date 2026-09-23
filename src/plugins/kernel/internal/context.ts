@@ -5,6 +5,7 @@ import type { events, PendingDelivery } from "./events";
 import { Refusal } from "./refusal";
 import { KernelFault } from "./faults";
 import { blockedUrlReason, refusalReasonOf } from "./privateAddress";
+import { holdWhileDelivering, keepHeard, retryDelayMs } from "./delivery";
 import { HttpRequestError } from "./httpError";
 import { DEFAULT_REDIRECTS, FOLLOW_BUDGET_MS, hopOf, nextHop, redirectsOf, type Hop } from "./redirects";
 import { publicAddressOf, type Lookup } from "./resolve";
@@ -32,6 +33,9 @@ export type KernelWiring = {
 
     /** Where events wait for delivery, when the project gave one. */
     outbox: Outbox | undefined;
+
+    /** Whether the kernel is running, so a late failure after a stop is not reported as one. */
+    isRunning: () => boolean;
 
     httpClient: HttpClient | undefined;
 
@@ -299,19 +303,30 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
 
                 for (const announcement of announced)
                 {
-                    const delivered = wiring.bus.deliver(announcement.plugin, announcement.name, announcement.payload, (to) => listenerContext(to));
+                    const holding = holdWhileDelivering(wiring.outbox, announcement.id, wiring.now);
 
-                    void delivered.then((heard) =>
+                    const delivered = wiring.bus.deliverTo(announcement.plugin, announcement.name, announcement.payload, (to) => listenerContext(to), new Set(), (listener) =>
                     {
-                        if (heard)
+                        keepHeard(wiring.outbox, announcement.id, listener, (cause) =>
                         {
-                            // a delete that failed leaves the row for start() to
-                            // replay, so say so rather than dying on the rejection
-                            void wiring.outbox?.markSent(announcement.id).catch((cause: unknown) =>
+                            if (wiring.isRunning())
                             {
-                                wiring.log("error", announcement.plugin, `could not clear "${announcement.name}" from the outbox; it will be delivered again`, { cause: cause instanceof Error ? cause.message : String(cause) });
-                            });
-                        }
+                                wiring.log("warn", announcement.plugin, "could not keep that a listener heard an event; it may hear it again", { id: announcement.id, event: announcement.name, listener, cause: cause instanceof Error ? cause.message : String(cause) });
+                            }
+                        });
+                    });
+
+                    void delivered.then(({ heard, failed }) =>
+                    {
+                        clearInterval(holding);
+
+                        // a row some listener refused waits out a backoff and is handed only to those that did not hear it
+                        const settled = failed.length === 0 ? wiring.outbox?.markSent(announcement.id) : wiring.outbox?.markRetry?.(announcement.id, heard, 1, wiring.now() + retryDelayMs(1));
+
+                        void settled?.catch((cause: unknown) =>
+                        {
+                            wiring.log("error", announcement.plugin, `could not record the delivery of "${announcement.name}" in the outbox; it will be delivered again`, { cause: cause instanceof Error ? cause.message : String(cause) });
+                        });
                     });
                 }
 

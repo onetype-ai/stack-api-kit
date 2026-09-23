@@ -25,7 +25,12 @@ export type OutboxMessage = {
 };
 
 /** Where events wait, so one is never lost between a commit and its delivery. */
-/** Delivery is at least once, not exactly once: one listener failing keeps the row, and the next start hands the event to every listener again. A listener that charges, sends or bills must recognise what it already did. */
+/**
+ * Delivery is at least once per listener: a listener that throws is retried in the running process with backoff (2^n s, 300 s at most),
+ * and only the listeners that have not heard the event are called again. After `mostAttempts` the row stays as a dead letter,
+ * logged once, until `work.retryFailed`. A listener that charges, sends or bills must recognise what it already did (the event id).
+ * Order holds within one event's listeners only: a retried event can reach a listener after a later one.
+ */
 export type Outbox = {
     /** Writes events inside the transaction that emitted them. */
     save: (db: unknown, messages: readonly OutboxMessage[]) => void;
@@ -33,8 +38,44 @@ export type Outbox = {
     /** Marks one delivered. */
     markSent: (id: string) => Promise<void>;
 
-    /** What was kept but never marked sent. Read once, at startup. */
+    /** What was kept but never marked sent. Read once, at startup, by a kernel whose outbox cannot `claim`. */
     pending: () => Promise<readonly OutboxMessage[]>;
+
+    /** Leases what is due for another delivery: failed before and waiting out its backoff, or never cleared after a grace period. */
+    claim?: (now: number, limit: number) => Promise<readonly (OutboxMessage & { heard: readonly string[]; attempts: number })[]>;
+
+    /** How long a row stays with the process delivering it without a renewal. */
+    leaseMs?: number;
+
+    /** Keeps the lease on a row this process is delivering; false when another has taken it. */
+    renew?: (id: string, now: number) => Promise<boolean>;
+
+    /** One listener heard it: kept at once, so a process that dies mid-delivery repeats only the rest. */
+    markHeard?: (id: string, listener: string) => Promise<void>;
+
+    /** Some listeners threw: keep which heard it, and try the rest again at `at`. */
+    markRetry?: (id: string, heard: readonly string[], attempts: number, at: number) => Promise<void>;
+
+    /** A listener kept throwing: keep the row as a dead letter. */
+    markDead?: (id: string, heard: readonly string[], attempts: number, at: number) => Promise<void>;
+
+    /** The dead letters, without their payloads. */
+    failed?: () => Promise<readonly FailedEvent[]>;
+
+    /** Puts one dead letter back to be delivered now; false when no dead letter has that id. */
+    revive?: (id: string, now: number) => Promise<boolean>;
+};
+
+/** An event a listener kept refusing, as an operator sees it. */
+export type FailedEvent = {
+    id: string;
+    plugin: string;
+    name: string;
+
+    /** The listeners (plugin names) that did hear it. */
+    heard: readonly string[];
+    attempts: number;
+    failedAt: number;
 };
 
 /** One command waiting for its moment. */

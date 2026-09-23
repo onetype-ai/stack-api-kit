@@ -308,7 +308,9 @@ export async function startTestKernel(asked: TestKernelOptions): Promise<TestKer
         ...(scoping && store.createScopeFilter !== undefined && { scopeFilter: store.createScopeFilter() }),
         ...(options.now !== undefined && { now: options.now }),
 
+        // a test runs what is due and what failed itself, with due() and kernel.redeliver()
         beatMs: 24 * 60 * 60 * 1000,
+        outboxBeatMs: 24 * 60 * 60 * 1000,
         db: store,
         httpClient: answering,
         lookup: options.lookup ?? (() => Promise.resolve(PUBLIC_ADDRESS)),

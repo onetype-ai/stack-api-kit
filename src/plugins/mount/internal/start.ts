@@ -287,7 +287,7 @@ export async function start(options: StartOptions): Promise<StartedApp>
 
     sweep?.unref?.();
 
-    const outbox = options.outbox === true ? store.outbox?.() : undefined;
+    const outbox = options.outbox === true ? store.outbox?.(options.outboxLeaseMs === undefined ? {} : { leaseMs: options.outboxLeaseMs }) : undefined;
     if (options.schedule !== undefined && options.schedule !== true && options.schedule !== false && options.schedule !== "enqueue")
     {
         throw new TypeError(`start: schedule ${JSON.stringify(options.schedule)} is not true, "enqueue" or false. Pass true where this process runs scheduled commands, "enqueue" where it only schedules them.`);

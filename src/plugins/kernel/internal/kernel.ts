@@ -10,7 +10,8 @@ import { order } from "./order";
 import { createPermissions } from "./permissions";
 import { type RateLimiter, type KernelRequest, type RouteOwner, notServing, type KernelResponse, respond, unknownRoute } from "./request";
 import { systemLookup, type Lookup } from "./resolve";
-import type { FailedJob, HttpClient, ScopeFilter, Outbox, Schedule, Sockets, KernelStore } from "./store";
+import type { FailedEvent, FailedJob, HttpClient, ScopeFilter, Outbox, Schedule, Sockets, KernelStore } from "./store";
+import { holdWhileDelivering, keepHeard, OUTBOX_LEASE_MS, retryDelayMs } from "./delivery";
 import type { StreamRegistry } from "./streams";
 import { validate } from "./validate";
 
@@ -53,6 +54,9 @@ export type KernelOptions = {
 
     /** False keeps the schedule for `commands.later` without running what is due, for a process that only enqueues. */
     runsSchedule?: boolean;
+
+    /** How often to hand failed events to the listeners that have not heard them, in milliseconds: 5000 when left out. */
+    outboxBeatMs?: number;
 
     /** How long a scheduled command is held while it runs, in milliseconds: ten leases when left out; past it the lease runs out and the job is taken again, counted. */
     jobRunMs?: number;
@@ -137,7 +141,18 @@ export type Kernel = {
     events: { failures: () => readonly ListenerFailure[] };
 
     /** What the schedule did that nobody is waiting on. */
-    work: { failed: () => readonly FailedJob[] };
+    work: {
+        failed: () => readonly FailedJob[];
+
+        /** Events a listener kept refusing, kept in the outbox. */
+        failedEvents: () => Promise<readonly FailedEvent[]>;
+
+        /** Delivers one dead letter again, to the listeners that have not heard it; false when there is none by that id. */
+        retryFailed: (id: string) => Promise<boolean>;
+    };
+
+    /** Hands what the outbox says is due to the listeners that have not heard it, once, and waits for it. */
+    redeliver: () => Promise<number>;
 
     /** Runs whatever the schedule says is due, once, and waits for it. */
     due: () => Promise<number>;
@@ -431,6 +446,93 @@ export function createKernel(options: KernelOptions): Kernel
         return taken.length;
     }
 
+    let redelivering: ReturnType<typeof setInterval> | undefined;
+
+    const clock = (): number => (options.now ?? Date.now)();
+
+    /** The scope a dead letter belonged to, when its plugin's scope claim names a field of the payload. */
+    function scopeOfPayload(plugin: string, payload: unknown): Readonly<Record<string, string>>
+    {
+        const claim = known.get(plugin)?.definition.scope?.claim;
+        const value = claim !== undefined && payload !== null && typeof payload === "object" ? (payload as Record<string, unknown>)[claim] : undefined;
+
+        return claim !== undefined && typeof value === "string" ? { [claim]: value } : {};
+    }
+
+    /**
+     * Hands events kept in the outbox to the listeners that have not heard them yet; a row one listener keeps
+     * refusing becomes a dead letter, kept and logged once, never with its payload, for an operator to retry.
+     */
+    async function redeliver(now: number): Promise<number>
+    {
+        const kept = options.outbox;
+
+        if (kept?.claim === undefined || !running)
+        {
+            return 0;
+        }
+
+        const taken = await kept.claim(now, 20);
+        const most = options.mostAttempts ?? 8;
+
+        for (const row of taken)
+        {
+            const before = new Set(row.heard);
+            const holding = holdWhileDelivering(kept, row.id, clock);
+
+            const { heard, failed } = await bus.deliverTo(row.plugin, row.name, row.payload, (to) => contextFor(to), before, (listener) =>
+            {
+                keepHeard(kept, row.id, listener, (cause) =>
+                {
+                    if (running)
+                    {
+                        log("warn", row.plugin, "could not keep that a listener heard an event; it may hear it again", { id: row.id, event: row.name, listener, cause: cause instanceof Error ? cause.message : String(cause) });
+                    }
+                });
+            }).finally(() =>
+            {
+                clearInterval(holding);
+            });
+
+            const all = [...before, ...heard];
+
+            try
+            {
+                if (failed.length === 0)
+                {
+                    await kept.markSent(row.id);
+
+                    continue;
+                }
+
+                const attempts = row.attempts + 1;
+
+                if (attempts >= most)
+                {
+                    log("error", row.plugin, "an event was given up: a listener kept failing, and it waits as a dead letter for work.retryFailed", {
+                        id: row.id,
+                        event: row.name,
+                        listeners: failed,
+                        attempts,
+                        ...scopeOfPayload(row.plugin, row.payload),
+                    });
+
+                    await kept.markDead?.(row.id, all, attempts, clock());
+
+                    continue;
+                }
+
+                await kept.markRetry?.(row.id, all, attempts, clock() + retryDelayMs(attempts));
+            }
+            catch (cause)
+            {
+                log("error", row.plugin, `could not record the delivery of "${row.name}" in the outbox; it will be delivered again`, { cause: cause instanceof Error ? cause.message : String(cause) });
+            }
+        }
+
+        return taken.length;
+    }
+
     const inFlight = new Set<Promise<unknown>>();
     let inOrder: Plugin[] = [];
 
@@ -443,6 +545,7 @@ export function createKernel(options: KernelOptions): Kernel
         points,
         pending,
         outbox: options.outbox,
+        isRunning: () => running,
         now: options.now ?? Date.now,
         schedule: options.schedule,
         scopeFilter: options.scopeFilter,
@@ -617,7 +720,16 @@ export function createKernel(options: KernelOptions): Kernel
                 beating.unref?.();
             }
 
-            const interrupted = await options.outbox?.pending() ?? [];
+            // an outbox that can lease is swept by one loop, at startup and after: a row whose commit delivery never finished is due once its lease ran out
+            if (options.outbox?.claim !== undefined)
+            {
+                await redeliver(clock() + (options.outbox.leaseMs ?? OUTBOX_LEASE_MS));
+
+                redelivering = setInterval(() => void redeliver(clock()), options.outboxBeatMs ?? 5000);
+                redelivering.unref?.();
+            }
+
+            const interrupted = options.outbox?.claim === undefined ? await options.outbox?.pending() ?? [] : [];
 
             for (const announcement of interrupted)
             {
@@ -651,6 +763,12 @@ export function createKernel(options: KernelOptions): Kernel
         async stop(): Promise<void>
         {
             running = false;
+
+            if (redelivering !== undefined)
+            {
+                clearInterval(redelivering);
+                redelivering = undefined;
+            }
 
             if (beating !== undefined)
             {
@@ -788,7 +906,13 @@ export function createKernel(options: KernelOptions): Kernel
 
         events: { failures: bus.failures },
 
-        work: { failed: () => [...failedJobs] },
+        work: {
+            failed: () => [...failedJobs],
+            failedEvents: () => options.outbox?.failed?.() ?? Promise.resolve([]),
+            retryFailed: (id: string) => options.outbox?.revive?.(id, clock()) ?? Promise.resolve(false),
+        },
+
+        redeliver: () => redeliver(clock()),
 
         due,
 

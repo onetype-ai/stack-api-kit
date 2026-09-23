@@ -127,6 +127,48 @@ export function events<Context>(now: () => number = Date.now, report: EventRepor
             return Promise.all(deliveries).then((all) => all.every(Boolean));
         },
 
+        /** Calls every listener not in `skip`, and answers which heard it and which threw; a plugin hears an event once, so its name is the listener's. */
+        deliverTo: (plugin: string, name: string, payload: unknown, ctx: (plugin: string) => Context, skip: ReadonlySet<string>, onHeard?: (listener: string) => void): Promise<{ heard: string[]; failed: string[] }> =>
+        {
+            const deliveries: Promise<readonly [string, boolean]>[] = [];
+
+            for (const subscriber of subscribers.get(name) ?? [])
+            {
+                if (subscriber.plugin === plugin || skip.has(subscriber.plugin))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    const handling = subscriber.listener.handle(payload as never, ctx(subscriber.plugin));
+
+                    deliveries.push(Promise.resolve(handling).then(() =>
+                    {
+                        onHeard?.(subscriber.plugin);
+
+                        return [subscriber.plugin, true] as const;
+                    }, (error: unknown) =>
+                    {
+                        record(name, subscriber.plugin, error);
+
+                        return [subscriber.plugin, false] as const;
+                    }));
+                }
+                catch (error)
+                {
+                    record(name, subscriber.plugin, error);
+
+                    deliveries.push(Promise.resolve([subscriber.plugin, false] as const));
+                }
+            }
+
+            return Promise.all(deliveries).then((all) => ({
+                heard: all.filter(([, ok]) => ok).map(([listener]) => listener),
+                failed: all.filter(([, ok]) => !ok).map(([listener]) => listener),
+            }));
+        },
+
         failures: (): readonly ListenerFailure[] =>
         {
             return [...failures];

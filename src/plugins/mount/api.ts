@@ -54,6 +54,9 @@ export type StartOptions = {
     /** How long a scheduled command is held while it runs: ten leases when left out. */
     jobRunMs?: number | undefined;
 
+    /** How long an outbox row stays with the process delivering it without a renewal, and how long a written row waits before another process may deliver it: 60000 when left out, 1000 to 3600000. */
+    outboxLeaseMs?: number | undefined;
+
     log?: Logger | undefined;
 };
 

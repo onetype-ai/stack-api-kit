@@ -19,8 +19,8 @@ export type StoreOptions = DatabaseOptions & {
 export type Store<Db = unknown> = {
     forPlugin: (plugin: string) => Db;
 
-    /** An outbox in this same database, when the store can hold one. */
-    outbox?: () => Outbox;
+    /** An outbox in this same database, when the store can hold one; the process writing a row holds it for `leaseMs` (60000 when left out) while it delivers. */
+    outbox?: (settings?: { leaseMs?: number }) => Outbox;
 
     /** A schedule in this same database, for work asked for later; each claim holds for `leaseMs` (60000 when left out) unless renewed. */
     schedule?: (settings?: { leaseMs?: number }) => Schedule;
@@ -64,9 +64,9 @@ export function database(settings: StoreOptions): Store<DrizzleDb>
         },
 
         /** Where events wait, in this same database. */
-        outbox: (): Outbox =>
+        outbox: (settings: { leaseMs?: number } = {}): Outbox =>
         {
-            return outbox(connection);
+            return outbox(connection, settings);
         },
 
         /** Where later work waits, in this same database. */
