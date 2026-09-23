@@ -95,6 +95,26 @@ function lines(declared)
             out.push(`    command    ${command.name}${needs}`);
         }
 
+        for (const registry of plugin.registries ?? [])
+        {
+            out.push(`    registry   ${registry.name}  (key ${registry.key})`);
+        }
+
+        for (const addition of plugin.adds ?? [])
+        {
+            out.push(`    adds       ${addition.registry}: ${addition.keys.filter(Boolean).join(", ")}`);
+        }
+
+        for (const pipeline of plugin.pipelines ?? [])
+        {
+            out.push(`    pipeline   ${pipeline.name}: ${pipeline.steps.map((step) => (step.owner === plugin.name ? step.id : `${step.id} (${step.owner})`)).join(" → ")}`);
+
+            for (const problem of pipeline.problems)
+            {
+                out.push(`      refused  ${problem}`);
+            }
+        }
+
         if (plugin.tables.length > 0)
         {
             out.push(`    tables     ${plugin.tables.join(", ")}`);

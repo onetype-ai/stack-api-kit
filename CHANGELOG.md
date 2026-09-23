@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased (8.3.0)
+
+### Added
+
+- Registries and pipelines, the same contract as the app kit
+  (`#docs/procedures/registries-and-pipelines.md`): `registries`,
+  `pipelines` and `adds` on a plugin, `ctx.registry(name)`,
+  `ctx.pipeline(name)` and `kernel.explain(name)`. A pipeline runs in the
+  caller's context and opens no transaction. A runtime `set` is held by
+  one process until pub/sub carries it.
+- `declarationsOf` reads each plugin's `registries`, `adds` and
+  `pipelines`, a pipeline's steps in the order start runs them.
+
+### Changes you may notice
+
+- `Context` and `Declaration` gain those members. A hand-built `Context`
+  (a test fake) needs `registry` and `pipeline` to compile.
+
 ## 8.2.0
 
 8.1.0 was never published; everything it held is here.

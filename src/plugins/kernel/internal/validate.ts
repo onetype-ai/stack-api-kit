@@ -24,6 +24,9 @@ type TableOwners = {
     commands: Map<string, string>;
     permissions: Map<string, string>;
     tables: Map<string, string>;
+
+    /** Registries and pipelines share one namespace: `adds` names either. */
+    registries: Map<string, string>;
 };
 
 /** Checks every contract, and reports everything wrong rather than the first. */
@@ -57,6 +60,7 @@ export function validate(plugins: readonly Plugin[], config: Readonly<Record<str
         commands: new Map(),
         permissions: new Map(),
         tables: new Map(),
+        registries: new Map(),
     };
 
     for (const [name, plugin] of by)
@@ -188,6 +192,30 @@ function checkOwn(name: string, plugin: Plugin, owned: TableOwners, report: Prob
     for (const key of Object.keys(plugin.definition.commands ?? {}))
     {
         checkNamespaced(name, key, "command", report) && claim("commands", key, "DUPLICATE_COMMAND", "Command");
+    }
+
+    for (const [key, registry] of Object.entries(plugin.definition.registries ?? {}))
+    {
+        checkNamespaced(name, key, "registry", report) && claim("registries", key, "DUPLICATE_REGISTRY", "Registry");
+
+        const shape = registry as Partial<typeof registry> | undefined;
+
+        if (typeof (shape?.entry as { safeParse?: unknown } | undefined)?.safeParse !== "function" || typeof shape?.key !== "string" || shape.key === "")
+        {
+            report("UNDECLARED_REGISTRY", name, `Registry "${key}" needs entry: z.object({ ... }) and key: "<field>", so every entry is checked and named.`);
+        }
+    }
+
+    for (const [key, pipeline] of Object.entries(plugin.definition.pipelines ?? {}))
+    {
+        checkNamespaced(name, key, "pipeline", report) && claim("registries", key, "DUPLICATE_REGISTRY", "Registry or pipeline");
+
+        const shape = pipeline as Partial<typeof pipeline> | undefined;
+
+        if (typeof (shape?.input as { safeParse?: unknown } | undefined)?.safeParse !== "function" || typeof (shape?.output as { safeParse?: unknown } | undefined)?.safeParse !== "function" || !Array.isArray(shape?.steps))
+        {
+            report("INVALID_PIPELINE", name, `Pipeline "${key}" needs input and output schemas and a steps list, so what enters and leaves it is checked.`);
+        }
     }
 
     for (const [key, table] of Object.entries(plugin.definition.tables ?? {}))
@@ -653,6 +681,22 @@ function checkReferences(name: string, plugin: Plugin, by: ReadonlyMap<string, P
         for (const permission of command.requires ?? [])
         {
             reach("permissions", permission, "UNDECLARED_PERMISSION", "Permission");
+        }
+    }
+
+    for (const [key, entries] of Object.entries(plugin.definition.adds ?? {}))
+    {
+        reach("registries", key, "UNDECLARED_REGISTRY", "Registry or pipeline");
+
+        // an entry nobody can be granted the permission for is hidden from everyone, forever
+        for (const entry of Array.isArray(entries) ? entries : [])
+        {
+            const requires = (entry as { requires?: unknown } | null)?.requires;
+
+            for (const permission of Array.isArray(requires) ? requires : [])
+            {
+                typeof permission === "string" && reach("permissions", permission, "UNDECLARED_PERMISSION", "Permission");
+            }
         }
     }
 }

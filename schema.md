@@ -403,6 +403,12 @@
     scope: string | undefined
     // Another plugin's services, by name. Only what `dependsOn` names.
     use: <Api>(plugin: string) => Api
+    // A registry this plugin owns or depends on the owner of.
+    registry: (name: string) => RegistryAccess
+    // Runs a pipeline this plugin owns or depends on the owner of, checking its input and output.
+    pipeline: (name: string) => {
+    run: (input: unknown) => Promise<unknown>
+    }
 
 > One thing wrong, and everything needed to fix it.
 ### ContractProblem
@@ -432,6 +438,9 @@
     readonly hooks: readonly DeclaredEntry[]
     readonly participates: readonly DeclaredEntry[]
     readonly commands: readonly DeclaredCommand[]
+    readonly registries: readonly DeclaredRegistry[]
+    readonly adds: readonly DeclaredAddition[]
+    readonly pipelines: readonly DeclaredPipeline[]
     readonly tables: readonly string[]
     readonly scope?: DeclaredScope
     readonly allowedHosts: readonly string[] | "anywhere"
@@ -441,6 +450,11 @@
     readonly setup: boolean
     readonly teardown: boolean
 
+> What one plugin adds at start to one registry.
+### DeclaredAddition
+    readonly registry: string
+    readonly keys: readonly string[]
+
 > One command, which unlike an event names what the caller must hold.
 ### DeclaredCommand = DeclaredEntry &
     readonly requires: readonly string[]
@@ -449,6 +463,18 @@
 ### DeclaredEntry
     readonly name: string
     readonly describe: string
+
+> One pipeline and the order its steps run in, across the plugins read together; `problems` is what start would refuse.
+### DeclaredPipeline = DeclaredEntry &
+    readonly steps: readonly {
+    readonly id: string
+    readonly owner: string
+    }[]
+    readonly problems: readonly string[]
+
+> One registry: its sentence, and the field that names each entry.
+### DeclaredRegistry = DeclaredEntry &
+    readonly key: string
 
 > One route as declared: what reaches it, and what it asks of the caller.
 ### DeclaredRoute
@@ -501,6 +527,12 @@
     channels?: Readonly<Record<string, Channel>>
     listens?: Readonly<Record<string, EmittedEvent<Context<z.infer<Schema>, NoExtraKeys<Services>, Db>>>>
     hooks?: Readonly<Record<string, Hook>>
+    // Named lists this plugin owns, keyed `<plugin>.<name>`.
+    registries?: Readonly<Record<string, Registry>>
+    // Ordered steps this plugin owns, keyed `<plugin>.<name>`; others add steps through `adds`.
+    pipelines?: Readonly<Record<string, Pipeline<Context<z.infer<Schema>, NoExtraKeys<Services>, Db>>>>
+    // Entries this plugin adds at start to others' registries, or steps to their pipelines, by name.
+    adds?: Readonly<Record<string, readonly unknown[]>>
     participates?: Readonly<Record<string, Participation<Context<z.infer<Schema>, NoExtraKeys<Services>, Db>>>>
     commands?: Readonly<Record<string, AnyCommand<Context<z.infer<Schema>, NoExtraKeys<Services>, Db>>>>
     // Who is calling, read from the request this plugin knows how to read; at most one plugin declares this, and answers nothing for a stranger.
@@ -555,6 +587,9 @@
 ### Event
     describe: string
     schema: z.ZodType
+
+> Where one step sits in a pipeline, and who put it there.
+### ExplainedStep = { readonly id: string; readonly owner: string; readonly anchor?: { readonly before: string } | { readonly after: string } | undefined }
 
 > An event a listener kept refusing, as an operator sees it.
 ### FailedEvent
@@ -613,6 +648,12 @@
     | "UNAUTHENTICATED"
     | "PERMISSION_DENIED"
     | "RATE_LIMITED"
+    | "UNDECLARED_REGISTRY"
+    | "DUPLICATE_REGISTRY"
+    | "INVALID_ENTRY"
+    | "UNDECLARED_PIPELINE"
+    | "INVALID_PIPELINE"
+    | "PIPELINE_FAILED"
     | "NOT_STARTED"
 
 ### FaultDetail
@@ -717,6 +758,8 @@
     settled: () => Promise<void>
     // Runs whatever the schedule says is due, once, and waits for it.
     due: () => Promise<number>
+    // A pipeline's steps in the order they run, and who put each there.
+    explain: (pipeline: string) => readonly ExplainedStep[]
     run: (command: string, input: unknown, identity?: Identity) => Promise<void>
 
 > What a project gives the kernel.
@@ -916,6 +959,23 @@
     permission: string
     describe: string
 
+> Ordered steps one plugin declares and others add to, run in the caller's context. It opens no transaction:
+> a step that calls a provider never writes inside the same transaction, since a provider call must never hold locks.
+### Pipeline<Context> = Describable &
+    input: z.ZodType
+    output: z.ZodType
+    steps: readonly PipelineStep<Context>[]
+
+> One step of a pipeline: it answers the next state, or `stop(result)` to end the run with that output.
+### PipelineStep<Context>
+    id: string
+    // Where an added step sits: beside one step, before or after it. The owner's own steps need neither.
+    before?: string | undefined
+    after?: string | undefined
+    run: (state: never, ctx: Context, step: {
+    stop: (result: unknown) => unknown
+    }) => unknown
+
 > A plugin: its name, and what it declared.
 ### Plugin
     name: string
@@ -983,6 +1043,33 @@
 
 > A route, and the plugin it came from.
 ### RegisteredRoute = { plugin: string; method: HttpMethod; path: string; describe: string; requires: readonly string[]; public: boolean; anyOrigin: boolean; limit: { requests: number; seconds: number } | undefined; accepts: "json" | "form" | "urlencoded"; reads: readonly string[]; keepsRaw: boolean }
+
+> A named list one plugin declares and others add to, each entry checked as the owner says.
+### Registry = Describable &
+    // What every entry must match, whoever adds it and whenever.
+    entry: z.ZodType
+    // The entry field naming it: a non-empty string, unique within the registry.
+    key: string
+    // The most entries it holds; an add beyond it is refused.
+    cap?: number | undefined
+    // Keys only the owner may add.
+    reserved?: readonly string[] | undefined
+    // A second entry under a taken key: refused (the default), or it replaces the first with a warning.
+    replace?: "refuse" | "warn" | undefined
+    // Who may add: the plugins depending on the owner (the default), or the owner alone.
+    set?: "owner" | "dependants" | undefined
+
+> What a plugin reads from, and adds to, one registry.
+### RegistryAccess
+    // Ordered by `order`, then key, without what the caller lacks the `requires` for.
+    list: () => readonly Readonly<Record<string, unknown>>[]
+    // Checks the entry as the owner declared, and answers what takes it out again. Held by this process only.
+    set: (entry: unknown) => () => void
+
+> One entry in a registry, and the plugin that added it.
+### RegistryEntry = Readonly<Record<string, unknown>> &
+    readonly order?: number | undefined
+    readonly requires?: readonly string[] | undefined
 
 > One address a name resolves to.
 ### ResolvedAddress

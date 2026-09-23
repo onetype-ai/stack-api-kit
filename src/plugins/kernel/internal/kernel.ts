@@ -2,11 +2,13 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 import { Refusal } from "./refusal";
 import { context, type KernelWiring } from "./context";
-import type { Identity, Context, HttpMethod, Plugin, ChannelReach, Route } from "./contract";
+import type { Identity, Context, HttpMethod, Pipeline, PipelineStep, Plugin, ChannelReach, Route } from "./contract";
 import { events, type ListenerFailure, type PendingDelivery } from "./events";
 import { KernelFault } from "./faults";
 import { hooks } from "./hooks";
 import { order } from "./order";
+import { pipelines, type ExplainedStep } from "./pipelines";
+import { registries } from "./registries";
 import { createPermissions } from "./permissions";
 import { type RateLimiter, type KernelRequest, type RouteOwner, notServing, type KernelResponse, respond, unknownRoute } from "./request";
 import { systemLookup, type Lookup } from "./resolve";
@@ -165,6 +167,9 @@ export type Kernel = {
 
     /** Runs whatever the schedule says is due, once, and waits for it. */
     due: () => Promise<number>;
+
+    /** A pipeline's steps in the order they run, and who put each there. */
+    explain: (pipeline: string) => readonly ExplainedStep[];
     run: (command: string, input: unknown, identity?: Identity) => Promise<void>;
 };
 
@@ -287,6 +292,11 @@ export function createKernel(options: KernelOptions): Kernel
     const headerPolicy = { strict: options.strictReplyHeaders === true, warned: new Set<string>() };
     const settings = new Map<string, unknown>();
     const pending = new Map<object, PendingDelivery[]>();
+    const lists = registries((plugin, line, about) =>
+    {
+        log("warn", plugin, line, about);
+    });
+    const flows = pipelines();
 
     const routes = new Map<string, RouteOwner>();
     const commands = new Map<string, {
@@ -565,6 +575,8 @@ export function createKernel(options: KernelOptions): Kernel
         bus,
         points,
         pending,
+        lists,
+        flows,
         outbox: options.outbox,
         isRunning: () => running,
         warned: new Set<string>(),
@@ -598,6 +610,83 @@ export function createKernel(options: KernelOptions): Kernel
             retryFailed: (id: string) => options.outbox?.revive?.(id, clock()) ?? Promise.resolve(false),
         },
     };
+
+    /** Declares every registry and pipeline, then adds what plugins add, refusing every bad entry at once. */
+    function placeAdditions(plugins: readonly Plugin[]): void
+    {
+        lists.reset();
+        flows.reset();
+
+        for (const plugin of plugins)
+        {
+            for (const [key, declared] of Object.entries(plugin.definition.registries ?? {}))
+            {
+                lists.declare(plugin.name, key, declared);
+            }
+
+            for (const [key, declared] of Object.entries(plugin.definition.pipelines ?? {}))
+            {
+                flows.declare(plugin.name, key, declared as Pipeline<Context>);
+            }
+        }
+
+        const refused: string[] = [];
+
+        for (const plugin of plugins)
+        {
+            for (const [key, entries] of Object.entries(plugin.definition.adds ?? {}))
+            {
+                if (flows.known(key))
+                {
+                    for (const step of entries)
+                    {
+                        const shape = step as Partial<PipelineStep<Context>> | null;
+
+                        if (typeof shape?.id !== "string" || typeof shape.run !== "function")
+                        {
+                            refused.push(`  - Pipeline "${key}" refused a step from "${plugin.name}": it needs id: "<step>" and run: (state, ctx) => ....`);
+
+                            continue;
+                        }
+
+                        flows.add(plugin.name, key, step as PipelineStep<Context>);
+                    }
+
+                    continue;
+                }
+
+                for (const entry of entries)
+                {
+                    try
+                    {
+                        lists.add(plugin.name, key, entry);
+                    }
+                    catch (cause)
+                    {
+                        refused.push(`  - ${cause instanceof Error ? cause.message : String(cause)}`);
+                    }
+                }
+            }
+        }
+
+        refused.push(...flows.settle().map((problem) => `  - ${problem}`));
+
+        if (refused.length > 0)
+        {
+            lists.reset();
+            flows.reset();
+
+            throw new KernelFault("INVALID_ENTRY", `${refused.length} ${refused.length === 1 ? "entry" : "entries"} stopped the kernel from starting:\n${refused.join("\n")}`);
+        }
+
+        for (const plugin of plugins)
+        {
+            for (const key of Object.keys(plugin.definition.pipelines ?? {}))
+            {
+                log("debug", plugin.name, `pipeline "${key}" runs ${flows.explain(key).map((step) => step.id).join(" → ")}`, { steps: flows.explain(key) });
+            }
+        }
+    }
 
     const contextFor = (plugin: string, identity?: Identity, headers?: Readonly<Record<string, string>>, sent?: Uint8Array, signal?: AbortSignal): Context =>
     {
@@ -702,6 +791,8 @@ export function createKernel(options: KernelOptions): Kernel
                     points.declare(plugin.name, name, hook);
                 }
             }
+
+            placeAdditions(inOrder);
 
             for (const plugin of inOrder)
             {
@@ -967,6 +1058,11 @@ export function createKernel(options: KernelOptions): Kernel
         },
 
         due,
+
+        explain: (name) =>
+        {
+            return flows.explain(name);
+        },
 
         run,
     };

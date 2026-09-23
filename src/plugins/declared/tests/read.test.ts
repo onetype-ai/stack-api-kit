@@ -104,3 +104,50 @@ describe("declarationsOf", () =>
         expect(declarationsOf([shop], "absent")).toEqual([]);
     });
 });
+
+describe("registries and pipelines", () =>
+{
+    const Item = z.object({ id: z.string() });
+    const keep = (state: unknown): unknown => state;
+    const posts = definePlugin("posts", {
+        version: "1.0.0",
+        describe: "Owns posts.",
+        registries: { "posts.kinds": { describe: "Kinds of post.", entry: Item, key: "id" } },
+        pipelines: { "posts.publish": { describe: "Publishes a post.", input: Item, output: Item, steps: [{ id: "validate", run: keep }, { id: "store", run: keep }] } },
+    });
+    const adder = (name: string, step: string) => definePlugin(name, {
+        version: "1.0.0",
+        describe: `The ${name} plugin.`,
+        dependsOn: ["posts"],
+        adds: { "posts.kinds": [{ id: `${name}-kind` }], "posts.publish": [{ id: step, after: "validate", run: keep }] },
+    });
+
+    test("reads a pipeline in the order start runs it, whatever order the plugins are handed in", () =>
+    {
+        const plugins = [adder("zeta", "last"), posts, adder("alpha", "first")];
+
+        const forward = declarationsOf(plugins, "posts")[0]?.pipelines[0];
+        const backward = declarationsOf([...plugins].reverse(), "posts")[0]?.pipelines[0];
+
+        expect(forward).toMatchObject({ name: "posts.publish", problems: [] });
+        expect(forward?.steps.map((step) => step.id)).toEqual(["validate", "first", "last", "store"]);
+        expect(backward?.steps).toEqual(forward?.steps);
+    });
+
+    test("reads a registry with its key, and what each plugin adds", () =>
+    {
+        const [declared] = declarationsOf([posts, adder("alpha", "first")], "alpha");
+
+        expect(declarationsOf([posts], "posts")[0]?.registries).toEqual([{ name: "posts.kinds", describe: "Kinds of post.", key: "id" }]);
+        expect(declared?.adds).toEqual([{ registry: "posts.kinds", keys: ["alpha-kind"] }, { registry: "posts.publish", keys: ["first"] }]);
+    });
+
+    test("names what start would refuse, as the problems of the pipeline", () =>
+    {
+        const broken = definePlugin("broken", { version: "1.0.0", describe: "Anchors nowhere.", dependsOn: ["posts"], adds: { "posts.publish": [{ id: "x", after: "nowhere", run: keep }] } });
+
+        const [declared] = declarationsOf([posts, broken], "posts");
+
+        expect(declared?.pipelines[0]?.problems.join("\n")).toContain("sits beside \"nowhere\"");
+    });
+});

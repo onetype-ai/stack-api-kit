@@ -1,4 +1,6 @@
-import type { Plugin } from "../../kernel/api";
+import { resolvePipeline } from "../../kernel/api";
+
+import type { Context, Pipeline, PipelineStep, Plugin } from "../../kernel/api";
 
 /** One route as declared: what reaches it, and what it asks of the caller. */
 export type DeclaredRoute = {
@@ -30,6 +32,23 @@ export type DeclaredScope = {
     readonly tables: readonly string[];
 };
 
+/** One registry: its sentence, and the field that names each entry. */
+export type DeclaredRegistry = DeclaredEntry & {
+    readonly key: string;
+};
+
+/** What one plugin adds at start to one registry. */
+export type DeclaredAddition = {
+    readonly registry: string;
+    readonly keys: readonly string[];
+};
+
+/** One pipeline and the order its steps run in, across the plugins read together; `problems` is what start would refuse. */
+export type DeclaredPipeline = DeclaredEntry & {
+    readonly steps: readonly { readonly id: string; readonly owner: string }[];
+    readonly problems: readonly string[];
+};
+
 /** Everything one plugin declares, as data rather than source. */
 export type Declaration = {
     readonly name: string;
@@ -43,6 +62,9 @@ export type Declaration = {
     readonly hooks: readonly DeclaredEntry[];
     readonly participates: readonly DeclaredEntry[];
     readonly commands: readonly DeclaredCommand[];
+    readonly registries: readonly DeclaredRegistry[];
+    readonly adds: readonly DeclaredAddition[];
+    readonly pipelines: readonly DeclaredPipeline[];
     readonly tables: readonly string[];
     readonly scope?: DeclaredScope;
     readonly allowedHosts: readonly string[] | "anywhere";
@@ -111,7 +133,50 @@ function commandsOf(held: unknown): DeclaredCommand[]
         .sort((first, second) => first.name.localeCompare(second.name));
 }
 
-function declarationFor(plugin: Plugin): Declaration
+function registriesOf(held: unknown): DeclaredRegistry[]
+{
+    return entriesOf(held).map((entry) =>
+    {
+        const key = (held as Record<string, { key?: unknown }>)[entry.name]?.key;
+
+        return { ...entry, key: typeof key === "string" ? key : "" };
+    });
+}
+
+// Entries are read by the key their registry declares, which this plugin's own declaration does not know; "id" and "name" cover what reads as data.
+function additionsOf(held: unknown): DeclaredAddition[]
+{
+    if (held === undefined || held === null || typeof held !== "object")
+    {
+        return [];
+    }
+
+    return Object.entries(held as Record<string, unknown>)
+        .map(([registry, entries]) => ({
+            registry,
+            keys: (Array.isArray(entries) ? entries : []).map((entry: Record<string, unknown> | null) =>
+            {
+                const named = entry?.["id"] ?? entry?.["name"];
+
+                return typeof named === "string" ? named : "";
+            }),
+        }))
+        .sort((first, second) => first.registry.localeCompare(second.registry));
+}
+
+function pipelinesOf(plugin: Plugin, all: readonly Plugin[]): DeclaredPipeline[]
+{
+    return entriesOf(plugin.definition.pipelines).map((entry) =>
+    {
+        const pipeline = (plugin.definition.pipelines ?? {})[entry.name] as Pipeline<Context>;
+        const added = all.flatMap((other) => ((other.definition.adds ?? {})[entry.name] ?? []).map((step) => ({ plugin: other.name, step: step as PipelineStep<Context> })));
+        const answer = resolvePipeline(entry.name, plugin.name, { ...pipeline, steps: Array.isArray(pipeline?.steps) ? pipeline.steps : [] }, added);
+
+        return { ...entry, steps: answer.placed.map(({ id, owner }) => ({ id, owner })), problems: answer.problems };
+    });
+}
+
+function declarationFor(plugin: Plugin, all: readonly Plugin[]): Declaration
 {
     const definition = plugin.definition as unknown as Record<string, unknown>;
     const scope = definition["scope"] as
@@ -132,6 +197,9 @@ function declarationFor(plugin: Plugin): Declaration
         hooks: entriesOf(definition["hooks"]),
         participates: entriesOf(definition["participates"]),
         commands: commandsOf(definition["commands"]),
+        registries: registriesOf(definition["registries"]),
+        adds: additionsOf(definition["adds"]),
+        pipelines: pipelinesOf(plugin, all),
         tables: Object.keys((definition["tables"] as Record<string, unknown>) ?? {}).sort(),
         ...(scope !== undefined
             ? {
@@ -158,6 +226,6 @@ export function declarationsOf(plugins: readonly Plugin[], name?: string): Decla
 {
     return plugins
         .filter((plugin) => name === undefined || plugin.name === name)
-        .map(declarationFor)
+        .map((plugin) => declarationFor(plugin, plugins))
         .sort((first, second) => first.name.localeCompare(second.name));
 }

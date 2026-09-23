@@ -10,6 +10,8 @@ import { HttpRequestError } from "./httpError";
 import { DEFAULT_REDIRECTS, FOLLOW_BUDGET_MS, hopOf, nextHop, redirectsOf, type Hop } from "./redirects";
 import { publicAddressOf, type Lookup } from "./resolve";
 import type { hooks } from "./hooks";
+import type { pipelines } from "./pipelines";
+import type { registries } from "./registries";
 import { createPermissions } from "./permissions";
 import type { HttpClient, ScopeFilter, Outbox, Schedule, Sockets, KernelStore, WorkWatch } from "./store";
 
@@ -23,6 +25,10 @@ export type KernelWiring = {
     bus: ReturnType<typeof events<Context>>;
     points: ReturnType<typeof hooks<Context>>;
     pending: Map<object, PendingDelivery[]>;
+
+    /** The registries and pipelines plugins declared, with what was added to them. */
+    lists: ReturnType<typeof registries>;
+    flows: ReturnType<typeof pipelines>;
 
     /** What each plugin owns: one thing, living as long as the kernel does. */
     owned: Map<string, unknown>;
@@ -130,6 +136,20 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
     };
 
     const built = new Map<string, unknown>();
+
+    /** A registry or pipeline is reached as a service is: its own, or one whose owner this plugin depends on. */
+    const reachable = (owner: string | undefined, kind: "registry" | "pipeline", name: string): void =>
+    {
+        if (owner === undefined)
+        {
+            throw new KernelFault(kind === "pipeline" ? "UNDECLARED_PIPELINE" : "UNDECLARED_REGISTRY", `"${plugin}" reached ${kind} "${name}", which no plugin declares. Declare it, or correct the name.`, { plugin });
+        }
+
+        if (owner !== plugin && !(wiring.known.get(plugin)?.definition.dependsOn ?? []).includes(owner))
+        {
+            throw new KernelFault("UNDECLARED_DEPENDENCY", `${kind === "pipeline" ? "Pipeline" : "Registry"} "${name}" belongs to "${owner}", which "${plugin}" does not depend on. Add "${owner}" to dependsOn.`, { plugin });
+        }
+    };
 
     const servicesFor = (name: string): unknown =>
     {
@@ -700,6 +720,28 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
             }
 
             return servicesFor(name) as Api;
+        },
+
+        registry: (name) =>
+        {
+            reachable(wiring.lists.ownerOf(name), "registry", name);
+
+            return {
+                list: () => Object.freeze(wiring.lists.list(name).filter((entry) => permissions.all(entry.requires ?? []))),
+                set: (entry) => wiring.lists.add(plugin, name, entry),
+            };
+        },
+
+        pipeline: (name) =>
+        {
+            reachable(wiring.flows.ownerOf(name), "pipeline", name);
+
+            return {
+                run: (input) => wiring.flows.run(name, input, (owner) => contextFor(owner), (step, ms, outcome) =>
+                {
+                    wiring.log("debug", plugin, `pipeline "${name}" step "${step}" ${outcome}`, { ms });
+                }),
+            };
         },
     };
 

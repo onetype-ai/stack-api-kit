@@ -59,6 +59,57 @@ export type Command<Context, Input extends z.ZodType = z.ZodType> = Describable 
     run: (input: z.infer<Input>, ctx: Context) => void | Promise<void>;
 };
 
+/** A named list one plugin declares and others add to, each entry checked as the owner says. */
+export type Registry = Describable & {
+    /** What every entry must match, whoever adds it and whenever. */
+    entry: z.ZodType;
+
+    /** The entry field naming it: a non-empty string, unique within the registry. */
+    key: string;
+
+    /** The most entries it holds; an add beyond it is refused. */
+    cap?: number | undefined;
+
+    /** Keys only the owner may add. */
+    reserved?: readonly string[] | undefined;
+
+    /** A second entry under a taken key: refused (the default), or it replaces the first with a warning. */
+    replace?: "refuse" | "warn" | undefined;
+
+    /** Who may add: the plugins depending on the owner (the default), or the owner alone. */
+    set?: "owner" | "dependants" | undefined;
+};
+
+/** What a plugin reads from, and adds to, one registry. */
+export type RegistryAccess = {
+    /** Ordered by `order`, then key, without what the caller lacks the `requires` for. */
+    list: () => readonly Readonly<Record<string, unknown>>[];
+
+    /** Checks the entry as the owner declared, and answers what takes it out again. Held by this process only. */
+    set: (entry: unknown) => () => void;
+};
+
+/** One step of a pipeline: it answers the next state, or `stop(result)` to end the run with that output. */
+export type PipelineStep<Context> = {
+    id: string;
+
+    /** Where an added step sits: beside one step, before or after it. The owner's own steps need neither. */
+    before?: string | undefined;
+    after?: string | undefined;
+
+    run: (state: never, ctx: Context, step: { stop: (result: unknown) => unknown }) => unknown;
+};
+
+/**
+ * Ordered steps one plugin declares and others add to, run in the caller's context. It opens no transaction:
+ * a step that calls a provider never writes inside the same transaction, since a provider call must never hold locks.
+ */
+export type Pipeline<Context> = Describable & {
+    input: z.ZodType;
+    output: z.ZodType;
+    steps: readonly PipelineStep<Context>[];
+};
+
 /** The verbs a route may answer. */
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -331,6 +382,12 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
 
     /** Another plugin's services, by name. Only what `dependsOn` names. */
     use: <Api>(plugin: string) => Api;
+
+    /** A registry this plugin owns or depends on the owner of. */
+    registry: (name: string) => RegistryAccess;
+
+    /** Runs a pipeline this plugin owns or depends on the owner of, checking its input and output. */
+    pipeline: (name: string) => { run: (input: unknown) => Promise<unknown> };
 };
 
 // Blocks a second inference site: a callback taking a context would be one, and two candidates for one parameter resolve to unknown.
@@ -384,6 +441,16 @@ export type Definition<
     listens?: Readonly<Record<string, EmittedEvent<Context<z.infer<Schema>, NoExtraKeys<Services>, Db>>>>;
 
     hooks?: Readonly<Record<string, Hook>>;
+
+    /** Named lists this plugin owns, keyed `<plugin>.<name>`. */
+    registries?: Readonly<Record<string, Registry>>;
+
+    /** Ordered steps this plugin owns, keyed `<plugin>.<name>`; others add steps through `adds`. */
+    pipelines?: Readonly<Record<string, Pipeline<Context<z.infer<Schema>, NoExtraKeys<Services>, Db>>>>;
+
+    /** Entries this plugin adds at start to others' registries, or steps to their pipelines, by name. */
+    adds?: Readonly<Record<string, readonly unknown[]>>;
+
     participates?: Readonly<Record<string, Participation<Context<z.infer<Schema>, NoExtraKeys<Services>, Db>>>>;
 
     commands?: Readonly<Record<string, AnyCommand<Context<z.infer<Schema>, NoExtraKeys<Services>, Db>>>>;

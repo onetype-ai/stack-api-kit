@@ -36,6 +36,12 @@ export type FaultCode =
     | "UNAUTHENTICATED"
     | "PERMISSION_DENIED"
     | "RATE_LIMITED"
+    | "UNDECLARED_REGISTRY"
+    | "DUPLICATE_REGISTRY"
+    | "INVALID_ENTRY"
+    | "UNDECLARED_PIPELINE"
+    | "INVALID_PIPELINE"
+    | "PIPELINE_FAILED"
     | "NOT_STARTED";
 
 export type FaultDetail = {

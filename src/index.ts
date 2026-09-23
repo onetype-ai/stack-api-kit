@@ -59,10 +59,16 @@ export type {
     FileType,
     ResolvedAddress,
     StreamedResponse,
+    Pipeline,
+    PipelineStep,
+    ExplainedStep,
+    Registry,
+    RegistryAccess,
+    RegistryEntry,
 } from "./plugins/kernel/api";
 
 export { declarationsOf } from "./plugins/declared/api";
-export type { Declaration, DeclaredCommand, DeclaredEntry, DeclaredRoute, DeclaredScope } from "./plugins/declared/api";
+export type { Declaration, DeclaredAddition, DeclaredCommand, DeclaredEntry, DeclaredPipeline, DeclaredRegistry, DeclaredRoute, DeclaredScope } from "./plugins/declared/api";
 
 export { database, MigrationFault, createScopeFilter, outbox, schedule } from "./plugins/database/api";
 export type { DrizzleDb, DatabaseOptions, MigrationSource, MigrationStep, Store, StoreOptions, TablesByName } from "./plugins/database/api";

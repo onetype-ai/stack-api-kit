@@ -1,4 +1,4 @@
 import { declarationsOf } from "./internal/read";
 
 export { declarationsOf };
-export type { Declaration, DeclaredCommand, DeclaredEntry, DeclaredRoute, DeclaredScope } from "./internal/read";
+export type { Declaration, DeclaredAddition, DeclaredCommand, DeclaredEntry, DeclaredPipeline, DeclaredRegistry, DeclaredRoute, DeclaredScope } from "./internal/read";

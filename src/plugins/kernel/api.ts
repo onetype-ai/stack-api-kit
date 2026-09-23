@@ -8,10 +8,11 @@ import { measure } from "./internal/measure";
 import { Stored } from "./internal/stored";
 import { Egress } from "./internal/egress";
 import { order } from "./internal/order";
+import { resolve as resolvePipeline } from "./internal/pipelines";
 import { tableIndexes } from "./internal/tableIndexes";
 import { tableName } from "./internal/tableName";
 
-export { Egress, HttpRequestError, REDIRECT_STATUSES, refusalBodyFor, Reply, ServerEvent, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, order, Stored, Refusal, tableIndexes, tableName };
+export { Egress, HttpRequestError, REDIRECT_STATUSES, refusalBodyFor, Reply, ServerEvent, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, order, resolvePipeline, Stored, Refusal, tableIndexes, tableName };
 export type { Tagged } from "./internal/measure";
 export type { DeclaredIndex } from "./internal/tableIndexes";
 
@@ -50,7 +51,13 @@ export type {
     StreamedResponse,
     DocumentPolicy,
     FileType,
+    Pipeline,
+    PipelineStep,
+    Registry,
+    RegistryAccess,
 } from "./internal/contract";
+export type { RegistryEntry } from "./internal/registries";
+export type { ExplainedStep } from "./internal/pipelines";
 
 export type { ListenerFailure } from "./internal/events";
 export type { RateLimiter, KernelRequest, KernelResponse } from "./internal/request";

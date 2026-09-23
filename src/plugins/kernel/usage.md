@@ -2,12 +2,11 @@
 
 ## Description
 
-The plugin runtime: registry, checks, routes, events, hooks, identity.
+The plugin runtime: checks, routes, events, hooks, identity.
 
 ## Purpose
 
-A server grows into one thing unless something holds the seams: a plugin
-declares what crosses, and the rest is refused.
+A plugin declares what crosses its seams; the rest is refused.
 
 ## Usage
 
@@ -37,14 +36,16 @@ grants: (ctx, who) => Roles.of(ctx, who.id),
 
 `ctx.push` reaches as far as the channel's `reach`: `viewer`, `scope`, one
 `identity` (`{ to }`) in the scope, or `everyone`; `ctx.presence` says who
-is connected. Work and the outbox: `procedures/work.md`.
+is connected. Work, outbox: `procedures/work.md`; registries and
+pipelines: `procedures/registries-and-pipelines.md`.
 
 ## Refuses
 
 At startup: anything declared twice, outside its namespace, or referenced
-and undeclared; a cycle; an unreachable route, or one answering two ways; a
-`limit` with no `rateLimiter`; reading a credential or sending a kit header.
+and undeclared; a cycle; a bad registry entry or step; an unreachable
+route, or one answering two ways; a `limit` without `rateLimiter`;
+reading a credential or sending a kit header.
 
 At runtime: an undeclared event or host, a bad payload, a missing
-permission, a caller past budget, `ctx.work` without `watchesWork`. Every
-refusal names the plugin and the fix.
+permission, a caller past budget, `ctx.work` without `watchesWork`, each
+naming the plugin and the fix.
