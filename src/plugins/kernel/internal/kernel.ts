@@ -11,6 +11,7 @@ import { createPermissions } from "./permissions";
 import { type RateLimiter, type KernelRequest, type RouteOwner, notServing, type KernelResponse, respond, unknownRoute } from "./request";
 import { systemLookup, type Lookup } from "./resolve";
 import type { FailedJob, HttpClient, ScopeFilter, Outbox, Schedule, Sockets, KernelStore } from "./store";
+import type { StreamRegistry } from "./streams";
 import { validate } from "./validate";
 
 /** Where a line goes. The project decides; a plugin never writes directly. */
@@ -61,6 +62,12 @@ export type KernelOptions = {
 
     /** How long a hook participant has to answer, in milliseconds. */
     hookTimeoutMs?: number;
+
+    /** How many streams one caller may hold open at once (4 when left out); one more answers 429 TOO_MANY_STREAMS before its handler runs. */
+    mostStreamsPerCaller?: number;
+
+    /** How long `stop` waits for open streams to send their final RESTARTING event, in milliseconds (5000 when left out). */
+    streamDrainMs?: number;
 };
 
 /** One channel a plugin declared, as a reader of the api sees it. */
@@ -246,6 +253,7 @@ export function createKernel(options: KernelOptions): Kernel
         log("error", plugin, line, about);
     });
     const points = hooks<Context>(options.hookTimeoutMs);
+    const openStreams: StreamRegistry = { perCaller: new Map(), active: new Set(), most: options.mostStreamsPerCaller ?? 4 };
     const settings = new Map<string, unknown>();
     const pending = new Map<object, PendingDelivery[]>();
 
@@ -361,9 +369,9 @@ export function createKernel(options: KernelOptions): Kernel
         run: (command, input, identity) => run(command, input, identity),
     };
 
-    const contextFor = (plugin: string, identity?: Identity, headers?: Readonly<Record<string, string>>, sent?: Uint8Array): Context =>
+    const contextFor = (plugin: string, identity?: Identity, headers?: Readonly<Record<string, string>>, sent?: Uint8Array, signal?: AbortSignal): Context =>
     {
-        return context(wiring, plugin, identity, undefined, headers, undefined, sent);
+        return context(wiring, plugin, identity, undefined, headers, undefined, sent, signal);
     };
 
     /** Runs a command, after its permission and its schema. */
@@ -564,6 +572,24 @@ export function createKernel(options: KernelOptions): Kernel
                 beating = undefined;
             }
 
+            // every open stream is told it ends and why, so a caller reconnects rather than seeing a silent cut
+            if (openStreams.active.size > 0)
+            {
+                log("info", "kernel", "ending open streams", { count: openStreams.active.size });
+
+                for (const stream of openStreams.active)
+                {
+                    stream.end("RESTARTING");
+                }
+
+                const until = Date.now() + (options.streamDrainMs ?? 5000);
+
+                while (openStreams.active.size > 0 && Date.now() < until)
+                {
+                    await new Promise((resolve) => setTimeout(resolve, 20));
+                }
+            }
+
             if (inFlight.size > 0)
             {
                 log("info", "kernel", "waiting for requests in flight", { count: inFlight.size });
@@ -642,6 +668,7 @@ export function createKernel(options: KernelOptions): Kernel
                 contextFor,
                 log,
                 options.rateLimiter,
+                openStreams,
             );
 
             inFlight.add(answer);

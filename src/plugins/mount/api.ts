@@ -30,6 +30,12 @@ export type StartOptions = {
     /** What counts requests against a route's declared limit. */
     rateLimiter?: RateLimiter | undefined;
 
+    /** How many streams one caller may hold open at once; 4 when left out. */
+    mostStreamsPerCaller?: number | undefined;
+
+    /** How long `stop` waits for open streams to end with RESTARTING, in milliseconds; 5000 when left out. */
+    streamDrainMs?: number | undefined;
+
     /** Whether anything counts them at all. */
     limits?: boolean | undefined;
 

@@ -1,4 +1,4 @@
-import { refusalBodyFor, Reply, Refusal } from "./internal/refusal";
+import { refusalBodyFor, Reply, Refusal, ServerEvent } from "./internal/refusal";
 import { createKernel } from "./internal/kernel";
 import { defineCommand, defineListener, defineParticipant, definePlugin, defineRoute } from "./internal/define";
 import { KernelFault } from "./internal/faults";
@@ -9,7 +9,7 @@ import { order } from "./internal/order";
 import { tableIndexes } from "./internal/tableIndexes";
 import { tableName } from "./internal/tableName";
 
-export { HttpRequestError, REDIRECT_STATUSES, refusalBodyFor, Reply, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, order, Refusal, tableIndexes, tableName };
+export { HttpRequestError, REDIRECT_STATUSES, refusalBodyFor, Reply, ServerEvent, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, order, Refusal, tableIndexes, tableName };
 export type { Tagged } from "./internal/measure";
 export type { DeclaredIndex } from "./internal/tableIndexes";
 

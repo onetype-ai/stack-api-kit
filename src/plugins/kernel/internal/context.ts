@@ -102,12 +102,12 @@ function isHttps(url: string): boolean
 }
 
 /** Builds what one plugin sees, for one identity. */
-export function context(wiring: KernelWiring, plugin: string, identity?: Identity, openTransaction?: OpenTransaction, headers: Readonly<Record<string, string>> = {}, acting?: string, sent?: Uint8Array): Context
+export function context(wiring: KernelWiring, plugin: string, identity?: Identity, openTransaction?: OpenTransaction, headers: Readonly<Record<string, string>> = {}, acting?: string, sent?: Uint8Array, signal?: AbortSignal): Context
 {
     const permissions = createPermissions(() => identity);
     const contextFor = (plugin: string, inside = openTransaction): Context =>
     {
-        return context(wiring, plugin, identity, inside, headers, acting, sent);
+        return context(wiring, plugin, identity, inside, headers, acting, sent, signal);
     };
 
     /** What a listener is handed: this plugin, and nobody calling. */
@@ -208,6 +208,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
         identity,
         headers,
         sent,
+        signal,
 
         now: wiring.now,
 
@@ -573,7 +574,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
                 );
             }
 
-            return context(wiring, plugin, undefined, openTransaction, headers, claim, sent);
+            return context(wiring, plugin, undefined, openTransaction, headers, claim, sent, signal);
         },
 
         stamped: (table: string): Readonly<Record<string, string>> =>

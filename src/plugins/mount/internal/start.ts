@@ -306,6 +306,8 @@ export async function start(options: StartOptions): Promise<StartedApp>
         rateLimiter,
         httpClient: typeof options.httpClient === "function" ? options.httpClient : httpClient(options.httpClient ?? {}),
         ...(options.lookup !== undefined && { lookup: options.lookup }),
+        ...(options.mostStreamsPerCaller !== undefined && { mostStreamsPerCaller: options.mostStreamsPerCaller }),
+        ...(options.streamDrainMs !== undefined && { streamDrainMs: options.streamDrainMs }),
         ...(options.config !== undefined && { config: options.config }),
         ...(log !== undefined && {
             log: (level, plugin, line, about) =>

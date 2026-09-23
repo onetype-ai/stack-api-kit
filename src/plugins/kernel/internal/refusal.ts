@@ -26,10 +26,51 @@ export class Reply
         this.headers = headers;
     }
 
+    /** What `Reply.events` gave, read by the kit. */
+    events?: EventsReply;
+
     /** Sends the caller somewhere else. */
     static redirect(to: string, permanent = false): Reply
     {
         return new Reply(permanent ? 308 : 307, { to }, { location: to });
+    }
+
+    /**
+     * Events, for a route declaring `streams`: `headers` only names the route `sends`, printable, up to 256 characters each;
+     * `end` (1 to 64 printable characters) is written raw as the last `data:` line when the events finish, never after a failure;
+     * `error`, given the neutral message, becomes the data-only frame an unexpected failure ends the stream with, instead of `event: error`.
+     */
+    static events(source: Iterable<unknown> | AsyncIterable<unknown>, options: { headers?: Readonly<Record<string, string>>; end?: string; error?: (message: string) => unknown } = {}): Reply
+    {
+        const reply = new Reply(200, undefined, options.headers ?? {});
+
+        reply.events = { source, end: options.end, error: options.error };
+
+        return reply;
+    }
+}
+
+/** What a streamed reply carries besides its headers. */
+export type EventsReply = {
+    source: Iterable<unknown> | AsyncIterable<unknown>;
+    end: string | undefined;
+    error: ((message: string) => unknown) | undefined;
+};
+
+/** One event of a streamed answer: `data` is what the route's `streams` schema parses, `event` and `id` the SSE fields an EventSource reads. */
+export class ServerEvent<Data = unknown>
+{
+    readonly data: Data;
+
+    readonly event: string | undefined;
+
+    readonly id: string | undefined;
+
+    constructor(data: Data, options: { event?: string; id?: string } = {})
+    {
+        this.data = data;
+        this.event = options.event;
+        this.id = options.id;
     }
 }
 

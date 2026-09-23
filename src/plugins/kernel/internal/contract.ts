@@ -64,7 +64,16 @@ export type Route<Context, Input extends z.ZodType = z.ZodType> = Describable & 
     method: HttpMethod;
     path: string;
     input: Input;
-    output: z.ZodType;
+
+    /** What one answer may carry. Declared with `streams` as well, the route answers JSON when `handle` answers a value and events when it answers an iterable or `Reply.events`. */
+    output?: z.ZodType;
+
+    /** What each event of a streamed answer may carry, parsed like `output`: `handle` answers an iterable, sync or async, of values or `ServerEvent`s, sent as Server-Sent Events. Requires, limit, input and scope are decided before the first event; a failure after it ends the stream with an `error` event. */
+    streams?: z.ZodType;
+
+    /** How long one stream of this route may stay open, in seconds (300 when left out); it then ends with an `error` event of code EXPIRED, and the client reconnects, which checks the caller again. */
+    streamSeconds?: number;
+
     /** What the caller must hold. Every route says something: name a permission, mark it `public`, or write `requires: []` for one any signed-in caller may reach. Leaving it out is refused at startup. */
     requires?: readonly string[];
 
@@ -207,6 +216,9 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
 
     /** The bytes of the request body exactly as they arrived, present only where the route declared `keepsRaw`. */
     sent: Uint8Array | undefined;
+
+    /** Aborts when the caller goes away, as a client closing a stream does. Absent outside a request. */
+    signal: AbortSignal | undefined;
 
     /** This plugin's own tables: a query naming another plugin's table does not compile. */
     /** The connection underneath is shared, so the table boundary is the compiler's rather than the database's. */

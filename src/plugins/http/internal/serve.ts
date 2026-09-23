@@ -3,6 +3,7 @@ import type { Context as HonoContext } from "hono";
 
 import type { Identity, Kernel, HttpMethod } from "../../kernel/api";
 import { securityHeaders } from "./headers";
+import { eventStream } from "./events";
 import { cors, type CorsPolicy } from "./origin";
 import { readInput } from "./input";
 import { sessionCookie, withSessionKey, type SessionOptions } from "./session";
@@ -344,6 +345,7 @@ export function serve(options: ServerOptions): Hono
                 headers: readHeaders(c, route.reads),
                 ...("sent" in read && read.sent !== undefined && { sent: read.sent }),
                 ...(options.from !== undefined && { from: options.from(c) }),
+                signal: c.req.raw.signal,
             });
 
             if (answer.status >= 500)
@@ -368,6 +370,11 @@ export function serve(options: ServerOptions): Hono
             if (answer.status === 204 || answer.status === 205)
             {
                 return c.body(null, answer.status);
+            }
+
+            if (answer.body !== null && typeof answer.body === "object" && Symbol.asyncIterator in answer.body)
+            {
+                return c.body(eventStream(answer.body as AsyncIterable<{ data?: unknown }>, c.req.raw.signal), answer.status as 200);
             }
 
             return c.json(answer.body as Record<string, unknown>, answer.status as 200);

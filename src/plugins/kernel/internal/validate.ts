@@ -3,7 +3,7 @@ import type { KernelFault } from "./faults";
 import * as names from "./names";
 import { tableName } from "./tableName";
 import { isFilterable, numberRanges } from "./output";
-import { isKitHeader } from "./request";
+import { isKitHeader } from "./replyHeaders";
 
 /** One thing wrong, and everything needed to fix it. */
 export type ContractProblem = {
@@ -223,10 +223,7 @@ function checkOwn(name: string, plugin: Plugin, owned: TableOwners, report: Prob
             report("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" has no description. A route nobody described is one nobody can review.`);
         }
 
-        if (!isFilterable(route.output))
-        {
-            report("INVALID_OUTPUT", name, `Route ${route.method} "${route.path}" has an output schema that cannot filter what leaves. Use z.object naming every field that may be sent: it strips the rest. z.any, z.unknown, z.record, z.looseObject, a catchall and a transform all forward whatever the handler returned.`);
-        }
+        checkAnswers(name, route, report);
 
         checkRanges(name, route, report);
         // Neither public nor guarded answers every signed-in caller, whatever
@@ -410,6 +407,32 @@ function checkLimit(name: string, route: NonNullable<Plugin["definition"]["route
     if (!Number.isInteger(limit.seconds) || limit.seconds < 1)
     {
         report("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" declares a window of ${limit.seconds} seconds. A window without length is one that never resets.`);
+    }
+}
+
+/** What a route answers with: one answer, a stream of events, or either per request, each through a schema that filters. */
+function checkAnswers(name: string, route: NonNullable<Plugin["definition"]["routes"]>[number], report: ProblemReport): void
+{
+    const answers = (["output", "streams"] as const).filter((key) => route[key] !== undefined);
+
+    if (answers.length === 0)
+    {
+        report("INVALID_OUTPUT", name, `Route ${route.method} "${route.path}" declares no output. Name what an answer may carry with output, or what each event may carry with streams.`);
+    }
+
+    if (route.streamSeconds !== undefined && !(typeof route.streamSeconds === "number" && route.streamSeconds > 0 && route.streamSeconds <= 86_400))
+    {
+        report("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" gives streamSeconds ${String(route.streamSeconds)}. A stream lives more than 0 and at most 86400 seconds.`);
+    }
+
+    if (route.streams !== undefined && !isFilterable(route.streams))
+    {
+        report("INVALID_OUTPUT", name, `Route ${route.method} "${route.path}" has a streams schema that cannot filter what leaves. Use z.object naming every field an event may carry: it strips the rest.`);
+    }
+
+    if (route.output !== undefined && !isFilterable(route.output))
+    {
+        report("INVALID_OUTPUT", name, `Route ${route.method} "${route.path}" has an output schema that cannot filter what leaves. Use z.object naming every field that may be sent: it strips the rest. z.any, z.unknown, z.record, z.looseObject, a catchall and a transform all forward whatever the handler returned.`);
     }
 }
 

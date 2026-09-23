@@ -1,7 +1,12 @@
 import { refusalBodyFor, Reply, Refusal } from "./refusal";
+import { eventsRefusal, openStream, STREAM_SECONDS, streamedEvents, type OpenStream, type StreamRegistry } from "./streams";
+import type { z } from "zod";
+
 import type { Identity, Context, HttpMethod, Route } from "./contract";
 import { KernelFault } from "./faults";
 import { createPermissions } from "./permissions";
+import { filterHeaders } from "./replyHeaders";
+import { logRecord } from "./logRecord";
 
 /** What decides whether one identity has any allowance left on one route. */
 export type RateLimiter = {
@@ -26,6 +31,9 @@ export type KernelRequest = {
 
     /** Where it came from when nobody is signed in. Only a rate limit reads it. */
     from?: string | undefined;
+
+    /** Aborts when the caller goes away; handed to the route as `ctx.signal`. */
+    signal?: AbortSignal | undefined;
 };
 
 /** What the kernel answers: a status, and a body already safe to send. */
@@ -67,9 +75,10 @@ const EMPTY_STATUSES: ReadonlySet<number> = new Set([204, 205]);
 export async function respond(
     mounted: RouteOwner,
     incoming: KernelRequest,
-    context: (plugin: string, identity?: Identity, headers?: Readonly<Record<string, string>>, sent?: Uint8Array) => Context,
+    context: (plugin: string, identity?: Identity, headers?: Readonly<Record<string, string>>, sent?: Uint8Array, signal?: AbortSignal) => Context,
     log: RequestLog,
     rateLimiter?: RateLimiter,
+    streams?: StreamRegistry,
 ): Promise<KernelResponse>
 {
     const { plugin, route } = mounted;
@@ -82,6 +91,7 @@ export async function respond(
     const identityId = typeof identity?.id === "string" && identity.id.trim() !== "" ? identity.id : undefined;
 
     let spent: string | undefined;
+    let stream: OpenStream | undefined;
 
     try
     {
@@ -132,9 +142,91 @@ export async function respond(
 
         const sent = route.keepsRaw === true ? incoming.sent : undefined;
 
-        const returned = await route.handle(parsed.data, context(plugin, identity, allowedHeaders(route, incoming.headers), sent));
+        // a route answering either way takes a stream slot only once its handle answered events, so a JSON
+        // answer never counts against the caller's open streams; its handle gets a signal the stream joins later
+        const answersEither = route.streams !== undefined && route.output !== undefined;
+        const caller = identityId ?? incoming.from ?? "anonymous";
+        const seconds = route.streamSeconds ?? STREAM_SECONDS;
+
+        const tooManyStreams = (): KernelResponse =>
+        {
+            log("warn", plugin, `${route.method} ${route.path} refused 429: too many open streams`, { code: "TOO_MANY_STREAMS" });
+
+            return { status: 429, body: { code: "TOO_MANY_STREAMS", message: "Too many open streams. Close one and try again." } };
+        };
+
+        if (route.streams !== undefined && streams !== undefined && !answersEither)
+        {
+            if ((streams.perCaller.get(caller) ?? 0) >= streams.most)
+            {
+                return tooManyStreams();
+            }
+
+            stream = openStream(streams, caller, incoming.signal, seconds);
+        }
+
+        const early = answersEither ? new AbortController() : undefined;
+        const handed = early === undefined ? undefined : incoming.signal === undefined ? early.signal : AbortSignal.any([early.signal, incoming.signal]);
+
+        const returned = await route.handle(parsed.data, context(plugin, identity, allowedHeaders(route, incoming.headers), sent, stream?.signal ?? handed ?? incoming.signal));
+
+        const chosen = returned instanceof Reply && returned.events !== undefined ? returned as Reply & { events: NonNullable<Reply["events"]> } : undefined;
+        const source: unknown = chosen?.events.source ?? returned;
+        const iterable = source !== null && typeof source === "object" && (Symbol.asyncIterator in source || Symbol.iterator in source);
+
+        // a route declaring output as well answers JSON whenever its handle did not answer events
+        const answersJson = route.output !== undefined && chosen === undefined && !iterable;
+
+        if (route.streams !== undefined && answersJson)
+        {
+            stream?.release();
+        }
+
+        if (route.streams !== undefined && !answersJson)
+        {
+            const refused = !iterable ? "answered something that is not an iterable of events" : chosen === undefined ? undefined : eventsRefusal(route, chosen);
+
+            if (refused !== undefined)
+            {
+                stream?.release();
+                log("error", plugin, `${route.method} ${route.path} streams, and its handle ${refused}`);
+
+                return { status: 500, body: { code: "INTERNAL", message: "The request could not be completed." } };
+            }
+
+            if (answersEither && streams !== undefined)
+            {
+                if ((streams.perCaller.get(caller) ?? 0) >= streams.most)
+                {
+                    early?.abort();
+
+                    return tooManyStreams();
+                }
+
+                stream = openStream(streams, caller, incoming.signal, seconds);
+                stream.signal.addEventListener("abort", () => early?.abort(), { once: true });
+            }
+
+            if (spent !== undefined && route.limit?.countSuccess === false)
+            {
+                rateLimiter?.refund?.(spent);
+            }
+
+            return {
+                status: 200,
+                body: streamedEvents(source as Iterable<unknown> | AsyncIterable<unknown>, route as Route<Context> & { streams: z.ZodType }, plugin, log, stream, chosen?.events),
+                headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-store", "x-accel-buffering": "no", ...chosen?.headers },
+            };
+        }
 
         const reply = returned instanceof Reply ? returned : undefined;
+
+        if (route.output === undefined)
+        {
+            log("error", plugin, `${route.method} ${route.path} answered, and declares nothing to answer with`);
+
+            return { status: 500, body: { code: "INTERNAL", message: "The request could not be completed." } };
+        }
 
         const filtered = route.output.safeParse(reply === undefined ? returned : reply.body);
 
@@ -173,6 +265,8 @@ export async function respond(
     }
     catch (cause)
     {
+        stream?.release();
+
         const refusal = refusalBodyFor(cause);
 
         if (refusal.status >= 500)
@@ -195,104 +289,6 @@ export async function respond(
             },
         };
     }
-}
-
-/** What a thrown thing says, in a shape that survives being written down. */
-function logRecord(cause: unknown): Readonly<Record<string, unknown>>
-{
-    if (cause instanceof Error)
-    {
-        return {
-            error: cause.message,
-            kind: cause.name,
-            ...(cause.stack !== undefined && { stack: cause.stack }),
-            ...(cause.cause !== undefined && { cause: logRecord(cause.cause) }),
-        };
-    }
-
-    return { error: String(cause) };
-}
-
-/** What a reply may say about itself without declaring it. Everything that governs how a browser treats the response is the kit's. */
-const REPLY_HEADERS: ReadonlySet<string> = new Set([
-    "location",
-    "retry-after",
-    "content-disposition",
-    "vary",
-    "etag",
-    "cache-control",
-    "x-session-key",
-    "x-session-expires",
-    "x-session-end",
-]);
-
-/** Headers the kit answers for: policy, framing, transport, sniffing, cookies and content type. */
-const KIT_HEADERS: ReadonlySet<string> = new Set([
-    "set-cookie",
-    "content-type",
-    "content-length",
-    "transfer-encoding",
-    "connection",
-    "content-security-policy",
-    "content-security-policy-report-only",
-    "x-content-type-options",
-    "x-frame-options",
-    "referrer-policy",
-    "strict-transport-security",
-    "permissions-policy",
-    "x-xss-protection",
-    "x-permitted-cross-domain-policies",
-    "x-dns-prefetch-control",
-]);
-
-/** Whether a header is one only the kit may set, CORS and the cross-origin family included. */
-export function isKitHeader(name: string): boolean
-{
-    return KIT_HEADERS.has(name) || name.startsWith("access-control-") || name.startsWith("cross-origin-") || name.startsWith("sec-");
-}
-
-/** Directives that let a shared cache keep the body: fine for a public route, one caller's answer handed to the next for any other. */
-const SHARED_CACHE = /(^|,)\s*(public|s-maxage|proxy-revalidate)\b/iu;
-
-/** The headers a handler asked for, minus the ones it may not set. */
-function filterHeaders(
-    asked: Readonly<Record<string, string>>,
-    plugin: string,
-    route: Route<Context>,
-    log: RequestLog,
-): Readonly<Record<string, string>>
-{
-    const outgoing: Record<string, string> = {};
-
-    for (const [name, value] of Object.entries(asked))
-    {
-        const lower = name.toLowerCase();
-
-        if (!REPLY_HEADERS.has(lower) && !(route.sends ?? []).includes(lower))
-        {
-            log("warn", plugin, `${route.method} ${route.path} tried to set "${lower}", which it may not: declare it in sends, unless the kit answers for it`);
-
-            continue;
-        }
-
-        if (/[\r\n]/.test(value))
-        {
-            log("warn", plugin, `${route.method} ${route.path} tried to set "${lower}" to a value carrying a newline`);
-
-            continue;
-        }
-
-        if (lower === "cache-control" && route.public !== true && SHARED_CACHE.test(value))
-        {
-            log("warn", plugin, `${route.method} ${route.path} tried to let a shared cache keep an answer only its caller may see`);
-
-            continue;
-        }
-
-        outgoing[lower] = value;
-    }
-
-    return outgoing;
 }
 
 /** The headers a route named, and nothing else. */
