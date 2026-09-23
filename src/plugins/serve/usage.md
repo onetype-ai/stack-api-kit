@@ -30,16 +30,14 @@ await Server.open(api, {
 It answers once listening; it never returns to the caller after that.
 
 ```ts
-Server.from(behindProxy)     // who a rate limit counts an unknown caller by
+http: { from: Server.from({ trustedProxies: ["10.0.0.0/8"] }) }
 Server.listen(api, port)     // the socket alone, for a caller doing its own
 ```
 
-- `from` reads `x-forwarded-for` only where a proxy is known to set it, and
-  takes the first of the chain, which is the client the proxy saw. Absent or
-  blank counts as `"anonymous"`, one shared stranger.
-- Trusting that header with nothing in front of the process lets a caller
-  write their own address, so `behindProxy` is a claim about deployment, not
-  a convenience.
+- `from` is who a rate limit counts an unknown caller by: the rightmost
+  `x-forwarded-for` hop no named proxy wrote, walked from the socket out.
+  `from(false)` is the socket's address. `from(true)` takes the first hop,
+  which a caller writes: kept for 8.x, refused from 9.0.
 - A socket is served at `/ws` when the kernel carries one, and every other
   path reaches `api.fetch`.
 - `SIGTERM` and `SIGINT` stop once: the second is ignored rather than
