@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { z } from "zod";
 
 import { definePlugin } from "../../index";
@@ -201,5 +202,35 @@ describe("defaults every test kernel in a process starts from", () =>
         api = overridden;
 
         expect(() => overridden.kernel.context("notes").events.emit("notes.note.created", { id: "2" })).not.toThrow();
+    });
+});
+
+describe("the scope a plugin acts in", () =>
+{
+    const scoped = definePlugin("rooms", { version: "1.0.0", describe: "Acts within a workspace.", scope: { describe: "A workspace's rooms.", claim: "workspace", tables: {} } });
+    const unscoped = definePlugin("clock", { version: "1.0.0", describe: "Belongs to nobody." });
+
+    test("still refuses a scope naming no table on a plugin that holds tables", async () =>
+    {
+        const holding = definePlugin("halls", {
+            version: "1.0.0",
+            describe: "Holds halls and scopes none.",
+            tables: { halls: sqliteTable("halls", { id: text("id").primaryKey(), workspace: text("workspace").notNull() }) },
+            scope: { describe: "A workspace's halls.", claim: "workspace", tables: {} },
+        });
+
+        await expect(startTestKernel({ plugins: [holding] })).rejects.toThrow("A scope names no table");
+    });
+
+    test("is the caller's claim, what forScope named, or nothing", async () =>
+    {
+        const started = await startTestKernel({ plugins: [scoped, unscoped] });
+
+        api = started;
+
+        expect(started.kernel.context("rooms", { id: "u1", permissions: [], claims: { workspace: "w-1" } }).scope).toBe("w-1");
+        expect(started.kernel.context("rooms").forScope("w-2").scope).toBe("w-2");
+        expect(started.kernel.context("rooms").scope).toBeUndefined();
+        expect(started.kernel.context("clock", { id: "u1", permissions: [], claims: { workspace: "w-1" } }).scope).toBeUndefined();
     });
 });

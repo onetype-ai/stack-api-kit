@@ -145,8 +145,8 @@ export type Schedule = {
     giveUp: (id: string, lease?: string) => Promise<void>;
 };
 
-/** How a scope becomes a condition the database understands. */
-export type ScopeFilter = (table: string, column: string, value: string) => unknown;
+/** How a scope becomes a condition the database understands; `plugin` names whose table it is, since two plugins may each name a table alike. */
+export type ScopeFilter = (table: string, column: string, value: string, plugin?: string) => unknown;
 
 /** What the kernel needs to call another server; `pin`, when given, is the address the kernel checked, and the call is dialled there rather than wherever the name resolves now. */
 export type HttpClient = (call: HttpRequest, pin?: ResolvedAddress) => Promise<unknown>;

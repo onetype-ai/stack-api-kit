@@ -325,6 +325,9 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
     /** Refused inside a request, where the scope is decided by who is asking: choosing another there is how a caller reaches another tenant's rows. */
     forScope: (claim: string) => Context<Config, Services, Db>;
 
+    /** Whose scope this acts in: the caller's claim, or what `forScope` named; undefined for a plugin declaring no scope, or where nobody is placed. */
+    scope: string | undefined;
+
     /** Another plugin's services, by name. Only what `dependsOn` names. */
     use: <Api>(plugin: string) => Api;
 };

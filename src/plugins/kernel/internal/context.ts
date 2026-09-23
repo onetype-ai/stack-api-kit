@@ -617,6 +617,20 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
             return wiring.owned.get(plugin) as Kept | undefined;
         },
 
+        get scope(): string | undefined
+        {
+            const declared = wiring.known.get(plugin)?.definition.scope;
+
+            if (declared === undefined)
+            {
+                return undefined;
+            }
+
+            const tenant = identity === undefined ? acting : identity.claims[declared.claim];
+
+            return typeof tenant === "string" && tenant.trim() !== "" ? tenant : undefined;
+        },
+
         forScope: (claim: string): Context =>
         {
             if (identity !== undefined)
@@ -653,7 +667,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
 
             return (wiring.scopeFilter === undefined
                 ? absentWiring(plugin, "createScopeFilter", "scoped", "scopeFilter")
-                : wiring.scopeFilter(table, column, tenant)) as Condition;
+                : wiring.scopeFilter(table, column, tenant, plugin)) as Condition;
         },
 
         use: <Api,>(name: string): Api =>

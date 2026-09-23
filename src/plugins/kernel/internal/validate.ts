@@ -274,7 +274,8 @@ function checkOwn(name: string, plugin: Plugin, owned: TableOwners, report: Prob
             }
         }
 
-        if (Object.keys(scope.tables).length === 0)
+        // a plugin holding no tables may still act within a scope (read ctx.scope, push to it, ask who is present); one holding tables scopes them
+        if (Object.keys(scope.tables).length === 0 && Object.keys(plugin.definition.tables ?? {}).length > 0)
         {
             report("UNDECLARED_SCOPE", name, "A scope names no table, so nothing is scoped. Name the tables that carry the claim, or remove it.");
         }
