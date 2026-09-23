@@ -5,11 +5,12 @@ import { KernelFault } from "./internal/faults";
 import { HttpRequestError } from "./internal/httpError";
 import { REDIRECT_STATUSES } from "./internal/redirects";
 import { measure } from "./internal/measure";
+import { Stored } from "./internal/stored";
 import { order } from "./internal/order";
 import { tableIndexes } from "./internal/tableIndexes";
 import { tableName } from "./internal/tableName";
 
-export { HttpRequestError, REDIRECT_STATUSES, refusalBodyFor, Reply, ServerEvent, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, order, Refusal, tableIndexes, tableName };
+export { HttpRequestError, REDIRECT_STATUSES, refusalBodyFor, Reply, ServerEvent, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, order, Stored, Refusal, tableIndexes, tableName };
 export type { Tagged } from "./internal/measure";
 export type { DeclaredIndex } from "./internal/tableIndexes";
 

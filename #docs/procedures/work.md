@@ -1,7 +1,6 @@
 # Procedure: work
 
-What happens after the request: events kept until heard, commands run
-later. Both are at least once, so both must be safe to repeat.
+Events kept until heard, commands run later: both at least once.
 
 ## An event
 
@@ -20,8 +19,7 @@ After `mostAttempts` (8) it waits as a dead letter. Emitting outside `tx`
 is refused while an outbox is on; give a test kernel `outbox: true` to
 prove it.
 
-A listener recognises what it already did, by the event's id or its own
-unique key: it may hear an event twice.
+A listener recognises what it already did: it may hear an event twice.
 
 ## A command later
 
@@ -36,6 +34,13 @@ is taken again and counted. `schedule: true` runs what is due in this
 process, `"enqueue"` only stores it for one that does. A command that
 refuses 4xx is not tried again.
 
+## What stays written
+
+An event payload, a command input and every `Stored.define(name, schema)`
+are read long after they were written: a project test runs
+`StoredContracts.checkFile(lock, plugins)`, and a new required field, a
+removed one or a narrower type fails until `accept` names why.
+
 ## Watching it
 
 One plugin declaring `watchesWork: true` reads `ctx.work`: counts, failed
@@ -44,6 +49,5 @@ Guard what it answers to operators.
 
 ## Refuses
 
-- `ctx.emit` outside `tx` with an outbox on.
-- `commands.later` for a command the plugin does not own.
+- `ctx.emit` outside `tx` with an outbox on; `later` for another's command.
 - `ctx.work` for a plugin that did not declare it.

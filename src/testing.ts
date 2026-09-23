@@ -2,6 +2,7 @@ export { configureTestKernels, startTestKernel, testTables, createIdentity, with
 export { findImportViolations, findCopiedVocabulary, findSharedNames, findSplitVocabulary, findUnscopedReach } from "./testing/boundaries";
 export { findMissingDocs, findOversizedDocs, findUndocumentedKeys, findUnexplainedPlugins } from "./testing/docs";
 export { Project } from "./testing/project";
+export { StoredContracts } from "./testing/storedContracts";
 export { Started } from "./testing/started";
 export { findUnusedFields } from "./testing/wiring";
 
@@ -10,5 +11,6 @@ export type { Identity, HttpRequest } from "./plugins/kernel/api";
 export type { ImportEdge, ImportViolation, CopiedVocabulary, DuplicateSignature, SplitVocabulary } from "./testing/boundaries";
 export type { OversizedDoc, UndocumentedKey } from "./testing/docs";
 export type { ProjectCheckOptions, ProjectProblem } from "./testing/project";
+export type { Breach, Lock } from "./testing/storedContracts";
 export type { StartedCheckOptions, StartedProblem } from "./testing/started";
 export type { UnusedField } from "./testing/wiring";

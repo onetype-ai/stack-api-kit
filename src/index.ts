@@ -1,4 +1,4 @@
-export { refusalBodyFor, Reply, ServerEvent, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, Refusal } from "./plugins/kernel/api";
+export { refusalBodyFor, Reply, ServerEvent, createKernel, defineCommand, defineListener, defineParticipant, definePlugin, defineRoute, KernelFault, measure, Refusal, Stored } from "./plugins/kernel/api";
 export { Env, Log, LEVELS, redact } from "./plugins/boot/api";
 export { Server } from "./plugins/serve/api";
 export type {
