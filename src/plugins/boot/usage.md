@@ -25,23 +25,21 @@ const level = Env.oneOf("LOG_LEVEL", ["debug", "info", "warn", "error"], "info")
 const log = Log.forLevel(level);
 ```
 
-`Env` reads `process.env`. Where a value comes from somewhere else — a bundler
-replacing `import.meta.env` — read it there and pass it to the rule:
+`Env` reads `process.env`; for a value read elsewhere, pass it to the rule:
 
 ```ts
 Env.rules.number("PORT", import.meta.env.PORT, 7280, 1, 65_535);
 ```
 
-- Set and empty throws; unset takes the fallback. "Absent" and "blank" are
-  never the same answer.
+- Set and empty throws; unset takes the fallback.
 - `number` takes whole numbers in range: `"1.5"`, `"-1"`, `"abc"` and `" "`
   are each refused by name.
-- `flag` takes `"true"` or `"false"`, so `"1"` and `"yes"` are refused rather
-  than guessed at.
+- `flag` takes `"true"` or `"false"` only.
 - `list` splits on commas, trims, and drops what a trailing comma leaves.
-- `Log.line` keeps its own `at`, `level` and `line` whatever a caller passes
-  under those names. An `Error` becomes `{ message, stack }`, a bigint a
-  string, and what it cannot read at all becomes `"unreadable"`.
+- `Log.line` never writes a credential, by key or by shape (Bearer, JWT,
+  live keys); `forLevel(level, { personal: true })` masks emails and IPs.
+- `Log.line` keeps its own `at`, `level` and `line`; an `Error` becomes
+  `{ message, stack }`, what it cannot read `"unreadable"`.
 
 ## Refuses
 

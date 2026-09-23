@@ -35,14 +35,23 @@ describe("a log line", () =>
 
     test("saying so, rather than dropping the line it could not render", () =>
     {
+        const hostile = { toJSON: (): never => { throw new Error("no"); } };
+
+        const line = JSON.parse(Log.line("error", "billing failed", { hostile })) as Record<string, unknown>;
+
+        expect(line.about).toBe("unreadable");
+        expect(line.line).toBe("billing failed");
+    });
+
+    test("writing a loop once, rather than giving the whole line up", () =>
+    {
         const round: Record<string, unknown> = {};
 
         round.self = round;
 
         const line = JSON.parse(Log.line("error", "billing failed", { round })) as Record<string, unknown>;
 
-        expect(line.about).toBe("unreadable");
-        expect(line.line).toBe("billing failed");
+        expect(line.round).toEqual({ self: "[circular]" });
     });
 
     test("and ends in a newline, so two lines are two records", () =>
