@@ -33,24 +33,29 @@
         "zod": "^4.5.4"
     },
     "peerDependencies": {
+        "@hono/node-server": ">=2",
         "better-sqlite3": ">=13",
         "drizzle-orm": ">=0.45",
         "hono": ">=4",
-        "@hono/node-server": ">=2",
-        "ws": ">=8"
+        "ws": ">=8",
+        "pg": ">=8.13",
+        "@electric-sql/pglite": ">=0.5"
     },
     "devDependencies": {
+        "@electric-sql/pglite": "^0.5.8",
+        "@hono/node-server": "^2.1.1",
         "@types/better-sqlite3": "^7.6.13",
         "@types/node": "^26.4.0",
+        "@types/pg": "^8.23.1",
+        "@types/ws": "^8.18.1",
         "better-sqlite3": "^13.0.3",
         "drizzle-orm": "^0.45.2",
         "hono": "^4.13.5",
+        "pg": "^8.23.0",
         "tsup": "^8.5.1",
         "typescript": "^5.7.0",
         "vitest": "^4.1.11",
-        "@hono/node-server": "^2.1.1",
-        "ws": "^8.21.3",
-        "@types/ws": "^8.18.1"
+        "ws": "^8.21.3"
     },
     "description": "A kernel that holds plugins apart: contracts, routes, events, hooks, permissions and scope, refused at startup rather than in review.",
     "license": "MIT",
@@ -93,6 +98,12 @@
             "optional": true
         },
         "ws": {
+            "optional": true
+        },
+        "pg": {
+            "optional": true
+        },
+        "@electric-sql/pglite": {
             "optional": true
         }
     }
