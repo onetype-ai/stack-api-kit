@@ -45,6 +45,9 @@ export type QueuedJob = {
     input: unknown;
     at: number;
     attempts: number;
+
+    /** Which claim holds it, when the schedule leases per claim. */
+    lease?: string;
 };
 
 /** One scheduled command that ran out of attempts, and why. */
@@ -62,17 +65,23 @@ export type Schedule = {
     /** Writes one, inside the transaction that asked for it when there is one. */
     save: (db: unknown, job: QueuedJob) => void;
 
-    /** Claims what is due, at most `limit`, marking each taken. */
+    /** Claims what is due, at most `limit`, marking each taken; a job whose lease ran out is claimed again with its lost run counted. */
     claim: (now: number, limit: number) => Promise<readonly QueuedJob[]>;
 
-    /** It ran. Forget it. */
-    markDone: (id: string) => Promise<void>;
+    /** How long a claim holds without `renew`; the kernel renews every third of it while the command runs. */
+    leaseMs?: number;
 
-    /** It threw. Put it back for `at`, having counted the attempt. */
-    markFailed: (id: string, at: number) => Promise<void>;
+    /** Keeps a claim; false when the lease was taken since, and this run should stop counting on it. */
+    renew?: (id: string, now: number, lease?: string) => Promise<boolean>;
 
-    /** It threw too many times. Stop trying. */
-    giveUp: (id: string) => Promise<void>;
+    /** It ran. Forget it; with `lease`, only if that claim still holds it. */
+    markDone: (id: string, lease?: string) => Promise<void>;
+
+    /** It threw. Put it back for `at`, having counted the attempt; with `lease`, only if that claim still holds it. */
+    markFailed: (id: string, at: number, lease?: string) => Promise<void>;
+
+    /** It threw too many times. Stop trying; with `lease`, only if that claim still holds it. */
+    giveUp: (id: string, lease?: string) => Promise<void>;
 };
 
 /** How a scope becomes a condition the database understands. */

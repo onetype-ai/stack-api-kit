@@ -42,8 +42,17 @@ export type StartOptions = {
     /** Whether events are kept until a listener has heard them. */
     outbox?: boolean | undefined;
 
-    /** Whether a plugin may ask for work later. */
-    schedule?: boolean | undefined;
+    /**
+     * Whether a plugin may ask for work later: true also runs what is due here, "enqueue" only stores it for a process
+     * that runs it. Each claim is a lease renewed while the command runs; one that ran out is claimed again and counted.
+     */
+    schedule?: boolean | "enqueue" | undefined;
+
+    /** How long a claimed job stays claimed without a renewal: 60000 when left out, 1000 to 3600000. */
+    jobLeaseMs?: number | undefined;
+
+    /** How long a scheduled command is held while it runs: ten leases when left out. */
+    jobRunMs?: number | undefined;
 
     log?: Logger | undefined;
 };

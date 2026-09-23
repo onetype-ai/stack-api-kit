@@ -288,7 +288,14 @@ export async function start(options: StartOptions): Promise<StartedApp>
     sweep?.unref?.();
 
     const outbox = options.outbox === true ? store.outbox?.() : undefined;
-    const later = options.schedule === true ? store.schedule?.() : undefined;
+    if (options.schedule !== undefined && options.schedule !== true && options.schedule !== false && options.schedule !== "enqueue")
+    {
+        throw new TypeError(`start: schedule ${JSON.stringify(options.schedule)} is not true, "enqueue" or false. Pass true where this process runs scheduled commands, "enqueue" where it only schedules them.`);
+    }
+
+    const later = options.schedule === true || options.schedule === "enqueue"
+        ? store.schedule?.(options.jobLeaseMs === undefined ? {} : { leaseMs: options.jobLeaseMs })
+        : undefined;
 
     const scoping = options.plugins.some((plugin) => plugin.definition.scope !== undefined);
 
@@ -302,6 +309,8 @@ export async function start(options: StartOptions): Promise<StartedApp>
         ...(wires !== undefined && { sockets: wires }),
         ...(outbox !== undefined && { outbox }),
         ...(later !== undefined && { schedule: later }),
+        ...(options.schedule === "enqueue" && { runsSchedule: false }),
+        ...(options.jobRunMs !== undefined && { jobRunMs: options.jobRunMs }),
         ...(scoping && store.createScopeFilter !== undefined && { scopeFilter: store.createScopeFilter() }),
         rateLimiter,
         httpClient: typeof options.httpClient === "function" ? options.httpClient : httpClient(options.httpClient ?? {}),

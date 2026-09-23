@@ -51,6 +51,12 @@ export type KernelOptions = {
     /** How often to ask the schedule what is due, in milliseconds. */
     beatMs?: number;
 
+    /** False keeps the schedule for `commands.later` without running what is due, for a process that only enqueues. */
+    runsSchedule?: boolean;
+
+    /** How long a scheduled command is held while it runs, in milliseconds: ten leases when left out; past it the lease runs out and the job is taken again, counted. */
+    jobRunMs?: number;
+
     /** How many times a scheduled command may throw before it is abandoned. */
     mostAttempts?: number;
 
@@ -283,26 +289,106 @@ export function createKernel(options: KernelOptions): Kernel
         return cause.status >= 400 && cause.status < 500 && cause.status !== 408 && cause.status !== 429;
     }
 
+    /**
+     * Renews a job's lease every third of it while its command runs, and answers what stops that. A command that
+     * never settles stops being renewed after `jobRunMs`, so its lease runs out and the job is taken again, counted,
+     * and given up at `mostAttempts` rather than held for ever.
+     */
+    function holdWhileRunning(schedule: Schedule, job: { id: string; plugin: string; command: string; attempts: number; lease?: string | undefined }, clock: () => number): () => void
+    {
+        const lease = schedule.leaseMs;
+
+        if (lease === undefined || schedule.renew === undefined)
+        {
+            return () => undefined;
+        }
+
+        const until = clock() + (options.jobRunMs ?? lease * 10);
+
+        let renewing: ReturnType<typeof setInterval> | undefined;
+
+        const stop = (): void =>
+        {
+            clearInterval(renewing);
+            renewing = undefined;
+        };
+
+        renewing = setInterval(() =>
+        {
+            if (!running)
+            {
+                stop();
+
+                return;
+            }
+
+            if (clock() >= until)
+            {
+                stop();
+                log("error", job.plugin, "a scheduled command ran past its time and is no longer held; it will be taken again", { command: job.command, attempts: job.attempts + 1 });
+
+                return;
+            }
+
+            void Promise.resolve().then(() => schedule.renew?.(job.id, clock(), job.lease)).then((kept) =>
+            {
+                if (kept === false && renewing !== undefined)
+                {
+                    stop();
+                    log("warn", job.plugin, "a scheduled command lost its lease to another run; this run's outcome will not be recorded", { command: job.command });
+                }
+            }, (cause: unknown) =>
+            {
+                stop();
+                log("error", job.plugin, "a scheduled command's lease could not be renewed; it will be taken again", { command: job.command, cause: cause instanceof Error ? cause.message : String(cause) });
+            });
+        }, Math.max(1, Math.floor(lease / 3)));
+
+        renewing.unref?.();
+
+        return stop;
+    }
+
     /** Runs what is due, one turn. */
     async function due(): Promise<number>
     {
-        if (options.schedule === undefined || !running)
+        const schedule = options.schedule;
+
+        if (schedule === undefined || options.runsSchedule === false || !running)
         {
             return 0;
         }
 
         const clock = options.now ?? Date.now;
-        const taken = await options.schedule.claim(clock(), 20);
+        const taken = await schedule.claim(clock(), 20);
+        const most = options.mostAttempts ?? 8;
 
         for (const job of taken)
         {
+            // taken again after its process stopped holding it too often: the command itself never ran to an end
+            if (job.attempts >= most)
+            {
+                log("error", job.plugin, "a scheduled command gave up after its process stopped holding it too often", { command: job.command, attempts: job.attempts });
+
+                failedJobs.push({ plugin: job.plugin, command: job.command, input: job.input, attempts: job.attempts, error: new Error("Its lease ran out too many times."), at: clock() });
+
+                await schedule.giveUp(job.id, job.lease);
+
+                continue;
+            }
+
+            const stopRenewing = holdWhileRunning(schedule, job, clock);
+
             try
             {
                 await run(job.command, job.input);
-                await options.schedule.markDone(job.id);
+                stopRenewing();
+                await schedule.markDone(job.id, job.lease);
             }
             catch (cause)
             {
+                stopRenewing();
+
                 log("error", job.plugin, "a scheduled command failed", {
                     command: job.command,
                     attempts: job.attempts + 1,
@@ -311,7 +397,7 @@ export function createKernel(options: KernelOptions): Kernel
 
                 const final = isFinalRefusal(cause);
 
-                if (final || job.attempts + 1 >= (options.mostAttempts ?? 8))
+                if (final || job.attempts + 1 >= most)
                 {
                     log("error", job.plugin, final ? "a scheduled command was refused for good" : "a scheduled command gave up", {
                         command: job.command,
@@ -333,11 +419,11 @@ export function createKernel(options: KernelOptions): Kernel
                         failedJobs.splice(0, failedJobs.length - MOST_REMEMBERED);
                     }
 
-                    await options.schedule.giveUp(job.id);
+                    await schedule.giveUp(job.id, job.lease);
                 }
                 else
                 {
-                    await options.schedule.markFailed(job.id, clock() + Math.min(2 ** job.attempts, 60) * 1000);
+                    await schedule.markFailed(job.id, clock() + Math.min(2 ** job.attempts, 60) * 1000, job.lease);
                 }
             }
         }
@@ -524,7 +610,7 @@ export function createKernel(options: KernelOptions): Kernel
 
             running = true;
 
-            if (options.schedule !== undefined)
+            if (options.schedule !== undefined && options.runsSchedule !== false)
             {
                 beating = setInterval(() => void due(), options.beatMs ?? 1000);
 

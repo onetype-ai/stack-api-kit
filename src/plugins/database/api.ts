@@ -22,8 +22,8 @@ export type Store<Db = unknown> = {
     /** An outbox in this same database, when the store can hold one. */
     outbox?: () => Outbox;
 
-    /** A schedule in this same database, for work asked for later. */
-    schedule?: () => Schedule;
+    /** A schedule in this same database, for work asked for later; each claim holds for `leaseMs` (60000 when left out) unless renewed. */
+    schedule?: (settings?: { leaseMs?: number }) => Schedule;
 
     /** How a declared scope becomes a condition over the tables it was given. */
     createScopeFilter?: () => ScopeFilter;
@@ -70,9 +70,9 @@ export function database(settings: StoreOptions): Store<DrizzleDb>
         },
 
         /** Where later work waits, in this same database. */
-        schedule: (): Schedule =>
+        schedule: (settings: { leaseMs?: number } = {}): Schedule =>
         {
-            return schedule(connection);
+            return schedule(connection, settings);
         },
 
         /** How a scope narrows a query, over the tables one plugin declared. */
