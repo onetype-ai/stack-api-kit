@@ -96,9 +96,15 @@ export type ChannelMessage = {
 
     /** Which socket pushed it, for a reach of "connection"; absent means none can hear it. */
     fromConnection: string | undefined;
+
+    /** The identity it is for, for a reach of "identity". */
+    to?: string | undefined;
 };
 
 /** What holds the open sockets, when anything does. */
 export type Sockets = {
     push: (sending: ChannelMessage) => void;
+
+    /** Who holding a permission has a socket open in a scope, for `ctx.presence`. */
+    connected?: (scope: string, permission: string) => readonly string[];
 };

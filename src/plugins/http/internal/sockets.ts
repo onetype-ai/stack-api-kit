@@ -16,6 +16,9 @@ export type Subscription = {
 
     /** The connection closed: it hears nothing more. */
     close: () => void;
+
+    /** The same socket's caller, identified again: what it may hear and whether it counts as present follow at once. */
+    reidentify: (identity: Identity | undefined) => void;
 };
 
 type SocketState = {
@@ -60,7 +63,7 @@ export function sockets(kernel: { channels: () => readonly RegisteredChannel[] }
             return false;
         }
 
-        if (declared.reach === "scope" && scopeOf(identity) === undefined)
+        if ((declared.reach === "scope" || declared.reach === "identity") && scopeOf(identity) === undefined)
         {
             return false;
         }
@@ -107,6 +110,11 @@ export function sockets(kernel: { channels: () => readonly RegisteredChannel[] }
             return listener.identity?.id === message.from?.id;
         }
 
+        if (message.reach === "identity")
+        {
+            return message.to !== undefined && listener.identity?.id === message.to && scopeOf(listener.identity) === message.scope;
+        }
+
         return true;
     };
 
@@ -124,6 +132,23 @@ export function sockets(kernel: { channels: () => readonly RegisteredChannel[] }
             }
         },
 
+        connected: (scope: string, permission: string): readonly string[] =>
+        {
+            const ids = new Set<string>();
+
+            for (const listener of open)
+            {
+                const granted = listener.identity?.permissions;
+
+                if (listener.identity !== undefined && scopeOf(listener.identity) === scope && Array.isArray(granted) && granted.includes(permission))
+                {
+                    ids.add(listener.identity.id);
+                }
+            }
+
+            return [...ids];
+        },
+
         subscribe: (identity: Identity | undefined, send: (text: string) => void): Subscription =>
         {
             const connection: SocketState = { id: crypto.randomUUID(), identity, send, listening: new Set() };
@@ -133,11 +158,11 @@ export function sockets(kernel: { channels: () => readonly RegisteredChannel[] }
             return {
                 id: connection.id,
 
-                mayHear: (channel: string) => mayHear(channel, identity),
+                mayHear: (channel: string) => mayHear(channel, connection.identity),
 
                 listen: (channel: string): boolean =>
                 {
-                    if (!mayHear(channel, identity))
+                    if (!mayHear(channel, connection.identity))
                     {
                         return false;
                     }
@@ -150,6 +175,20 @@ export function sockets(kernel: { channels: () => readonly RegisteredChannel[] }
                 unlisten: (channel: string) => connection.listening.delete(channel),
 
                 close: () => open.delete(connection),
+
+                // a channel it may no longer hear is dropped at once, rather than at its next listen
+                reidentify: (next: Identity | undefined): void =>
+                {
+                    connection.identity = next;
+
+                    for (const channel of [...connection.listening])
+                    {
+                        if (!mayHear(channel, next))
+                        {
+                            connection.listening.delete(channel);
+                        }
+                    }
+                },
             };
         },
     };

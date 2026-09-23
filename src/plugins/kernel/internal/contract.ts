@@ -23,7 +23,8 @@ export type Event = {
 
 /** `connection` is the one socket that asked, `viewer` every socket one person has open, `scope` everyone the claim puts together, `everyone` all of them. */
 /** `everyone` is written out, like `public` on a route, so a world-readable channel is a decision rather than an oversight. */
-export type ChannelReach = "connection" | "viewer" | "scope" | "everyone";
+/** `identity` is every socket of the one person a push names, inside the pusher's scope only. */
+export type ChannelReach = "connection" | "viewer" | "scope" | "identity" | "everyone";
 
 /** A channel a plugin pushes on, and how far what it pushes goes. */
 export type Channel = DescribableWithSchema & {
@@ -266,7 +267,15 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
     };
 
     /** Sends a message on a channel this plugin declared, as far as its `reach` says and no further. Nothing waits for it. */
-    push: (channel: string, message: unknown) => void;
+    push: (channel: string, message: unknown, options?: {
+        /** The identity a channel reaching "identity" is pushed to; refused for any other reach. */
+        to?: string;
+    }) => void;
+
+    presence: {
+        /** The distinct identity ids holding `permission` with a socket open in this scope now; per process, like the rate limiter. */
+        connected: (permission: string) => readonly string[];
+    };
 
     hooks: {
         /** Runs a hook and answers the first refusal, or undefined. */

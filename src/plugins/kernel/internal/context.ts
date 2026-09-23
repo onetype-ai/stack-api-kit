@@ -458,7 +458,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
             },
         },
 
-        push: (channel: string, message: unknown): void =>
+        push: (channel: string, message: unknown, options: { to?: string } = {}): void =>
         {
             const declared = wiring.known.get(plugin)?.definition.channels?.[channel];
 
@@ -479,9 +479,22 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
             const scope = wiring.known.get(plugin)?.definition.scope;
             const pushScope = identity === undefined ? acting : identity.claims[scope?.claim ?? ""];
 
-            if (declared.reach === "scope" && typeof pushScope !== "string")
+            // "identity" is a scope too: a named person hears it only inside the pusher's tenant, so an id shared across tenants never carries a message over
+            const scoped = declared.reach === "scope" || declared.reach === "identity";
+
+            if (scoped && typeof pushScope !== "string")
             {
                 throw new Refusal(403, "OUT_OF_SCOPE", "This request carries nothing to say whose rows it may reach.");
+            }
+
+            if (declared.reach === "identity" && (typeof options.to !== "string" || options.to === ""))
+            {
+                throw new KernelFault("INVALID_CALL", `"${plugin}" pushed on "${channel}", which reaches one identity, and named none. Pass { to: identityId }.`, { plugin });
+            }
+
+            if (declared.reach !== "identity" && options.to !== undefined)
+            {
+                throw new KernelFault("INVALID_CALL", `"${plugin}" pushed on "${channel}" to one identity, and the channel reaches "${declared.reach}". Declare reach: "identity" for a channel that names its listener.`, { plugin });
             }
 
             wiring.sockets.push({
@@ -489,13 +502,35 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
                 message: declared.schema.parse(message),
                 reach: declared.reach,
                 requires: declared.requires ?? [],
-                scope: declared.reach === "scope" ? (pushScope as string) : undefined,
+                scope: scoped ? (pushScope as string) : undefined,
+                to: declared.reach === "identity" ? options.to : undefined,
                 from: identity,
 
                 // the request path does not carry which socket asked, so a
                 // "connection" push reaches nobody rather than every tab
                 fromConnection: undefined,
             });
+        },
+
+        presence: {
+            // per process, like the rate limiter: a second server knows its own sockets
+            connected: (permission: string): readonly string[] =>
+            {
+                if (wiring.sockets === undefined)
+                {
+                    return absentWiring(plugin, "socket server", "presence.connected", "sockets");
+                }
+
+                const scope = wiring.known.get(plugin)?.definition.scope;
+                const here = identity === undefined ? acting : identity.claims[scope?.claim ?? ""];
+
+                if (scope === undefined || typeof here !== "string")
+                {
+                    throw new KernelFault("OUT_OF_SCOPE", `"${plugin}" asked who is connected with no scope to ask within. Declare a scope, and ask from a request or ctx.forScope.`, { plugin });
+                }
+
+                return wiring.sockets.connected?.(here, permission) ?? [];
+            },
         },
 
         hooks: {

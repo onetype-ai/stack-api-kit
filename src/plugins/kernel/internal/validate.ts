@@ -179,9 +179,9 @@ function checkOwn(name: string, plugin: Plugin, owned: TableOwners, report: Prob
     {
         checkNamespaced(name, key, "channel", report) && claim("channels", key, "DUPLICATE_CHANNEL", "Channel");
 
-        if (channel.reach === "scope" && plugin.definition.scope === undefined)
+        if ((channel.reach === "scope" || channel.reach === "identity") && plugin.definition.scope === undefined)
         {
-            report("UNDECLARED_SCOPE", name, `Channel "${key}" reaches a scope, and "${name}" declares none. Declare one, or reach further.`);
+            report("UNDECLARED_SCOPE", name, `Channel "${key}" reaches ${channel.reach === "scope" ? "a scope" : "one identity within a scope"}, and "${name}" declares none. Declare one, or reach further.`);
         }
     }
 
