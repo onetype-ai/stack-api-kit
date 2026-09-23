@@ -6,6 +6,8 @@ import type { Logger, PubSub } from "../../kernel/api";
 const MOST_NOTICE_BYTES = 7_900;
 const BY_ROW = "row:";
 
+const listenTo = (topic: string): string => `LISTEN "${topic.replaceAll('"', '""')}"`;
+
 /** A key every process creating the pub/sub's table takes, as for the kit's other tables. */
 const CREATING = 7_239_104_219;
 
@@ -33,6 +35,7 @@ export async function postgresPubSub(url: string, log?: Logger, timing: Postgres
     let closed = false;
     let pauseMs = 250;
     let reconnecting: ReturnType<typeof setTimeout> | undefined;
+    let listens = Promise.resolve();
 
     pool.on("error", (cause: Error) =>
     {
@@ -107,11 +110,38 @@ export async function postgresPubSub(url: string, log?: Logger, timing: Postgres
 
         for (const topic of hearers.keys())
         {
-            await client.query(`LISTEN "${topic.replaceAll('"', '""')}"`);
+            await client.query(listenTo(topic));
         }
 
         listening = client;
         pauseMs = 250;
+    };
+
+    // one LISTEN at a time on the one connection: pg refuses a query sent while another runs. One refused
+    // would leave the process deaf to its topic, so it is logged and the connection is opened again,
+    // which listens to every topic afresh.
+    const listen = (topic: string): void =>
+    {
+        listens = listens.then(async () =>
+        {
+            const client = listening;
+
+            if (client === undefined)
+            {
+                return;
+            }
+
+            try
+            {
+                await client.query(listenTo(topic));
+            }
+            catch (cause)
+            {
+                log?.error("database: the pub/sub connection could not listen to a topic; opening it again", { topic, cause: cause instanceof Error ? cause.message : String(cause) });
+                again(client);
+                await client.end().catch(() => undefined);
+            }
+        });
     };
 
     // once per drop: the listening connection is replaced, and a pause grows while the server stays away
@@ -185,7 +215,7 @@ export async function postgresPubSub(url: string, log?: Logger, timing: Postgres
 
             if (isFirst)
             {
-                listening?.query(`LISTEN "${topic.replaceAll('"', '""')}"`).catch(() => undefined);
+                listen(topic);
             }
 
             return () =>

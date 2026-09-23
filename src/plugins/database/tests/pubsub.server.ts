@@ -91,30 +91,78 @@ test("a text longer than a notification holds crosses through a row, which is sw
     expect(left.rows[0]).toEqual({ count: 0 });
 });
 
-test("a listening connection the server dropped is opened again, and hears what is published after", async () =>
+test("topics subscribed at once are each listened to, one query at a time: all hear, and pg warns of nothing", async () =>
+{
+    const warnings: string[] = [];
+    const warned = (warning: Error): void =>
+    {
+        warnings.push(warning.message);
+    };
+    process.on("warning", warned);
+
+    try
+    {
+        const first = await open();
+        const second = await open();
+        const topics = [0, 1, 2, 3, 4].map(() => `probe.${crypto.randomUUID()}`);
+        const heard = new Set<string>();
+
+        for (const topic of topics)
+        {
+            second.subscribe(topic, (text) => heard.add(text));
+        }
+
+        await until(() =>
+        {
+            for (const topic of topics)
+            {
+                first.publish(topic, topic);
+            }
+
+            return heard.size === topics.length;
+        });
+
+        expect([...heard].sort()).toEqual([...topics].sort());
+        expect(warnings.filter((message) => message.includes("already executing a query"))).toEqual([]);
+    }
+    finally
+    {
+        process.off("warning", warned);
+    }
+});
+
+test("a listening connection the server dropped is opened again, listens to every topic afresh, and hears what is published after", async () =>
 {
     const first = await open();
     const second = await open();
-    const heard: string[] = [];
-    const topic = `probe.${crypto.randomUUID()}`;
+    const topics = [`probe.${crypto.randomUUID()}`, `probe.${crypto.randomUUID()}`, `probe.${crypto.randomUUID()}`];
+    const heard = new Set<string>();
 
-    second.subscribe(topic, (text) => heard.push(text));
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    for (const topic of topics)
+    {
+        second.subscribe(topic, (text) => heard.add(text));
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
     const { default: pg } = await import("pg");
     const admin = new pg.Client({ connectionString: url });
     await admin.connect();
-    await admin.query(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE query LIKE 'LISTEN%' AND pid <> pg_backend_pid()`);
+    const killed = await admin.query(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE query LIKE 'LISTEN%' AND pid <> pg_backend_pid()`);
     await admin.end();
 
     await until(() =>
     {
-        first.publish(topic, "after");
+        for (const topic of topics)
+        {
+            first.publish(topic, `after ${topic}`);
+        }
 
-        return heard.length > 0;
+        return heard.size === topics.length;
     }, 15_000);
 
-    expect(heard[0]).toBe("after");
+    expect(killed.rowCount).toBeGreaterThan(0);
+    expect([...heard].sort()).toEqual(topics.map((topic) => `after ${topic}`).sort());
 });
 
 const desk = definePlugin("desk", {
