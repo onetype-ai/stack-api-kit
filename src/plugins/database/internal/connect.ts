@@ -27,6 +27,19 @@ export function connect(opening: DatabaseOptions): Database.Database
 
     const connection = new Database(opening.file);
 
+    const { version } = connection.prepare("SELECT sqlite_version() AS version").get() as { version: string };
+
+    try
+    {
+        refuseOldSqlite(version);
+    }
+    catch (cause)
+    {
+        connection.close();
+
+        throw cause;
+    }
+
     if (opening.wal ?? !memory)
     {
         connection.pragma("journal_mode = WAL");
@@ -37,4 +50,15 @@ export function connect(opening: DatabaseOptions): Database.Database
     connection.pragma(`busy_timeout = ${opening.busyMs ?? 5_000}`);
 
     return connection;
+}
+
+/** The oldest SQLite the kit runs on: `IS NOT DISTINCT FROM`, which the schedule relies on, arrived in 3.39. */
+export function refuseOldSqlite(version: string): void
+{
+    const [major = 0, minor = 0] = version.split(".").map(Number);
+
+    if (major < 3 || (major === 3 && minor < 39))
+    {
+        throw new Error(`SQLite ${version} is older than 3.39, which the kit needs. Install better-sqlite3 13 or later, which bundles a newer one.`);
+    }
 }

@@ -1,5 +1,7 @@
 import type Database from "better-sqlite3";
 
+import { KernelFault } from "../../kernel/api";
+
 /** Which SQL the database speaks. One per deployment. */
 export type Dialect = "sqlite" | "postgres";
 
@@ -23,8 +25,11 @@ export type Sql = {
     /** Runs a script of several statements, carrying no parameters. */
     exec: (script: string) => Promise<void>;
 
-    /** Runs work in one transaction on this connection, rolled back if it throws; one inside another is a savepoint. */
-    transaction: <Result>(run: (inside: Sql) => Promise<Result>) => Promise<Result>;
+    /**
+     * Runs work in one transaction on this connection, rolled back if it throws; one inside another of its own is a
+     * savepoint. `caller` names who asked, for the refusal when someone else's transaction is already open.
+     */
+    transaction: <Result>(run: (inside: Sql) => Promise<Result>, caller?: string) => Promise<Result>;
 
     /** The same, answering at once, where the driver does: SQLite prepares the kit's tables before its factory returns. */
     now?: {
@@ -44,7 +49,7 @@ function isBusy(cause: unknown): boolean
  * while holding the lock then cannot finish when the connection waiting for it lives in the same process: both would
  * wait out the timeout. So the lock is tried with no wait, and tried again after a pause, until the same timeout.
  */
-async function beginImmediate(connection: Database.Database): Promise<void>
+export async function beginImmediate(connection: Database.Database): Promise<void>
 {
     const timeoutMs = Number(connection.pragma("busy_timeout", { simple: true }));
     const deadline = Date.now() + timeoutMs;
@@ -74,6 +79,15 @@ async function beginImmediate(connection: Database.Database): Promise<void>
         await new Promise((resolve) => setTimeout(resolve, pauseMs));
     }
 }
+
+/** Where a factory of the kit's tables runs its statements: `within` a transaction's own handle, and `outside` one. */
+export type Around = {
+    /** The statements a transaction's own handle runs, where the database needs its connection; SQLite answers the one. */
+    within?: (db: unknown) => Sql;
+
+    /** Runs work that must not land inside a transaction someone else opened; left out, it runs as it comes. */
+    outside?: <Result>(run: () => Promise<Result>) => Promise<Result>;
+};
 
 /** The same SQL over one better-sqlite3 connection, which answers at once. */
 export function sqliteSql(connection: Database.Database): Sql
@@ -125,10 +139,20 @@ export function sqliteSql(connection: Database.Database): Sql
             return Promise.resolve();
         },
 
-        transaction: async <Result,>(run: (inside: Sql) => Promise<Result>): Promise<Result> =>
+        transaction: async <Result,>(run: (inside: Sql) => Promise<Result>, caller = "The kit"): Promise<Result> =>
         {
             const name = `kit_sp_${String(depth)}`;
-            const nested = depth > 0 || connection.inTransaction;
+            const nested = depth > 0;
+
+            // a transaction someone else opened is not this one's to join: its rollback would undo this work too
+            if (!nested && connection.inTransaction)
+            {
+                throw new KernelFault(
+                    "JOINED_TRANSACTION",
+                    `${caller} asked for a transaction while another is open on this SQLite connection, and would have joined it without saying so: that one's rollback would undo this work too. Call ${caller} outside ctx.tx and store.tx.`,
+                    { plugin: "" },
+                );
+            }
 
             if (nested)
             {
@@ -164,3 +188,18 @@ export function sqliteSql(connection: Database.Database): Sql
 
     return sql;
 }
+
+/**
+ * The same SQL, each statement run through `outside`: the store's queue for work that must never land inside a
+ * transaction someone else opened, where that one's rollback would undo it (a lease taken, a row marked sent).
+ */
+export function serialized(sql: Sql, outside: <Result>(run: () => Promise<Result>) => Promise<Result>): Sql
+{
+    return {
+        ...sql,
+        run: (text, params) => outside(() => sql.run(text, params)),
+        rows: <Row,>(text: string, params?: readonly SqlValue[]) => outside(() => sql.rows<Row>(text, params)),
+        exec: (script) => outside(() => sql.exec(script)),
+    };
+}
+

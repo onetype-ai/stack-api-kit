@@ -13,6 +13,8 @@ export type FaultCode =
     | "UNDECLARED_EVENT"
     | "UNKEPT_EVENT"
     | "UNKEPT_JOB"
+    | "UNSTORED_SCHEDULE"
+    | "JOINED_TRANSACTION"
     | "SELF_HEARD_EVENT"
     | "UNDECLARED_HOOK"
     | "UNDECLARED_COMMAND"

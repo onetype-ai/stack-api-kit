@@ -4,9 +4,9 @@ import type Database from "better-sqlite3";
 
 import type { Schedule, QueuedJob } from "../../kernel/api";
 
-import { sqliteSql } from "./sql";
+import { serialized, sqliteSql } from "./sql";
 
-import type { Sql } from "./sql";
+import type { Around, Sql } from "./sql";
 
 /** How long a claim holds without a renewal when nothing says otherwise. */
 const LEASE_MS = 60_000;
@@ -84,10 +84,12 @@ function prepare(sql: Sql): Promise<void>
  *
  * `within` answers the statements a transaction's own handle runs, as for the outbox.
  */
-export function scheduleOver(sql: Sql, settings: { leaseMs?: number } = {}, within: (db: unknown) => Sql = () => sql): Schedule
+export function scheduleOver(sql: Sql, settings: { leaseMs?: number } = {}, around: Around = {}): Schedule
 {
     const leaseMs = leaseOf(settings);
     const ready = prepare(sql);
+    const within = around.within ?? (() => sql);
+    const free = around.outside === undefined ? sql : serialized(sql, around.outside);
 
     ready.catch(() => undefined);
 
@@ -108,7 +110,7 @@ export function scheduleOver(sql: Sql, settings: { leaseMs?: number } = {}, with
         {
             await ready;
 
-            const rows = await sql.rows<{ id: string; plugin: string; command: string; input: string; runAt: number | string; attempts: number; takenBy: string }>(`
+            const rows = await free.rows<{ id: string; plugin: string; command: string; input: string; runAt: number | string; attempts: number; takenBy: string }>(`
                 UPDATE "kit_schedule"
                 SET "takenAt" = ?, "takenBy" = ?, "attempts" = CASE WHEN "takenAt" IS NULL THEN "attempts" ELSE "attempts" + 1 END
                 WHERE "id" IN (
@@ -135,7 +137,7 @@ export function scheduleOver(sql: Sql, settings: { leaseMs?: number } = {}, with
         {
             await ready;
 
-            const [row] = await sql.rows<{ due: number | string | null; later: number | string | null; running: number | string | null; abandoned: number | string | null }>(`
+            const [row] = await free.rows<{ due: number | string | null; later: number | string | null; running: number | string | null; abandoned: number | string | null }>(`
                 SELECT
                     SUM(CASE WHEN "takenAt" IS NULL AND "runAt" <= ? THEN 1 ELSE 0 END) AS "due",
                     SUM(CASE WHEN "takenAt" IS NULL AND "runAt" > ? THEN 1 ELSE 0 END) AS "later",
@@ -151,7 +153,7 @@ export function scheduleOver(sql: Sql, settings: { leaseMs?: number } = {}, with
         {
             await ready;
 
-            const { changes } = await sql.run(`UPDATE "kit_schedule" SET "takenAt" = ? WHERE "id" = ? AND "takenBy" = ?`, [now, id, lease ?? null]);
+            const { changes } = await free.run(`UPDATE "kit_schedule" SET "takenAt" = ? WHERE "id" = ? AND "takenBy" = ?`, [now, id, lease ?? null]);
 
             return changes > 0;
         },
@@ -159,13 +161,13 @@ export function scheduleOver(sql: Sql, settings: { leaseMs?: number } = {}, with
         markDone: async (id: string, lease?: string) =>
         {
             await ready;
-            await sql.run(`DELETE FROM "kit_schedule" WHERE "id" = ? AND "takenBy" IS NOT DISTINCT FROM ?`, [id, lease ?? null]);
+            await free.run(`DELETE FROM "kit_schedule" WHERE "id" = ? AND "takenBy" IS NOT DISTINCT FROM ?`, [id, lease ?? null]);
         },
 
         markFailed: async (id: string, at: number, lease?: string) =>
         {
             await ready;
-            await sql.run(
+            await free.run(
                 `UPDATE "kit_schedule" SET "takenAt" = NULL, "takenBy" = NULL, "runAt" = ?, "attempts" = "attempts" + 1 WHERE "id" = ? AND "takenBy" IS NOT DISTINCT FROM ?`,
                 [at, id, lease ?? null],
             );
@@ -174,7 +176,7 @@ export function scheduleOver(sql: Sql, settings: { leaseMs?: number } = {}, with
         giveUp: async (id: string, lease?: string) =>
         {
             await ready;
-            await sql.run(`DELETE FROM "kit_schedule" WHERE "id" = ? AND "takenBy" IS NOT DISTINCT FROM ?`, [id, lease ?? null]);
+            await free.run(`DELETE FROM "kit_schedule" WHERE "id" = ? AND "takenBy" IS NOT DISTINCT FROM ?`, [id, lease ?? null]);
         },
     };
 }

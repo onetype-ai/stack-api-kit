@@ -755,6 +755,16 @@ export function createKernel(options: KernelOptions): Kernel
                 return;
             }
 
+            // a job is written by the transaction that asks for it, so a schedule without a store could keep none
+            if (options.schedule !== undefined && options.db === undefined)
+            {
+                throw new KernelFault(
+                    "UNSTORED_SCHEDULE",
+                    "createKernel was given a schedule but no db. commands.later writes each job with the transaction that asks for it, and a transaction needs a store. Pass db, or a store whose tx runs the work in a test, or leave schedule out.",
+                    { plugin: "" },
+                );
+            }
+
             const problems = validate(options.plugins, config, options.grantedBy);
 
             if (problems.length > 0)

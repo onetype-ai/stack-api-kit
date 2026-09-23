@@ -4,6 +4,8 @@ import { join } from "node:path";
 
 import type Database from "better-sqlite3";
 
+import { KernelFault } from "../../kernel/api";
+
 import type { Sql } from "./sql";
 
 /** Where one plugin keeps its migrations. */
@@ -119,11 +121,11 @@ export async function migrateOver(sql: Sql, sources: readonly MigrationSource[],
             await check(inside);
 
             return applied;
-        });
+        }, "store.migrate");
     }
     catch (cause)
     {
-        if (began)
+        if (began || cause instanceof KernelFault)
         {
             throw cause;
         }

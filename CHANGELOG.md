@@ -10,6 +10,12 @@
 - `Outbox.save` and `Schedule.save` return a Promise, awaited before the
   commit. A save that fails takes the transaction down with it.
 - `Store.migrate` and `Store.close` return Promises.
+- `createKernel` with a `schedule` and no `db` is refused at start
+  (`UNSTORED_SCHEDULE`): a job is written by a transaction, and a
+  transaction needs a store.
+- `store.migrate` inside an open transaction is refused
+  (`JOINED_TRANSACTION`) rather than silently joining it.
+- SQLite older than 3.39 is refused when the database opens.
 
 ### How to convert
 
@@ -28,6 +34,8 @@
 - A store of your own: `migrate` and `close` return Promises, and an outbox
   or schedule of your own returns one from `save`.
 - A test calling `store.migrate(...)` or `store.close()` awaits it.
+- A kernel of your own with a `schedule` passes `db` too; in a test, a store
+  whose `tx` only runs the work will do.
 
 ### Added
 

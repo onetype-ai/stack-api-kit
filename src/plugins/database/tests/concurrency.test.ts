@@ -1,13 +1,20 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { afterEach, beforeEach, expect, test } from "vitest";
 
 import { database } from "../api";
+import { refuseOldSqlite } from "../internal/connect";
 
 const rows = sqliteTable("rows", { id: text("id").primaryKey() });
 
 const CREATE = "CREATE TABLE rows (id TEXT PRIMARY KEY)";
 
 const wait = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
+
+type Db = ReturnType<ReturnType<typeof database>["forPlugin"]>;
 
 let store: ReturnType<typeof database>;
 
@@ -182,3 +189,61 @@ test("the connection is left outside a transaction once the work is done", async
 
     expect(store.inTransaction()).toBe(false);
 });
+
+test("two apps in one process on one file both finish, where one waits for the other's write lock", async () =>
+{
+    const folder = mkdtempSync(join(tmpdir(), "kit-two-apps-"));
+    const file = join(folder, "app.db");
+    const first = database({ file, tables: { a: { rows } } });
+    const second = database({ file, busyMs: 2_000, tables: { a: { rows } } });
+
+    first.forPlugin("a").$client.exec(CREATE);
+
+    const holding = first.tx("a", async (db) =>
+    {
+        await (db as Db).insert(rows).values({ id: "first" });
+        await wait(100);
+    });
+    const waiting = second.tx("a", async (db) =>
+    {
+        await (db as Db).insert(rows).values({ id: "second" });
+    });
+
+    await Promise.all([holding, waiting]);
+
+    const kept = await first.forPlugin("a").select().from(rows);
+
+    expect(kept.map((row) => row.id).sort()).toEqual(["first", "second"]);
+
+    await first.close();
+    await second.close();
+    rmSync(folder, { recursive: true, force: true });
+});
+
+test("a job claimed while a transaction is open keeps its claim when that transaction rolls back", async () =>
+{
+    const jobs = store.schedule?.();
+    const now = Date.now();
+
+    await jobs?.save(undefined, { id: "job-1", plugin: "a", command: "a.run", input: {}, at: now - 1_000, attempts: 0 });
+
+    const rolledBack = store.tx("a", async () =>
+    {
+        await wait(50);
+
+        throw new Error("the work failed");
+    });
+    const claimed = jobs?.claim(now, 10);
+
+    await expect(rolledBack).rejects.toThrow("the work failed");
+    expect(await claimed).toHaveLength(1);
+    expect(await jobs?.counts?.(now)).toMatchObject({ due: 0, running: 1 });
+});
+
+test("SQLite older than 3.39 is refused by name, and newer ones are taken", () =>
+{
+    expect(() => refuseOldSqlite("3.38.5")).toThrow("SQLite 3.38.5 is older than 3.39");
+    expect(() => refuseOldSqlite("3.39.0")).not.toThrow();
+    expect(() => refuseOldSqlite("4.0.0")).not.toThrow();
+});
+

@@ -68,13 +68,13 @@ export function database(settings: StoreOptions): Store<DrizzleDb>
         /** Where events wait, in this same database. */
         outbox: (settings: { leaseMs?: number } = {}): Outbox =>
         {
-            return outboxOver(sql, settings);
+            return outboxOver(sql, settings, { outside: backing.write });
         },
 
         /** Where later work waits, in this same database. */
         schedule: (settings: { leaseMs?: number } = {}): Schedule =>
         {
-            return scheduleOver(sql, settings);
+            return scheduleOver(sql, settings, { outside: backing.write });
         },
 
         /** How a scope narrows a query, over the tables one plugin declared. */

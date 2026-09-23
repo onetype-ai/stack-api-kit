@@ -33,7 +33,7 @@ is held until the commit, so a listener never acts on a write that rolled
 back.
 
 SQLite takes one writer: keep a transaction short, and never await a network
-call inside one.
+call inside one. It needs SQLite 3.39 or newer; start refuses an older one.
 
 ## Rules
 

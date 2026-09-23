@@ -4,6 +4,7 @@ import type Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 
 import { queue } from "./queue";
+import { beginImmediate } from "./sql";
 
 /** One plugin's drizzle tables keyed by the name its contract declares them under; the values are opaque here so the kit never depends on a drizzle table's shape. */
 export type TablesByName = Readonly<Record<string, unknown>>;
@@ -68,7 +69,14 @@ export function store(holding: StoreInternals)
         const turn = counter;
         const name = `sp_${String(turn)}`;
 
-        holding.connection.exec(nested ? `SAVEPOINT ${name}` : "BEGIN IMMEDIATE");
+        if (nested)
+        {
+            holding.connection.exec(`SAVEPOINT ${name}`);
+        }
+        else
+        {
+            await beginImmediate(holding.connection);
+        }
 
         try
         {

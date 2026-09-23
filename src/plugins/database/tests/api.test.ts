@@ -312,4 +312,19 @@ describe("migrations", () =>
 
         await store.close();
     });
+
+    test("refuses to migrate inside a transaction a plugin opened, rather than joining it", async () =>
+    {
+        const store = database({ file: ":memory:", tables: { items: { items } } });
+
+        await store.tx("items", async () =>
+        {
+            await expect(store.migrate([{ plugin: "items", from: folder({ "0001-init.sql": CREATE }) }]))
+                .rejects.toThrow(/store\.migrate asked for a transaction while another is open.*Call store\.migrate outside/);
+        });
+
+        expect(await store.migrate([{ plugin: "items", from: folder({ "0001-init.sql": CREATE }) }])).toHaveLength(1);
+
+        await store.close();
+    });
 });

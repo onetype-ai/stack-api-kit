@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import Database from "better-sqlite3";
 
-import { schedule } from "../../database/api";
+import { database, schedule } from "../../database/api";
 import { createKernel, definePlugin } from "../api";
 
 function startServer(): ReturnType<typeof createKernel>
@@ -89,7 +89,7 @@ describe("a name that lives on every object", () =>
             },
         });
 
-        const kernel = createKernel({ plugins: [billing], schedule: schedule(new Database(":memory:")) });
+        const kernel = createKernel({ plugins: [billing], db: database({ file: ":memory:", tables: {} }), schedule: schedule(new Database(":memory:")) });
 
         await kernel.start();
 

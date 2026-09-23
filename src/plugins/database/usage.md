@@ -7,17 +7,15 @@ server needs from the first write. Or another database, or none.
 
 ## Purpose
 
-Every plugin otherwise opens its own connection and picks its own journal
-mode; one, configured once, is how no write is lost to a default nobody
-chose. A handle names its plugin's tables, so naming another's will not
-compile.
+One connection, configured once, so no write is lost to a default nobody
+chose. A handle names its plugin's tables; naming another's won't compile.
 
 ## Usage
 
 ```ts
 const store = database({ file: "./data/app.db", tables: { items } });
 
-store.migrate([{ plugin: "items", from: "./plugins/items/migrations" }]);
+await store.migrate([{ plugin: "items", from: "./plugins/items/migrations" }]);
 
 await ctx.tx(async (inside) =>
 {
@@ -29,9 +27,9 @@ await ctx.tx(async (inside) =>
 - `forPlugin(plugin)` hands a plugin a Drizzle handle over its own tables.
   `tx` runs work in one transaction, rolled back if it throws; one inside
   another is a savepoint, never a second.
-- `tx` and `write` are serialised: a transaction belongs to the connection,
-  not the call that opened it, so a query issued during another's would join
-  it and die with its rollback.
+- `tx`, `write` and the outbox's and schedule's own work are serialised: a
+  query issued during another's transaction would join it and die with its
+  rollback.
 - WAL, `foreign_keys` and a busy timeout are set on open; SQLite defaults
   none. `close` ends it.
 
@@ -47,6 +45,7 @@ Given none, nothing opens, and a plugin declaring tables is refused by name.
 ## Refuses
 
 - A handle for a plugin that declared no tables, naming it.
+- `migrate` inside an open transaction (`JOINED_TRANSACTION`); SQLite < 3.39.
 - A migration whose hash no longer matches its file, one outside
   `NNNN-name.sql`, or two sharing a number.
 - Reaching the database after `close`, or `ctx.db` where there is none.

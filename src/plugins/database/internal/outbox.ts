@@ -5,9 +5,9 @@ import type Database from "better-sqlite3";
 import type { FailedEvent, OutboxMessage, Outbox } from "../../kernel/api";
 
 import { leaseOf } from "./schedule";
-import { sqliteSql } from "./sql";
+import { serialized, sqliteSql } from "./sql";
 
-import type { Sql } from "./sql";
+import type { Around, Sql } from "./sql";
 
 type Row = { id: string; plugin: string; name: string; payload: string; heard: string | null; attempts: number };
 
@@ -90,11 +90,13 @@ function addHeardStatement(sql: Sql): string
  * `within` answers the statements a transaction's own handle runs, where the database needs the transaction's
  * connection rather than any from the pool; SQLite has one connection and answers `sql` itself.
  */
-export function outboxOver(sql: Sql, settings: { leaseMs?: number } = {}, within: (db: unknown) => Sql = () => sql): Outbox
+export function outboxOver(sql: Sql, settings: { leaseMs?: number } = {}, around: Around = {}): Outbox
 {
     const holder = randomUUID();
     const leaseMs = leaseOf(settings);
     const ready = prepare(sql);
+    const within = around.within ?? (() => sql);
+    const free = around.outside === undefined ? sql : serialized(sql, around.outside);
 
     ready.catch(() => undefined);
 
@@ -123,14 +125,14 @@ export function outboxOver(sql: Sql, settings: { leaseMs?: number } = {}, within
 
             // A failure, a closed connection during shutdown included, rejects rather than being swallowed:
             // a row wrongly taken as sent is an event lost, and one left behind is only delivered again.
-            await sql.run(`DELETE FROM "kit_outbox" WHERE "id" = ?`, [id]);
+            await free.run(`DELETE FROM "kit_outbox" WHERE "id" = ?`, [id]);
         },
 
         pending: async () =>
         {
             await ready;
 
-            const rows = await sql.rows<{ id: string; plugin: string; name: string; payload: string }>(
+            const rows = await free.rows<{ id: string; plugin: string; name: string; payload: string }>(
                 `SELECT "id", "plugin", "name", "payload" FROM "kit_outbox" WHERE "failedAt" IS NULL ORDER BY "writtenAt"`,
             );
 
@@ -148,7 +150,7 @@ export function outboxOver(sql: Sql, settings: { leaseMs?: number } = {}, within
         {
             await ready;
 
-            const rows = await sql.rows<Row>(`
+            const rows = await free.rows<Row>(`
                 UPDATE "kit_outbox" SET "takenAt" = ?, "takenBy" = ?
                 WHERE "id" IN (
                     SELECT "id" FROM "kit_outbox"
@@ -173,7 +175,7 @@ export function outboxOver(sql: Sql, settings: { leaseMs?: number } = {}, within
         {
             await ready;
 
-            const { changes } = await sql.run(`UPDATE "kit_outbox" SET "takenAt" = ? WHERE "id" = ? AND "takenBy" = ?`, [now, id, holder]);
+            const { changes } = await free.run(`UPDATE "kit_outbox" SET "takenAt" = ? WHERE "id" = ? AND "takenBy" = ?`, [now, id, holder]);
 
             return changes > 0;
         },
@@ -181,13 +183,13 @@ export function outboxOver(sql: Sql, settings: { leaseMs?: number } = {}, within
         markHeard: async (id: string, listener: string) =>
         {
             await ready;
-            await sql.run(addHeardStatement(sql), [listener, id, holder, listener]);
+            await free.run(addHeardStatement(sql), [listener, id, holder, listener]);
         },
 
         markRetry: async (id: string, heard: readonly string[], attempts: number, at: number) =>
         {
             await ready;
-            await sql.run(
+            await free.run(
                 `UPDATE "kit_outbox" SET "heard" = ?, "attempts" = ?, "retryAt" = ?, "takenAt" = NULL, "takenBy" = NULL WHERE "id" = ? AND ("takenBy" IS NULL OR "takenBy" = ?)`,
                 [JSON.stringify(heard), attempts, at, id, holder],
             );
@@ -196,7 +198,7 @@ export function outboxOver(sql: Sql, settings: { leaseMs?: number } = {}, within
         markDead: async (id: string, heard: readonly string[], attempts: number, at: number) =>
         {
             await ready;
-            await sql.run(
+            await free.run(
                 `UPDATE "kit_outbox" SET "heard" = ?, "attempts" = ?, "failedAt" = ?, "takenAt" = NULL, "takenBy" = NULL WHERE "id" = ? AND ("takenBy" IS NULL OR "takenBy" = ?)`,
                 [JSON.stringify(heard), attempts, at, id, holder],
             );
@@ -206,7 +208,7 @@ export function outboxOver(sql: Sql, settings: { leaseMs?: number } = {}, within
         {
             await ready;
 
-            const rows = await sql.rows<{ id: string; plugin: string; name: string; heard: string | null; attempts: number; failedAt: number }>(
+            const rows = await free.rows<{ id: string; plugin: string; name: string; heard: string | null; attempts: number; failedAt: number }>(
                 `SELECT "id", "plugin", "name", "heard", "attempts", "failedAt" FROM "kit_outbox" WHERE "failedAt" IS NOT NULL ORDER BY "failedAt"`,
             );
 
@@ -217,7 +219,7 @@ export function outboxOver(sql: Sql, settings: { leaseMs?: number } = {}, within
         {
             await ready;
 
-            const [row] = await sql.rows<{ waiting: number | string | null; retrying: number | string | null; dead: number | string | null }>(`
+            const [row] = await free.rows<{ waiting: number | string | null; retrying: number | string | null; dead: number | string | null }>(`
                 SELECT
                     SUM(CASE WHEN "failedAt" IS NULL AND "attempts" = 0 THEN 1 ELSE 0 END) AS "waiting",
                     SUM(CASE WHEN "failedAt" IS NULL AND "attempts" > 0 THEN 1 ELSE 0 END) AS "retrying",
@@ -232,7 +234,7 @@ export function outboxOver(sql: Sql, settings: { leaseMs?: number } = {}, within
         {
             await ready;
 
-            const { changes } = await sql.run(`UPDATE "kit_outbox" SET "failedAt" = NULL, "attempts" = 0, "retryAt" = ? WHERE "id" = ? AND "failedAt" IS NOT NULL`, [now, id]);
+            const { changes } = await free.run(`UPDATE "kit_outbox" SET "failedAt" = NULL, "attempts" = 0, "retryAt" = ? WHERE "id" = ? AND "failedAt" IS NOT NULL`, [now, id]);
 
             return changes > 0;
         },

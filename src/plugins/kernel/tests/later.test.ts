@@ -240,6 +240,7 @@ describe("work asked for later", () =>
                     },
                 },
             })],
+            db: bare,
             schedule: schedule(connection),
         });
 
@@ -279,7 +280,7 @@ describe("work asked for later", () =>
     test("refuses a command the plugin does not declare", async () =>
     {
         const connection = new Database(":memory:");
-        const kernel = createKernel({ plugins: [createScheduled([])], schedule: schedule(connection) });
+        const kernel = createKernel({ plugins: [createScheduled([])], db: bare, schedule: schedule(connection) });
 
         await kernel.start();
 
@@ -375,6 +376,16 @@ describe("work asked for later", () =>
         expect(await jobs.counts?.(Date.now())).toEqual({ due: 0, later: 0, running: 0, abandoned: 0 });
 
         await kernel.stop();
+        connection.close();
+    });
+
+    test("refuses to start with a schedule and no store, naming the fix", async () =>
+    {
+        const connection = new Database(":memory:");
+        const kernel = createKernel({ plugins: [createScheduled([])], schedule: schedule(connection) });
+
+        await expect(kernel.start()).rejects.toThrow(/schedule but no db.*Pass db/);
+
         connection.close();
     });
 });
