@@ -53,6 +53,10 @@
 
   Put it in the transaction that writes the work it belongs to, where there
   is one.
+  Where there is none (a route that only schedules), the transaction above
+  holds the job alone, and is still what keeps it.
+- A sync function that schedules (`ask(ctx, …): boolean`) becomes async, since
+  it opens `ctx.tx`, and each caller up to the route awaits it.
 - A store of your own: `migrate` and `close` return Promises, and an outbox
   or schedule of your own returns one from `save`.
 - A test calling `store.migrate(...)` or `store.close()` awaits it.
