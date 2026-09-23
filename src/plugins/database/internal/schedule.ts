@@ -18,6 +18,22 @@ export function lockingOf(sql: Sql): string
     return sql.dialect === "postgres" ? " FOR UPDATE SKIP LOCKED" : "";
 }
 
+/** A key every process creating the kit's own tables takes on Postgres. */
+const CREATING = 7_239_104_218;
+
+/**
+ * Creates tables on Postgres one process at a time. Two processes starting together would each run
+ * CREATE TABLE IF NOT EXISTS, which Postgres does not guard against a concurrent twin: one of them fails on its catalog.
+ */
+export function createTogether(sql: Sql, script: string): Promise<void>
+{
+    return sql.transaction(async (inside) =>
+    {
+        await inside.rows(`SELECT pg_advisory_xact_lock(?)`, [CREATING]);
+        await inside.exec(script);
+    }, "The kit's own tables");
+}
+
 /** How long a claim holds without a renewal when nothing says otherwise. */
 const LEASE_MS = 60_000;
 
@@ -70,7 +86,7 @@ function prepare(sql: Sql): Promise<void>
 {
     if (sql.now === undefined)
     {
-        return sql.exec(tableOf(sql));
+        return createTogether(sql, tableOf(sql));
     }
 
     sql.now.exec(tableOf(sql));

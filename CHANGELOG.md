@@ -55,6 +55,14 @@
   Postgres, built for the dialect the process uses (`KIT_DIALECT`, else a
   Postgres `DATABASE_URL`, else SQLite).
 - Migration file names drizzle-kit generates, `NNNN_name.sql`.
+- `postgres({ url, poolSize } | { pglite, schema })`: the same store over a
+  Postgres server (a pool; each transaction holds a client of its own, and
+  claims take any other) or PGlite (one connection, like SQLite). `pg` and
+  `@electric-sql/pglite` are optional peers.
+- The kit's own suites run on SQLite and, where they reach a store, on PGlite
+  (`tools/matrix.mjs` names each). What only a server shows, two workers
+  claiming at once, runs with `pnpm test:pg` against `KIT_PG_URL`
+  (`infra/remote-verify.sh --with-pg`), and fails without it.
 - `Project` checks `[migrations]` (a step in one dialect's folder and not
   the other's) and `[dialect]` (`.get()`, `.all()` or `.run()` on a query,
   which only SQLite answers, with what to write instead).

@@ -4,7 +4,7 @@ import { getTableConfig as liteConfigOf } from "drizzle-orm/sqlite-core";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 // the dialect is read once a module, so each case loads the entry afresh under its own environment
-const load = async (environment: Readonly<Record<string, string>>): Promise<typeof import("../api")> =>
+const load = async (environment: Readonly<Record<string, string | undefined>>): Promise<typeof import("../api")> =>
 {
     for (const [name, value] of Object.entries(environment))
     {
@@ -43,7 +43,7 @@ describe("one table definition", () =>
 {
     test("is a SQLite table when nothing names a dialect", async () =>
     {
-        const tables = await load({ DATABASE_URL: "./data/app.db" });
+        const tables = await load({ KIT_DIALECT: undefined, DATABASE_URL: "./data/app.db" });
 
         const config = liteConfigOf(define(tables) as never);
 
@@ -56,7 +56,7 @@ describe("one table definition", () =>
 
     test.each([
         ["KIT_DIALECT", { KIT_DIALECT: "postgres" }],
-        ["a Postgres DATABASE_URL", { DATABASE_URL: "postgres://app@localhost/app" }],
+        ["a Postgres DATABASE_URL", { KIT_DIALECT: undefined, DATABASE_URL: "postgres://app@localhost/app" }],
     ])("is a Postgres table under %s, with bigint times and jsonb", async (_what, environment) =>
     {
         const tables = await load(environment);

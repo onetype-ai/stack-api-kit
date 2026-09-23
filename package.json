@@ -27,7 +27,8 @@
         "prepublishOnly": "tools/check.sh && tsup && node tools/name-types.mjs",
         "prepack": "tsup && node tools/name-types.mjs",
         "schema": "node tools/schema.mjs",
-        "declared": "node tools/declared.mjs"
+        "declared": "node tools/declared.mjs",
+        "test:pg": "vitest run --config vitest.pg.config.ts"
     },
     "dependencies": {
         "zod": "^4.5.4"

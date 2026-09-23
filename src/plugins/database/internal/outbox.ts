@@ -4,7 +4,7 @@ import type Database from "better-sqlite3";
 
 import type { FailedEvent, OutboxMessage, Outbox } from "../../kernel/api";
 
-import { leaseOf, lockingOf } from "./schedule";
+import { createTogether, leaseOf, lockingOf } from "./schedule";
 import { serialized, sqliteSql } from "./sql";
 
 import type { Around, Sql } from "./sql";
@@ -47,7 +47,7 @@ function prepare(sql: Sql): Promise<void>
 {
     if (sql.now === undefined)
     {
-        return sql.exec(tableOf(sql));
+        return createTogether(sql, tableOf(sql));
     }
 
     sql.now.exec(tableOf(sql));

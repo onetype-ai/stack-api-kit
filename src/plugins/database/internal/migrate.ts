@@ -207,8 +207,16 @@ export function refuseUnwritable(connection: Database.Database, tables: readonly
 }
 
 /** What migrate does once it holds the lock. Its failure rolls the lot back. */
+/** A key every process migrating one Postgres database takes, so two boots migrate one after the other. */
+const MIGRATING = 7_239_104_217;
+
 async function applyMigrations(sql: Sql, sources: readonly MigrationSource[]): Promise<MigrationStep[]>
 {
+    if (sql.dialect === "postgres")
+    {
+        await sql.rows(`SELECT pg_advisory_xact_lock(?)`, [MIGRATING]);
+    }
+
     await sql.exec(LEDGER);
 
     const applied = new Map<string, string>();

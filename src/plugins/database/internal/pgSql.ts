@@ -35,6 +35,18 @@ export function numbered(text: string): string
 
 type Held = { client: PgClient; depth: number };
 
+/** The kit's own SQL on one held connection: what a transaction's own work runs on. */
+export function pgOn(client: PgClient): Sql
+{
+    return {
+        dialect: "postgres",
+        run: async (text, params) => ({ changes: (await client.query(numbered(text), params)).changes }),
+        rows: async <Row,>(text: string, params?: readonly SqlValue[]) => (await client.query<Row>(numbered(text), params)).rows,
+        exec: (script) => client.exec(script),
+        transaction: () => Promise.reject(new Error("pgOn answers statements only; a transaction on a held connection goes through pgSql.")),
+    };
+}
+
 export type PgSqlOptions = {
     /** Where a transaction waits for the one before it; left out, it opens at once, as a pool's own client allows. */
     queue?: <Result>(run: () => Promise<Result>) => Promise<Result>;
@@ -54,10 +66,7 @@ export function pgSql(connections: PgConnections, options: PgSqlOptions = {}): S
     const alone = options.queue ?? (<Result,>(run: () => Promise<Result>) => run());
 
     const on = (client: PgClient, depth: number): Sql => ({
-        dialect: "postgres",
-        run: async (text, params) => ({ changes: (await client.query(numbered(text), params)).changes }),
-        rows: async <Row,>(text: string, params?: readonly SqlValue[]) => (await client.query<Row>(numbered(text), params)).rows,
-        exec: (script) => client.exec(script),
+        ...pgOn(client),
         transaction: (run) => savepoint({ client, depth }, run),
     });
 
