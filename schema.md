@@ -14,6 +14,9 @@
 > Turns a declared scope into a condition.
 ### createScopeFilter(tablesByPlugin: Readonly<Record<string, Readonly<Record<string, unknown>>>>): ScopeFilter
 
+> The id of the request the running code serves, or undefined outside one.
+### currentRequestId(): string | undefined
+
 > Opens a database and holds one handle per plugin over it.
 ### database(settings: StoreOptions): Store<DrizzleDb>
 
@@ -41,8 +44,14 @@
 > The same discovery for a project with no bundler to glob for it.
 ### discoverFrom(folder: string): Promise<DiscoveryResult>
 
+> The dial's own check, for the moment an address is saved: a row whose url passes here is one the
+> kernel will reach, and one refused here would be refused at the dial, by the same rules. The name is
+> resolved now; the dial checks it again, since what it resolves to may change.
+### Egress: { check: (url: string, lookup?: Lookup) => Promise<EgressVerdict> }
+    check: (url: string, lookup?: Lookup) => Promise<EgressVerdict>
+
 > Configuration read from `process.env`, refused by name rather than repaired; `rules` holds the same checks over a value read elsewhere.
-### Env: { rules: { text: (name: string, given: string | undefined, fallback?: string) => string | undefined; number: (name: string, given: string | undefined, fallback: number, min?: number, max?: number) => number; flag: (name: string, given: string | undefined, fallback: boolean) => boolean; list: (given: string | undefined) => readonly string[]; oneOf: <Allowed extends string>(name: string, given: string | undefined, allowed: readonly Allowed[], fallback: Allowed) => Allowed }; text: (name: string, fallback?: string) => string | undefined; required: (name: string) => string; number: (name: string, fallback: number, min?: number, max?: number) => number; flag: (name: string, fallback: boolean) => boolean; list: (name: string) => readonly string[]; oneOf: <Allowed extends string>(name: string, allowed: readonly Allowed[], fallback: Allowed) => Allowed }
+### Env: { rules: { text: (name: string, given: string | undefined, fallback?: string) => string | undefined; number: (name: string, given: string | undefined, fallback: number, min?: number, max?: number) => number; flag: (name: string, given: string | undefined, fallback: boolean) => boolean; list: (given: string | undefined) => readonly string[]; oneOf: <Allowed extends string>(name: string, given: string | undefined, allowed: readonly Allowed[], fallback: Allowed) => Allowed }; text: (name: string, fallback?: string) => string | undefined; required: (name: string) => string; number: (name: string, fallback: number, min?: number, max?: number) => number; flag: (name: string, fallback: boolean) => boolean; /** Whether this process runs as production: `NODE_ENV=production`. What must never happen there asks here itself, so no caller can vouch for it. */ isProduction: () => boolean; /** Whether a plugin marked `fake` may run in production anyway: `ALLOW_FAKE=true`, a decision written where the deployment is. */ allowsFake: () => boolean; list: (name: string) => readonly string[]; oneOf: <Allowed extends string>(name: string, allowed: readonly Allowed[], fallback: Allowed) => Allowed }
     rules: {
     text: (name: string, given: string | undefined, fallback?: string) => string | undefined
     number: (name: string, given: string | undefined, fallback: number, min?: number, max?: number) => number
@@ -54,6 +63,10 @@
     required: (name: string) => string
     number: (name: string, fallback: number, min?: number, max?: number) => number
     flag: (name: string, fallback: boolean) => boolean
+    // Whether this process runs as production: `NODE_ENV=production`. What must never happen there asks here itself, so no caller can vouch for it.
+    isProduction: () => boolean
+    // Whether a plugin marked `fake` may run in production anyway: `ALLOW_FAKE=true`, a decision written where the deployment is.
+    allowsFake: () => boolean
     list: (name: string) => readonly string[]
     oneOf: <Allowed extends string>(name: string, allowed: readonly Allowed[], fallback: Allowed) => Allowed
 
@@ -76,13 +89,20 @@
     sweep: () => number
     size: () => number
 
+> Which locale to answer in: the stored choice when it is supported, else each wanted tag in turn, exact
+> (case-insensitive) before language-only (`de-AT` finds `de`, `de` finds the first `de-*`), else the fallback.
+> The same contract, and the same cases, as the app kit's.
+### Locale: { negotiate: (accepted: string | readonly string[], supported: readonly string[], fallback: string, chosen?: string) => string }
+    negotiate: (accepted: string | readonly string[], supported: readonly string[], fallback: string, chosen?: string) => string
+
 > One JSON object a line, written to stdout; a line never throws while being written.
-### Log: { levels: readonly ["debug", "info", "warn", "error"]; severity: Readonly<Record<Level, number>>; line: (level: Level, message: string, about?: Readonly<Record<string, unknown>>) => string; forJson: (_key: string, value: unknown) => unknown; forLevel: (level?: Level) => Logger }
+### Log: { levels: readonly ["debug", "info", "warn", "error"]; severity: Readonly<Record<Level, number>>; line: (level: Level, message: string, about?: Readonly<Record<string, unknown>>, options?: RedactionOptions) => string; forJson: (_key: string, value: unknown) => unknown; /** A logger writing at `level` and above; `personal: true` also masks emails and addresses, keys and values alike. */ forLevel: (level?: Level, options?: RedactionOptions) => Logger }
     levels: readonly ["debug", "info", "warn", "error"]
     severity: Readonly<Record<Level, number>>
-    line: (level: Level, message: string, about?: Readonly<Record<string, unknown>>) => string
+    line: (level: Level, message: string, about?: Readonly<Record<string, unknown>>, options?: RedactionOptions) => string
     forJson: (_key: string, value: unknown) => unknown
-    forLevel: (level?: Level) => Logger
+    // A logger writing at `level` and above; `personal: true` also masks emails and addresses, keys and values alike.
+    forLevel: (level?: Level, options?: RedactionOptions) => Logger
 
 > Names a unit, and answers the function that marks a number as one.
 ### measure<Unit extends string>(_unit: Unit): (count: number) => Tagged<Unit>
@@ -92,6 +112,9 @@
 > or another, for the listeners that have not heard it.
 ### outbox(connection: Database.Database, settings?: { leaseMs?: number }): Outbox
     leaseMs?: number
+
+> A value made safe to write: hidden keys replaced, text masked, an error read apart, every level walked once.
+### redact(value: unknown, options?: RedactionOptions, seen?: WeakSet<object>): unknown
 
 > What the caller is told about a failure.
 ### refusalBodyFor(cause: unknown): RefusalBody
@@ -113,10 +136,14 @@
 ### serve(options: ServerOptions): Hono
 
 > A started kernel, put on a port and taken off one cleanly.
-### Server: { from: typeof from; listen: typeof listen; watch: typeof watch; open: (api: StartedApp, options: OpenOptions) => void }
+### Server: { from: typeof from; listen: typeof listen; watch: typeof watch; /** A stop that runs once, closing every socket 1012 first, for a caller stopping without a signal. */ closeOnce: typeof closeOnce; /** The sockets a listening server holds, for `closeOnce` to close. */ socketsOf: typeof socketsOf; open: (api: StartedApp, options: OpenOptions) => void }
     from: typeof from
     listen: typeof listen
     watch: typeof watch
+    // A stop that runs once, closing every socket 1012 first, for a caller stopping without a signal.
+    closeOnce: typeof closeOnce
+    // The sockets a listening server holds, for `closeOnce` to close.
+    socketsOf: typeof socketsOf
     open: (api: StartedApp, options: OpenOptions) => void
 
 > What a route says about the session, and what never reaches the caller.
@@ -136,6 +163,15 @@
 
 > Boots the whole application, refusing before it serves anything: declared tables or indexes no migration creates, migrations reading another plugin's table without depending on it, tables with no database, and a store missing `migrate` or `close`.
 ### start(options: StartOptions): Promise<StartedApp>
+
+> Schemas that read what was written earlier: a JSON column, a published document. A row written under
+> yesterday's schema is read with today's, so a project's stored-contract check holds each to its lock.
+> Event payloads and command inputs need no marking: they are held to it as declared.
+### Stored: { /** Marks a schema as one that reads stored data, under a name unique in the process: `"<plugin>.<thing>"`. */ define: <Schema extends z.ZodType>(name: string, schema: Schema) => Schema; /** Every schema marked so far. */ all: () => ReadonlyMap<string, z.ZodType> }
+    // Marks a schema as one that reads stored data, under a name unique in the process: `"<plugin>.<thing>"`.
+    define: <Schema extends z.ZodType>(name: string, schema: Schema) => Schema
+    // Every schema marked so far.
+    all: () => ReadonlyMap<string, z.ZodType>
 
 > A budget that counts nothing and allows everything.
 ### unlimited(): { spend: () => RateLimitResult; refund: () => void; sweep: () => number; size: () => number }
@@ -175,7 +211,11 @@
     readonly status: number
     readonly code: string
     readonly fields: Readonly<Record<string, string>> | undefined
-    constructor(status: number, code: string, message: string, fields?: Readonly<Record<string, string>>)
+    // How many seconds the caller should wait before trying again, sent as `retry-after`.
+    readonly retryAfter: number | undefined
+    constructor(status: number, code: string, message: string, fields?: Readonly<Record<string, string>>, options?: {
+    retryAfter?: number
+    })
 
 > What a handler returns when the body alone is not the answer.
 ### Reply
@@ -212,6 +252,12 @@
     status?: number
     etag?: string
     headers?: Readonly<Record<string, string>>
+    }): Reply
+    // A CSV download, for a route declaring `file` with "text/csv": RFC 4180 quoting, one header row from `columns`,
+    // and every cell a spreadsheet would run as a formula (starting with =, +, -, @, a tab or a return) kept as text.
+    static csv(rows: readonly Readonly<Record<string, unknown>>[], options: {
+    columns: readonly string[]
+    filename: string
     }): Reply
     // Events, for a route declaring `streams`: `headers` only names the route `sends`, printable, up to 256 characters each;
     // `end` (1 to 64 printable characters) is written raw as the last `data:` line when the events finish, never after a failure;
@@ -353,6 +399,8 @@
     // The same plugin, acting for the scope this names, where a listener runs on nobody's behalf: `ctx.forScope(gone.shopId)`.
     // Refused inside a request, where the scope is decided by who is asking: choosing another there is how a caller reaches another tenant's rows.
     forScope: (claim: string) => Context<Config, Services, Db>
+    // Whose scope this acts in: the caller's claim, or what `forScope` named; undefined for a plugin declaring no scope, or where nobody is placed.
+    scope: string | undefined
     // Another plugin's services, by name. Only what `dependsOn` names.
     use: <Api>(plugin: string) => Api
 
@@ -443,6 +491,8 @@
     allowedHosts?: readonly string[] | "anywhere"
     // This plugin reads `ctx.work`: how scheduled work and the outbox are doing. Any other plugin reading it is refused; guard what it answers to platform operators.
     watchesWork?: boolean
+    // This plugin stands in for a real provider (mail that is never sent, payments never charged): `start` refuses it in production unless `ALLOW_FAKE=true`.
+    fake?: boolean
     services?: (ctx: Context<z.infer<Schema>, never, Db>) => Services
     // The endpoints this plugin answers, each carrying its own input schema; a narrower handler input is sound because the kernel parses before it calls.
     routes?: readonly AnyRoute<Context<z.infer<Schema>, NoExtraKeys<Services>, Db>>[]
@@ -493,6 +543,9 @@
 
 > A drizzle handle over the one shared better-sqlite3 connection, scoped to a single plugin's tables; asking for one for a plugin declaring no tables throws.
 ### DrizzleDb = ReturnType<typeof drizzle>
+
+> What `ctx.fetch` to "anywhere" would do with an address: dial it, or refuse it and why.
+### EgressVerdict = { allowed: true } | { allowed: false; reason: RefusalReason }
 
 > A listener, participant or command, whatever payload it was written for. See `AnyRoute`.
 ### EmittedEvent<Context> = Describable &
@@ -660,6 +713,8 @@
     }
     // Hands what the outbox says is due to the listeners that have not heard it, once, and waits for it.
     redeliver: () => Promise<number>
+    // Waits until every event delivery under way has settled, and those they started.
+    settled: () => Promise<void>
     // Runs whatever the schedule says is due, once, and waits for it.
     due: () => Promise<number>
     run: (command: string, input: unknown, identity?: Identity) => Promise<void>
@@ -901,6 +956,10 @@
     requests: number
     seconds: number
 
+> What a log line keeps back: credentials always, a person's details where asked.
+### RedactionOptions
+    personal?: boolean
+
 > What a client is told: a status, a stable code, and one sentence.
 ### RefusalBody
     status: number
@@ -956,10 +1015,12 @@
     anyOrigin?: boolean
     // Requests per window for one caller.
     // `countSuccess: false` counts only failed calls, for a route guarding a secret: five wrong passwords is an attack, five right ones is five devices.
+    // `key` is who a window counts: the caller's identity (or address, when signed out) by default, `"address"` for the address alone, or a function of the parsed input, as a sign-in counts per email; the input is then parsed before the limit is spent.
     limit?: {
     requests: number
     seconds: number
     countSuccess?: boolean
+    key?: "identity" | "address" | ((input: never) => string)
     }
     // What kind of body this takes, JSON unless it says otherwise; `"form"` reads `multipart/form-data`, file parts as `UploadedFile`s; `"urlencoded"` reads `application/x-www-form-urlencoded` as string fields (a name sent twice as a list), its bytes in `ctx.sent` with `keepsRaw`, as a provider signs them.
     // Declared rather than sniffed, so a route expecting JSON can never be handed a file.
@@ -1000,11 +1061,11 @@
     // It threw too many times. Stop trying; with `lease`, only if that claim still holds it.
     giveUp: (id: string, lease?: string) => Promise<void>
 
-> How a scope becomes a condition the database understands.
-### ScopeFilter = (table: string, column: string, value: string) => unknown
+> How a scope becomes a condition the database understands; `plugin` names whose table it is, since two plugins may each name a table alike.
+### ScopeFilter = (table: string, column: string, value: string, plugin?: string) => unknown
 
 > What `serve` needs to know.
-### ServerOptions = { kernel: Kernel; identify?: ((c: Context$1) => Identity | undefined | Promise<Identity | undefined>) | undefined; from?: ((c: Context$1) => string) | undefined; origins?: readonly string[]; methods?: readonly string[]; headers?: readonly string[]; maxAge?: number; bodyBytes?: number; session?: SessionOptions | undefined; log?: ((level: "info" | "warn" | "error", line: string, about?: Readonly<Record<string, unknown>>) => void) | undefined; readiness?: (() => Promise<{ ready: boolean } & Readonly<Record<string, unknown>>>) | undefined }
+### ServerOptions = { kernel: Kernel; identify?: ((c: Context$1) => Identity | undefined | Promise<Identity | undefined>) | undefined; from?: ((c: Context$1) => string) | undefined; origins?: readonly string[]; methods?: readonly string[]; headers?: readonly string[]; maxAge?: number; exposes?: readonly string[]; bodyBytes?: number; session?: SessionOptions | undefined; log?: ((level: "info" | "warn" | "error", line: string, about?: Readonly<Record<string, unknown>>) => void) | undefined; clientLogs?: { path?: string; maxBytes?: number; requests?: number; seconds?: number } | undefined; hsts?: { maxAge: number; includeSubDomains?: boolean } | undefined; accessLog?: boolean | undefined; readiness?: (() => Promise<{ ready: boolean } & Readonly<Record<string, unknown>>>) | undefined }
 
 > How a route's answer becomes a session cookie.
 ### SessionOptions
@@ -1169,7 +1230,9 @@
 ### findUnusedFields(root: string, separately?: boolean): UnusedField[]
 
 > Every project-wide check in one object, each answering `ProjectProblem[]`; `findAll` runs the lot against sensible defaults and answers an empty array when a project is clean.
-### Project: { findAll: (checking?: ProjectCheckOptions) => ProjectProblem[]; findImportViolations: (root: string, leaving?: readonly string[]) => ProjectProblem[]; /** Where a scoped table is reached without narrowing, which returns another tenant's rows with nothing reporting it. */ findUnscopedReach: (root: string) => ProjectProblem[]; findUnusedFields: (root: string, apart?: boolean) => ProjectProblem[]; findUnexplainedPlugins: (root: string) => ProjectProblem[]; findCopiedVocabulary: (root: string, excused?: readonly string[]) => ProjectProblem[]; findSplitVocabulary: (root: string, excused?: readonly string[]) => ProjectProblem[]; findSharedNames: (root: string, excused?: readonly string[]) => ProjectProblem[]; findOversizedDocs: (root: string, limit: number) => ProjectProblem[]; findUndocumentedKeys: (procedure: string) => ProjectProblem[] }
+### Project: { /** What a project is suggested to require of itself, the same list the app kit names. */ required: readonly ["#docs/usage.md", "#docs/architecture.md"]; findAll: (checking?: ProjectCheckOptions) => ProjectProblem[]; findImportViolations: (root: string, leaving?: readonly string[]) => ProjectProblem[]; /** Where a scoped table is reached without narrowing, which returns another tenant's rows with nothing reporting it. */ findUnscopedReach: (root: string) => ProjectProblem[]; findUnusedFields: (root: string, apart?: boolean) => ProjectProblem[]; findUnexplainedPlugins: (root: string) => ProjectProblem[]; findCopiedVocabulary: (root: string, excused?: readonly string[]) => ProjectProblem[]; findSplitVocabulary: (root: string, excused?: readonly string[]) => ProjectProblem[]; findSharedNames: (root: string, excused?: readonly string[]) => ProjectProblem[]; findOversizedDocs: (root: string, limit: number) => ProjectProblem[]; findUndocumentedKeys: (procedure: string) => ProjectProblem[] }
+    // What a project is suggested to require of itself, the same list the app kit names.
+    required: readonly ["#docs/usage.md", "#docs/architecture.md"]
     findAll: (checking?: ProjectCheckOptions) => ProjectProblem[]
     findImportViolations: (root: string, leaving?: readonly string[]) => ProjectProblem[]
     // Where a scoped table is reached without narrowing, which returns another tenant's rows with nothing reporting it.
@@ -1198,6 +1261,21 @@
 > Boots a kernel on an in-memory database with migrations already applied; a dependency the test did not pass is added from the fixture `configureTestKernels` registered, with the fixture's config under the test's own, field by field. It records every event, log line and outbound call, throws on an option it does not take, and outbound calls answer `{}` unless `respondWith` says otherwise.
 ### startTestKernel(asked: TestKernelOptions): Promise<TestKernel>
 
+> What an older stored row would fail against today, found from the lock a project commits.
+### StoredContracts: { snapshot: (schema: z.ZodType) => Shape; collect: (plugins: readonly Plugin[]) => Record<string, Shape>; breaches: (name: string, before: Shape, after: Shape, path?: string) => Breach[]; check: (lock: Lock, today: Readonly<Record<string, Shape>>) => Breach[]; /** Every breach between the lock file and these plugins; no lock is one breach naming how to write it. */ checkFile: (lockFile: string, plugins: readonly Plugin[]) => Breach[]; /** * Rewrites the lock from today's schemas. A change an older row would fail against is refused unless each such * schema is named in `breaking` with why, and the migration that carries old rows over; the reason is kept in the lock. */ accept: (lockFile: string, plugins: readonly Plugin[], breaking?: Readonly<Record<string, string>>) => Breach[] }
+    snapshot: (schema: z.ZodType) => Shape
+    collect: (plugins: readonly Plugin[]) => Record<string, Shape>
+    breaches: (name: string, before: Shape, after: Shape, path?: string) => Breach[]
+    check: (lock: Lock, today: Readonly<Record<string, Shape>>) => Breach[]
+    // Every breach between the lock file and these plugins; no lock is one breach naming how to write it.
+    checkFile: (lockFile: string, plugins: readonly Plugin[]) => Breach[]
+    // Rewrites the lock from today's schemas. A change an older row would fail against is refused unless each such
+    // schema is named in `breaking` with why, and the migration that carries old rows over; the reason is kept in the lock.
+    accept: (lockFile: string, plugins: readonly Plugin[], breaking?: Readonly<Record<string, string>>) => Breach[]
+
+> A clock starting at `at` (the current moment when left out) that moves only when told.
+### testClock(at?: number): TestClock
+
 > Pulls the table declarations and migration sources out of a list of plugins, for a test building its own store rather than letting `startTestKernel` build one.
 ### testTables: { tables: (plugins: readonly Plugin[]) => Readonly<Record<string, Readonly<Record<string, unknown>>>>; migrations: (plugins: readonly Plugin[]) => { plugin: string; from: string }[] }
     tables: (plugins: readonly Plugin[]) => Readonly<Record<string, Readonly<Record<string, unknown>>>>
@@ -1212,6 +1290,11 @@
 ### withDependencies(plugins: readonly Plugin[]): Promise<Plugin[]>
 
 ## Types
+
+### Breach
+    name: string
+    path: string
+    change: string
 
 > An inline `z.enum` whose members exactly match a named enum another plugin exports, so `values` is a copy with no name and nothing compares the two.
 ### CopiedVocabulary
@@ -1270,6 +1353,11 @@
     rule: "undeclared" | "deep" | "cycle" | "contract" | "escape" | "twice"
     message: string
 
+### Lock
+    version: 1
+    contracts: Snapshots
+    accepted: readonly Accepted[]
+
 > One line a plugin logged, flattened: `level`, `plugin` and `line` are always there, and whatever the call passed as `about` is spread alongside them.
 ### LogLine = { level: string; plugin: string; line: string } & Readonly<Record<string, unknown>>
 
@@ -1284,6 +1372,7 @@
     // Where pure code shared between plugins lives.
     utils?: string
     docs?: string
+    // Documents this project asks itself to hold, read from `root`; none unless named. `Project.required` is the kit's suggestion.
     required?: readonly string[]
     procedure?: string
     limit?: number
@@ -1332,6 +1421,12 @@
     check: "unbounded"
     message: string
 
+> A clock a test moves by hand, handed to a test kernel as `now`: tomorrow is one call away, and nothing waits.
+### TestClock
+    now: () => number
+    advance: (ms: number) => number
+    set: (at: number) => number
+
 ### TestKernel
     kernel: Kernel
     store: Store<DrizzleDb>
@@ -1343,7 +1438,7 @@
     pushed: () => ChannelMessage[]
     // An identity whose permissions `grants` decided, from claims a test names.
     granted: (claims: Readonly<Record<string, unknown>>, id?: string) => Promise<Identity>
-    // Waits until every listener an emit started has finished.
+    // Waits until every listener an emit started has finished, however long its work takes, outbox or not.
     flush: () => Promise<void>
     // Runs whatever the schedule says is due, once.
     due: () => Promise<number>

@@ -1,6 +1,8 @@
 # Changelog
 
-## 8.1.0
+## 8.2.0
+
+8.1.0 was never published; everything it held is here.
 
 ### Changes you may notice
 
@@ -24,6 +26,20 @@
 - `Project.findAll()` does not yet ask a project's contract procedure to
   name `watchesWork`; from 9.0 it will, as for every other key.
 - `HttpRequestError` is exported from the kernel as well as from `outbound`.
+- `/ws` identifies the socket on upgrade, as a request is identified, and
+  speaks a protocol a client relies on: `$ready`, an answer to every
+  subscribe (`subscribed` or `CHANNEL_REFUSED`), `$ping`, and close codes
+  4000 (lifetime), 4001 (signed out), 4003 (origin), 1009, 1012, 1013 after
+  `$backoff`. A socket that was allowed at connect is identified again
+  every 30 s.
+- With `session` configured, a write carrying the session cookie in any
+  type but JSON, from an origin not in `origins`, answers 403.
+- `Server.from(false)` counts an unknown caller by its socket address rather
+  than one shared "anonymous".
+- Every request leaves one access line, and every line logged while serving
+  it carries `requestId`; `accessLog: false` turns the line off.
+- `Log.line` never writes a credential, by key or by shape.
+- `flush()` waits for every listener an emit started.
 
 ### Added
 
@@ -51,6 +67,21 @@
   `defaults` (outbox, strictReplyHeaders, schedule, sockets) apply to every
   test kernel in the process where a test does not say.
 - `procedures/answers.md`, `procedures/work.md` and `procedures/operations.md`.
+- `Server.from({ trustedProxies })`, `Server.closeOnce`, `Server.socketsOf`,
+  and `sockets` limits on `Server.open`.
+- `ctx.scope`; a plugin without tables may declare a scope naming none.
+- `new Refusal(…, { retryAfter })`; `limit.key`.
+- `access-control-expose-headers` (retry-after, x-request-id, etag,
+  content-disposition), `ServerOptions.exposes`.
+- `kernel.settled()`.
+- `currentRequestId()`, `redact()`, `Log.forLevel(level, { personal })`.
+- `Stored.define`, and `StoredContracts` in `./testing`.
+- `Egress.check(url)`, `Reply.csv(rows, { columns, filename })`.
+- `Env.isProduction()`, `Env.allowsFake()`, `fake: true` refused in
+  production; `testClock()` in `./testing`.
+- `http.clientLogs`, `http.hsts`.
+- `Locale.negotiate`.
+- `Project.required` is read, and `Project.required` suggests a list.
 
 ### Fixed
 
@@ -59,3 +90,8 @@
   it could not emit.
 - A 204 answer now carries no body, and its session headers still become a
   cookie.
+- `createScopeFilter` compared against another plugin's column when two
+  plugins named a table alike.
+- `/ws` took frames up to 100 MiB.
+- `findUnscopedReach` reported a row built with `ctx.stamped` and written as
+  `.values(row)`.

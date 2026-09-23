@@ -146,7 +146,7 @@ was trusted.
 their documentation described had never run and could not: `httpPlugin` needed
 a started kernel, and `kernelPlugin` offered a factory. `mount` does the work.
 
-## 8.1: what the first project built on it needed
+## 8.2: what the first project built on it needed
 
 A project of about thirty plugins ran on 8.0 with its own patch over the
 bundle. Everything generic in that patch is here, each area with its tests
@@ -168,3 +168,12 @@ and each test watched to fail:
 Found while taking it: a plugin with no tables could not open a transaction,
 so with an outbox it could not emit at all; a session cookie on a request
 with a body answered 500; a 204 sign-out would have kept its cookie.
+
+Then what it worked around rather than patched: a socket identified on
+upgrade and speaking a protocol, trusted proxies, cookie writes from other
+origins refused, a scope filter per plugin, keyed limits and Retry-After,
+readable response headers, access lines and request ids, redacted logs,
+stored-contract locks, save-time egress checks, safe CSV, fake providers
+refused in production, locale negotiation. The two tightenings a minor
+release may not make, the reply header allow-list and the test kernel's
+outbox, are opt-in until 9.0.
