@@ -53,6 +53,7 @@ export type {
     Lookup,
     RefusalReason,
     DocumentPolicy,
+    FileType,
     ResolvedAddress,
     StreamedResponse,
 } from "./plugins/kernel/api";

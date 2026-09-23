@@ -46,6 +46,7 @@ export type {
     DescribableWithSchema,
     StreamedResponse,
     DocumentPolicy,
+    FileType,
 } from "./internal/contract";
 
 export type { ListenerFailure } from "./internal/events";

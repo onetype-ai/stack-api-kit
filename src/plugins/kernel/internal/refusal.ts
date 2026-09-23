@@ -1,4 +1,4 @@
-import type { DocumentPolicy } from "./contract";
+import type { DocumentPolicy, FileType } from "./contract";
 import { KernelFault } from "./faults";
 
 /** What a client is told: a status, a stable code, and one sentence. */
@@ -33,6 +33,9 @@ export class Reply
     /** What `Reply.document` gave, read by the kit. */
     document?: { policy: DocumentPolicy | undefined; etag: string | undefined };
 
+    /** What `Reply.file` gave, read by the kit. */
+    file?: { type: FileType; filename: string; etag: string | undefined };
+
     /** Sends the caller somewhere else. */
     static redirect(to: string, permanent = false): Reply
     {
@@ -45,6 +48,16 @@ export class Reply
         const reply = new Reply(options.status ?? 200, html, options.headers ?? {});
 
         reply.document = { policy: options.policy, etag: options.etag };
+
+        return reply;
+    }
+
+    /** A download, for a route declaring `file`: text, bytes, or an iterable of chunks sent as they come; `headers` takes only cache-control and vary. */
+    static file(body: string | Uint8Array | Iterable<string | Uint8Array> | AsyncIterable<string | Uint8Array>, options: { type: FileType; filename: string; status?: number; etag?: string; headers?: Readonly<Record<string, string>> }): Reply
+    {
+        const reply = new Reply(options.status ?? 200, body, options.headers ?? {});
+
+        reply.file = { type: options.type, filename: options.filename, etag: options.etag };
 
         return reply;
     }

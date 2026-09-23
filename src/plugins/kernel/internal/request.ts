@@ -1,5 +1,6 @@
 import { refusalBodyFor, Reply, Refusal } from "./refusal";
 import { documentAnswer, tagged } from "./document";
+import { fileAnswer } from "./file";
 import { eventsRefusal, openStream, STREAM_SECONDS, streamedEvents, type OpenStream, type StreamRegistry } from "./streams";
 import type { z } from "zod";
 
@@ -48,6 +49,9 @@ export type KernelResponse = {
 
     /** Whether a declared document answered, so the body is sent as HTML under its own policy. */
     document?: boolean;
+
+    /** Whether a declared file answered, so the body (text, bytes or chunks) is sent as a download. */
+    file?: boolean;
 };
 
 /** A route the kernel holds, and who declared it. */
@@ -231,11 +235,18 @@ export async function respond(
             return documentAnswer(returned, route as Route<Context> & { document: NonNullable<Route<Context>["document"]> }, plugin, log, incoming);
         }
 
+        if (route.file !== undefined)
+        {
+            return fileAnswer(returned, route as Route<Context> & { file: NonNullable<Route<Context>["file"]> }, plugin, log, incoming);
+        }
+
         const reply = returned instanceof Reply ? returned : undefined;
 
-        if (reply?.document !== undefined)
+        if (reply?.document !== undefined || reply?.file !== undefined)
         {
-            log("error", plugin, `${route.method} ${route.path} answered a document, and declares no document`);
+            const kind = reply.document !== undefined ? "document" : "file";
+
+            log("error", plugin, `${route.method} ${route.path} answered a ${kind}, and declares no ${kind}`);
 
             return { status: 500, body: { code: "INTERNAL", message: "The request could not be completed." } };
         }

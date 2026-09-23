@@ -59,6 +59,9 @@ export type Command<Context, Input extends z.ZodType = z.ZodType> = Describable 
 /** The verbs a route may answer. */
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
+/** What a download may be sent as: never a type a browser would render and run. */
+export type FileType = "text/csv" | "text/plain" | "application/json" | "application/pdf" | "application/zip" | "application/octet-stream";
+
 /** A page's content security policy as named source lists; each is written as one directive, `'none'` where left out for default-src, base-uri and frame-ancestors. A source holding `;`, `,` or whitespace is refused, as are 'unsafe-eval' anywhere and 'unsafe-inline' in scriptSrc. */
 export type DocumentPolicy = {
     defaultSrc?: readonly string[];
@@ -86,6 +89,9 @@ export type Route<Context, Input extends z.ZodType = z.ZodType> = Describable & 
 
     /** Declares an HTML page instead of `output`: `handle` answers `Reply.document(html, …)` or a string. Only such a route may send a policy of its own; frame-ancestors other than 'none' needs `framable: true`. */
     document?: { policy?: DocumentPolicy; framable?: boolean };
+
+    /** Declares a download instead of `output`: `handle` answers `Reply.file(body, { type, filename })`, always sent as an attachment, as one of the types named here. */
+    file?: { types: readonly FileType[] };
 
     /** How long one stream of this route may stay open, in seconds (300 when left out); it then ends with an `error` event of code EXPIRED, and the client reconnects, which checks the caller again. */
     streamSeconds?: number;

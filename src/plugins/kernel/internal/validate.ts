@@ -4,6 +4,7 @@ import * as names from "./names";
 import { tableName } from "./tableName";
 import { isFilterable, numberRanges } from "./output";
 import { policyFor } from "./document";
+import { FILE_TYPES } from "./file";
 import { isKitHeader } from "./replyHeaders";
 
 /** One thing wrong, and everything needed to fix it. */
@@ -414,17 +415,28 @@ function checkLimit(name: string, route: NonNullable<Plugin["definition"]["route
 /** What a route answers with: one answer, a stream of events, or either per request, each through a schema that filters. */
 function checkAnswers(name: string, route: NonNullable<Plugin["definition"]["routes"]>[number], report: ProblemReport): void
 {
-    const answers = (["output", "streams", "document"] as const).filter((key) => route[key] !== undefined);
+    const answers = (["output", "streams", "document", "file"] as const).filter((key) => route[key] !== undefined);
     const answersEither = answers.length === 2 && answers.includes("output") && answers.includes("streams");
 
     if (answers.length === 0)
     {
-        report("INVALID_OUTPUT", name, `Route ${route.method} "${route.path}" declares no output. Name what an answer may carry with output, what each event may carry with streams, or declare a document.`);
+        report("INVALID_OUTPUT", name, `Route ${route.method} "${route.path}" declares no output. Name what an answer may carry with output, what each event may carry with streams, a document, or a file.`);
     }
 
     if (answers.length > 1 && !answersEither)
     {
-        report("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" declares ${answers.join(" and ")}. A route answers once, streams, or serves a document: keep the one it does, or declare output and streams alone to answer either per request.`);
+        report("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" declares ${answers.join(" and ")}. A route answers once, streams, serves a document or a file: keep the one it does, or declare output and streams alone to answer either per request.`);
+    }
+
+    if (route.file !== undefined)
+    {
+        const types: readonly unknown[] = Array.isArray(route.file.types) ? route.file.types : [];
+        const refused = types.filter((type) => typeof type !== "string" || !FILE_TYPES.has(type));
+
+        if (types.length === 0 || refused.length > 0)
+        {
+            report("INVALID_ROUTE", name, `Route ${route.method} "${route.path}" declares file types ${refused.length > 0 ? refused.map((type) => `"${String(type)}"`).join(", ") : "none"}. A file is sent as one of ${[...FILE_TYPES].join(", ")}.`);
+        }
     }
 
     if (route.document !== undefined)

@@ -3,6 +3,7 @@ import type { Context as HonoContext } from "hono";
 
 import type { Identity, Kernel, HttpMethod } from "../../kernel/api";
 import { securityHeaders } from "./headers";
+import { chunkStream } from "./download";
 import { eventStream } from "./events";
 import { cors, type CorsPolicy } from "./origin";
 import { readInput } from "./input";
@@ -382,6 +383,23 @@ export function serve(options: ServerOptions): Hono
             if (answer.status === 204 || answer.status === 205 || answer.status === 304)
             {
                 return c.body(null, answer.status);
+            }
+
+            if (answer.file === true)
+            {
+                const body = answer.body;
+
+                if (typeof body === "string")
+                {
+                    return c.body(body, answer.status as 200);
+                }
+
+                if (body instanceof Uint8Array)
+                {
+                    return c.body(new Uint8Array(body), answer.status as 200);
+                }
+
+                return c.body(chunkStream(body as AsyncIterable<Uint8Array>, c.req.raw.signal), answer.status as 200);
             }
 
             if (answer.document === true && typeof answer.body === "string")
