@@ -26,6 +26,12 @@ http: {
 flight, so it cannot be used to hammer what it checks. Name coarse states
 only; the cause goes to the log.
 
+## Around it
+
+`http.clientLogs: {}` opens `POST /client-logs` for a browser's own
+failures: bounded, counted per address, written to the log only.
+`http.hsts: { maxAge }` sends HSTS; it cannot be taken back until it ends.
+
 ## Refuses
 
 - `ready: false` for a shared dependency.

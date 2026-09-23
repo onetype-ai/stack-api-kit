@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { z } from "zod";
 import type { Context as HonoContext } from "hono";
 
 import type { Identity, Kernel, HttpMethod } from "../../kernel/api";
@@ -7,6 +8,7 @@ import { chunkStream } from "./download";
 import { eventStream } from "./events";
 import { cors, type CorsPolicy } from "./origin";
 import { runTraced } from "./traced";
+import { limiter } from "../../guard/api";
 import { readInput, UNSAFE } from "./input";
 import { cookieIn, sessionCookie, withSessionKey, type SessionOptions } from "./session";
 import { formBody, type UploadedFile } from "./upload";
@@ -38,12 +40,26 @@ export type ServerOptions = {
     /** Where a line goes. */
     log?: ((level: "info" | "warn" | "error", line: string, about?: Readonly<Record<string, unknown>>) => void) | undefined;
 
+    /** Where a browser reports what went wrong on its side: off unless given. Bounded, counted per address, and written to the log only. */
+    clientLogs?: { path?: string; maxBytes?: number; requests?: number; seconds?: number } | undefined;
+
+    /** Tells browsers to reach this origin over https only, for `maxAge` seconds; off unless given, since it cannot be taken back until it expires. */
+    hsts?: { maxAge: number; includeSubDomains?: boolean } | undefined;
+
     /** Whether each request leaves one line saying what it asked, by the route's pattern, how it was answered and how long it took; on unless false. Probes leave one only when they fail. */
     accessLog?: boolean | undefined;
 
     /** What GET /ready answers once the kernel has started: 200 when `ready`, 503 otherwise, the object as the body, so it names only coarse states. Left out, /ready answers whether the kernel started. GET /live and GET /health always answer 200 while the process serves. */
     readiness?: (() => Promise<{ ready: boolean } & Readonly<Record<string, unknown>>>) | undefined;
 };
+
+/** What a browser may report: a level, one line, where it was, and a bounded detail. */
+const CLIENT_REPORT = z.object({
+    level: z.enum(["warn", "error"]),
+    message: z.string().min(1).max(500),
+    page: z.string().max(300).optional(),
+    detail: z.record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]{0,39}$/u), z.union([z.string().max(1000), z.number(), z.boolean(), z.null()])).refine((detail) => Object.keys(detail).length <= 20).optional(),
+}).strict();
 
 /** What an orchestrator asks every few seconds: a line for each would drown the rest. */
 const PROBES: ReadonlySet<string> = new Set(["/live", "/health", "/ready"]);
@@ -410,6 +426,11 @@ export function serve(options: ServerOptions): Hono
         }
 
         c.header("x-request-id", traced);
+
+        if (options.hsts !== undefined)
+        {
+            c.header("strict-transport-security", `max-age=${String(Math.max(0, Math.floor(options.hsts.maxAge)))}${options.hsts.includeSubDomains === true ? "; includeSubDomains" : ""}`);
+        }
     });
 
     const byPath = new Map<string, Set<string>>();
@@ -417,6 +438,48 @@ export function serve(options: ServerOptions): Hono
     app.get("/live", (c) => c.json({ live: true }));
 
     app.get("/health", (c) => c.json({ live: true }));
+
+    const intake = options.clientLogs;
+
+    if (intake !== undefined)
+    {
+        const counting = limiter();
+        const most = intake.maxBytes ?? 8_000;
+
+        // a public door: bounded before it is read, counted per address, and only ever written to the log, which redacts
+        app.post(intake.path ?? "/client-logs", async (c) =>
+        {
+            const from = options.from?.(c) ?? "anonymous";
+
+            if (!counting.spend(`client-logs:${from}`, { requests: intake.requests ?? 30, seconds: intake.seconds ?? 60 }).allowed)
+            {
+                return c.json({ code: "RATE_LIMITED", message: "Too many requests. Try again shortly." }, 429);
+            }
+
+            const raw = await readBytes(c.req.raw.body, most);
+            let report: unknown;
+
+            try
+            {
+                report = raw === undefined ? undefined : JSON.parse(new TextDecoder().decode(raw));
+            }
+            catch
+            {
+                report = undefined;
+            }
+
+            const parsed = CLIENT_REPORT.safeParse(report);
+
+            if (!parsed.success)
+            {
+                return c.json({ code: "INVALID_INPUT", message: "The report is not valid." }, raw === undefined ? 413 : 400);
+            }
+
+            options.log?.(parsed.data.level === "error" ? "error" : "warn", `client: ${parsed.data.message}`, { client: true, ...(parsed.data.page !== undefined && { page: parsed.data.page }), ...(parsed.data.detail !== undefined && { detail: parsed.data.detail }) });
+
+            return c.body(null, 204);
+        });
+    }
 
     app.get("/ready", async (c) =>
     {
