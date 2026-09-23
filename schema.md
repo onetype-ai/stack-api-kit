@@ -1129,8 +1129,9 @@
 > Registers, once per test process (a setup file), where missing dependencies come from. `resolve` is given the names
 > nothing passed provides, in waves as their own dependencies turn up, and each name is asked for once: a resolver
 > may load only those plugins, or answer every plugin it holds. A test that passes every plugin it needs never calls it.
-### configureTestKernels(configuring: { resolve: (missing: readonly string[]) => Promise<TestKernelFixture> }): void
-    resolve: (missing: readonly string[]) => Promise<TestKernelFixture>
+### configureTestKernels(configuring: { resolve?: (missing: readonly string[]) => Promise<TestKernelFixture>; defaults?: TestKernelDefaults }): void
+    resolve?: (missing: readonly string[]) => Promise<TestKernelFixture>
+    defaults?: TestKernelDefaults
 
 > An identity a test controls.
 ### createIdentity(permissions?: readonly string[], id?: string, claims?: Readonly<Record<string, unknown>>): Identity
@@ -1347,6 +1348,9 @@
     // Runs what is due, and what that starts, until nothing is left.
     drain: (maxRounds?: number) => Promise<void>
     stop: () => Promise<void>
+
+> What every test kernel in this process starts from when a test does not say, from `configureTestKernels`.
+### TestKernelDefaults = Pick<TestKernelOptions, "outbox" | "strictReplyHeaders" | "schedule" | "sockets">
 
 > Where a test kernel finds the plugins a test did not pass: every plugin the project holds, and the config each boots with there (a non-secret fixture).
 ### TestKernelFixture
