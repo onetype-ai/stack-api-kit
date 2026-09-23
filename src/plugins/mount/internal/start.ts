@@ -2,10 +2,18 @@ import { database, migrationSteps, noStore } from "../../database/api";
 import { limiter, unlimited } from "../../guard/api";
 import { createKernel, order, tableIndexes } from "../../kernel/api";
 import { httpClient } from "../../outbound/api";
-import { serve, sockets } from "../../http/api";
+import { currentRequestId, serve, sockets } from "../../http/api";
 import type { DatabaseOptions, Store } from "../../database/api";
 import type { Plugin } from "../../kernel/api";
 import type { StartedApp, StartOptions } from "../api";
+
+/** A line's detail with the id of the request it was written in, when it was written in one. */
+function traced(about: Readonly<Record<string, unknown>> | undefined): Readonly<Record<string, unknown>> | undefined
+{
+    const requestId = currentRequestId();
+
+    return requestId === undefined || about?.["requestId"] !== undefined ? about : { requestId, ...about };
+}
 
 /** The store to run on: the project's own, one opened here, or none at all. */
 function storeFor(given: StartOptions["database"], withTables: readonly Plugin[]): Store
@@ -322,7 +330,7 @@ export async function start(options: StartOptions): Promise<StartedApp>
         ...(log !== undefined && {
             log: (level, plugin, line, about) =>
             {
-                log[level](`${plugin}: ${line}`, about);
+                log[level](`${plugin}: ${line}`, traced(about));
             },
         }),
     });
@@ -340,7 +348,7 @@ export async function start(options: StartOptions): Promise<StartedApp>
         ...(log !== undefined && {
             log: (level, line, about) =>
             {
-                log[level](line, about);
+                log[level](line, traced(about));
             },
         }),
     });

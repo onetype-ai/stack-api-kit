@@ -6,6 +6,7 @@ import { securityHeaders } from "./headers";
 import { chunkStream } from "./download";
 import { eventStream } from "./events";
 import { cors, type CorsPolicy } from "./origin";
+import { runTraced } from "./traced";
 import { readInput, UNSAFE } from "./input";
 import { cookieIn, sessionCookie, withSessionKey, type SessionOptions } from "./session";
 import { formBody, type UploadedFile } from "./upload";
@@ -37,9 +38,15 @@ export type ServerOptions = {
     /** Where a line goes. */
     log?: ((level: "info" | "warn" | "error", line: string, about?: Readonly<Record<string, unknown>>) => void) | undefined;
 
+    /** Whether each request leaves one line saying what it asked, by the route's pattern, how it was answered and how long it took; on unless false. Probes leave one only when they fail. */
+    accessLog?: boolean | undefined;
+
     /** What GET /ready answers once the kernel has started: 200 when `ready`, 503 otherwise, the object as the body, so it names only coarse states. Left out, /ready answers whether the kernel started. GET /live and GET /health always answer 200 while the process serves. */
     readiness?: (() => Promise<{ ready: boolean } & Readonly<Record<string, unknown>>>) | undefined;
 };
+
+/** What an orchestrator asks every few seconds: a line for each would drown the rest. */
+const PROBES: ReadonlySet<string> = new Set(["/live", "/health", "/ready"]);
 
 /** Which methods a caller may send a body with, and we will read one from. */
 const CARRIES: ReadonlySet<string> = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -343,16 +350,35 @@ export function serve(options: ServerOptions): Hono
         }
     }
 
+    /** The declared pattern each request matched, for its access line. */
+    const patterns = new WeakMap<Request, string>();
+
     /** Requests a declared document answered, whose policy and framing the middleware leaves alone. */
     const documents = new WeakSet<Request>();
 
     app.use("*", async (c, next) =>
     {
         const traced = requestId(c.req.header("x-request-id"));
+        const started = performance.now();
 
         requestIds.set(c.req.raw, traced);
 
-        await next();
+        await runTraced(traced, next);
+
+        const path = new URL(c.req.url).pathname;
+        const probe = PROBES.has(path);
+
+        // the declared pattern, never the path a caller wrote: an id, a slug or a token in a path stays out of the log
+        if (options.accessLog !== false && (!probe || c.res.status >= 500))
+        {
+            options.log?.("info", "request", {
+                requestId: traced,
+                method: c.req.method,
+                path: probe ? path : patterns.get(c.req.raw) ?? "(unmatched)",
+                status: c.res.status,
+                durationMs: Math.round(performance.now() - started),
+            });
+        }
 
         const document = documents.has(c.req.raw);
 
@@ -460,6 +486,8 @@ export function serve(options: ServerOptions): Hono
             const requestId = requestIds.get(c.req.raw) ?? "";
 
             let identity: Identity | undefined;
+
+            patterns.set(c.req.raw, route.path);
 
             // the caller's own cookie cannot vouch for a request another page may have sent
             if (isForgeable(c.req.raw, route.method, options.session, policy.origins))
