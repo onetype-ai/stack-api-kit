@@ -1,7 +1,15 @@
-/** Postgres's answer to every statement after one failed in the same transaction. */
+/** Postgres's answer to every statement after one failed in the same transaction, however many wrappers it came in. */
 function isAborted(cause: unknown): boolean
 {
-    return typeof cause === "object" && cause !== null && ((cause as { code?: unknown }).code === "25P02" || String((cause as { message?: unknown }).message ?? "").includes("current transaction is aborted"));
+    for (let at = cause, depth = 0; typeof at === "object" && at !== null && depth < 5; at = (at as { cause?: unknown }).cause, depth += 1)
+    {
+        if ((at as { code?: unknown }).code === "25P02" || String((at as { message?: unknown }).message ?? "").includes("current transaction is aborted"))
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /**
