@@ -3,24 +3,6 @@ import type { PGlite } from "@electric-sql/pglite";
 let shared: Promise<PGlite> | undefined;
 let extensions: Readonly<Record<string, unknown>> = {};
 let started: string | undefined;
-let holders = 0;
-
-/** Says a store is using the worker's PGlite, and answers what says it stopped; a PGlite someone holds is never retired. */
-export function holdPglite(): () => void
-{
-    holders += 1;
-
-    let isHeld = true;
-
-    return () =>
-    {
-        if (isHeld)
-        {
-            isHeld = false;
-            holders -= 1;
-        }
-    };
-}
 
 /** The extensions the worker's PGlite starts with, as a project's Postgres server carries them; named before it starts. */
 export function usePgliteExtensions(given: Readonly<Record<string, unknown>>): void
@@ -58,25 +40,3 @@ export function sharedPglite(): Promise<PGlite>
 
     return shared;
 }
-
-/**
- * Closes the worker's PGlite, so the next store starts a fresh one. PGlite's memory only grows, dropped schemas
- * included, so a long run hands it back now and then, when no store holds it.
- */
-export async function retirePglite(): Promise<boolean>
-{
-    if (holders > 0)
-    {
-        return false;
-    }
-
-    const closing = shared;
-
-    shared = undefined;
-    started = undefined;
-
-    await (await closing)?.close();
-
-    return true;
-}
-

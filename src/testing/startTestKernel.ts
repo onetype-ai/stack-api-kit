@@ -1,5 +1,5 @@
 import { database, dialect, exclusively, postgres } from "../plugins/database/api";
-import { holdPglite, retirePglite, sharedPglite, usePgliteExtensions } from "./pglite";
+import { sharedPglite, usePgliteExtensions } from "./pglite";
 import { limiter } from "../plugins/guard/api";
 import { createKernel } from "../plugins/kernel/api";
 import { SECRET } from "../plugins/kernel/internal/validate";
@@ -353,10 +353,6 @@ const waiting: { fingerprint: string; schema: string }[] = [];
 /** How many migrated schemas a worker keeps waiting: one PGlite holds every schema in memory, so a long run keeps a few. */
 const MOST_WAITING = 3;
 
-/** How many schemas a worker migrates before it starts a fresh PGlite, since PGlite's memory never shrinks. */
-const MIGRATED_BEFORE_RECYCLING = 25;
-
-let migratedSinceStart = 0;
 
 /** A test kernel's store, and what gives its schema back once the kernel stops. */
 type TestStore = { store: Store; release: () => Promise<void>; discard: () => Promise<void> };
@@ -386,7 +382,6 @@ async function testStore(tables: Readonly<Record<string, Readonly<Record<string,
     if (schema === undefined)
     {
         kernels += 1;
-        migratedSinceStart += 1;
         schema = `kernel_${String(process.pid)}_${String(kernels)}`;
     }
     else
@@ -396,8 +391,6 @@ async function testStore(tables: Readonly<Record<string, Readonly<Record<string,
 
     const kept = schema;
 
-    const letGo = holdPglite();
-
     return {
         store: await postgres({ pglite, schema: kept, tables }),
 
@@ -405,22 +398,10 @@ async function testStore(tables: Readonly<Record<string, Readonly<Record<string,
         discard: async () =>
         {
             await exclusively(pglite, () => pglite.exec(`DROP SCHEMA IF EXISTS "${kept.replaceAll("\"", "\"\"")}" CASCADE`)).catch(() => undefined);
-            letGo();
         },
 
         release: async () =>
         {
-            letGo();
-
-            // a fresh PGlite once nothing holds this one: what it migrated goes with it, and its memory with that
-            if (migratedSinceStart >= MIGRATED_BEFORE_RECYCLING && await retirePglite())
-            {
-                migratedSinceStart = 0;
-                migrated.clear();
-                waiting.length = 0;
-
-                return;
-            }
 
             migrated.set(fingerprint, [...(migrated.get(fingerprint) ?? []), kept]);
             waiting.push({ fingerprint, schema: kept });

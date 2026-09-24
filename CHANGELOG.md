@@ -25,7 +25,8 @@
   project's Postgres run, with `isolate: false`, so a worker starts PGlite
   once. A test kernel takes a schema a stopped one migrated for the same
   migrations, emptied, rather than migrating again; a worker keeps at most
-  eight waiting, dropping the oldest, so a long run's memory stays level.
+  three waiting, dropping the oldest, and a kernel refused at start gives
+  its schema up. One PGlite holds about 1 GB: give each Postgres worker that.
 - `configureTestKernels({ pglite: { extensions } })` names the extensions
   the worker's PGlite starts with (`unaccent` from
   `@electric-sql/pglite/contrib/unaccent`, …), each installed once in

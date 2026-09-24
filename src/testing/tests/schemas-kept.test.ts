@@ -37,18 +37,3 @@ test("a worker keeps only a few migrated schemas however many kinds of kernel it
 
     expect(await schemas()).toBeLessThanOrEqual(before + 3);
 }, 120_000);
-
-test("a worker starts a fresh PGlite once it migrated many schemas and nothing holds the old one", async () =>
-{
-    const before = await sharedPglite();
-
-    for (let which = 100; which < 130; which += 1)
-    {
-        const api = await startTestKernel({ plugins: [migrating(which)] });
-
-        await api.stop();
-    }
-
-    expect(await sharedPglite()).not.toBe(before);
-}, 240_000);
-

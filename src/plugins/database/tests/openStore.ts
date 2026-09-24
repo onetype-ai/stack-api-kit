@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { holdPglite, sharedPglite } from "../../../testing/pglite";
+import { sharedPglite } from "../../../testing/pglite";
 import { database, dialect, postgres } from "../api";
 
 import type { TablesByName } from "../internal/store";
@@ -25,15 +25,7 @@ export async function openStore(tables: Readonly<Record<string, TablesByName>>):
 
     count += 1;
 
-    // held while open, so a test kernel's recycling never closes the PGlite under it
-    const letGo = holdPglite();
-    const store = await postgres({ pglite: await sharedPglite(), schema: `store_${String(process.pid)}_${String(count)}`, tables });
-
-    return { ...store, close: async () =>
-    {
-        await store.close();
-        letGo();
-    } };
+    return postgres({ pglite: await sharedPglite(), schema: `store_${String(process.pid)}_${String(count)}`, tables });
 }
 
 /** A migrations folder holding the same SQL for both dialects, for a suite whose table needs nothing either lacks. */
