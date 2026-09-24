@@ -62,7 +62,7 @@ const look = definePlugin("look", {
 const serve = async (): Promise<string> =>
 {
     app = await start({ plugins: [look], database: await testDatabase(), sockets: false, http: { origins: [TRUSTED] }, identify: () => () => createIdentity(["look.write"], "ana") });
-    const server = Server.listen(app, 0) as HttpServer;
+    const server = Server.listen(app, 0, { hostname: "127.0.0.1" }) as HttpServer;
 
     if (!server.listening)
     {

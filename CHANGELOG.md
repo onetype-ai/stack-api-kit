@@ -2,6 +2,10 @@
 
 ## 9.0.1
 
+- `Server.listen(api, port, { hostname })` listens on one address. The
+  kit's HTTP tests listen on 127.0.0.1, the address they dial: on macOS a
+  server on every address lets another process take 127.0.0.1 on the same
+  port and answer in its place.
 - Stores sharing one PGlite (`postgres({ pglite, schema })`, as test kernels
   do) wait in one line: a transaction another store left open no longer
   takes in this store's work, nor rolls it back, and each turn reads its own
@@ -30,8 +34,9 @@
   generated columns computed again and identity values kept. A dropped or
   emptied schema's catalog rows are vacuumed and its log checkpointed, so
   one PGlite stays level over a long run instead of growing with it.
-- `configureTestKernels({ pglite: { extensions } })` names the extensions
-  the worker's PGlite starts with (`unaccent` from
+- `await configureTestKernels({ pglite: { extensions } })`, in a setup
+  file, names the extensions the worker's PGlite starts with, and starts it
+  there, so no test's time pays for it (`unaccent` from
   `@electric-sql/pglite/contrib/unaccent`, …), each installed once in
   `public`, which a store in its own schema reads after its own.
 - A table's extras holding anything not made with `index`, `uniqueIndex` or

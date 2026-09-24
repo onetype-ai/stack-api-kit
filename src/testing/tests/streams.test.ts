@@ -341,7 +341,7 @@ describe("over HTTP", () =>
     const serve = async (): Promise<string> =>
     {
         app = await start({ plugins: [chat], database: await testDatabase(), sockets: false });
-        const server = Server.listen(app, 0) as HttpServer;
+        const server = Server.listen(app, 0, { hostname: "127.0.0.1" }) as HttpServer;
 
         if (!server.listening)
         {

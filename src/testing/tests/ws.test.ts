@@ -57,7 +57,7 @@ afterEach(async () =>
 async function serving(options: SocketOptions = {}, bodyBytes = 1_000_000): Promise<string>
 {
     app = await start({ plugins: [desk], sockets: true, http: { origins: [APP], session: { name: "sid", secure: true }, bodyBytes } });
-    server = Server.listen(app, 0, options);
+    server = Server.listen(app, 0, { hostname: "127.0.0.1", ...options });
 
     const listening = server;
 
@@ -235,7 +235,7 @@ describe("the socket at /ws", () =>
         const running = app;
         const opened = await new Promise<Listening>((resolve) =>
         {
-            const listening = Server.listen(running, 0, { mostSocketsPerCaller: 1, from: Server.from({ trustedProxies: ["127.0.0.1"] }) });
+            const listening = Server.listen(running, 0, { hostname: "127.0.0.1", mostSocketsPerCaller: 1, from: Server.from({ trustedProxies: ["127.0.0.1"] }) });
 
             listening.once("listening", () => resolve(listening));
         });
@@ -290,7 +290,7 @@ describe("a socket in a project identifying callers through start's identify", (
                 return bearers.has(bearer) ? { id: bearer.slice(2), permissions: [], claims: {} } : undefined;
             },
         });
-        server = Server.listen(app, 0, options);
+        server = Server.listen(app, 0, { hostname: "127.0.0.1", ...options });
 
         const listening = server;
 

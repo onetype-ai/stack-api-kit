@@ -297,7 +297,7 @@ describe("over HTTP", () =>
     const serve = async (): Promise<string> =>
     {
         app = await start({ plugins: [pages], database: await testDatabase(), sockets: false });
-        const server = Server.listen(app, 0) as HttpServer;
+        const server = Server.listen(app, 0, { hostname: "127.0.0.1" }) as HttpServer;
 
         if (!server.listening)
         {
@@ -514,7 +514,7 @@ describe("over HTTP, a route that is not a document", () =>
     const serveHeaders = async (): Promise<string> =>
     {
         app = await start({ plugins: [headers], database: await testDatabase(), sockets: false, strictReplyHeaders: true, identify: () => () => createIdentity([], "ana") });
-        const server = Server.listen(app, 0) as HttpServer;
+        const server = Server.listen(app, 0, { hostname: "127.0.0.1" }) as HttpServer;
 
         if (!server.listening)
         {

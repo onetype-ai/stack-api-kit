@@ -18,6 +18,9 @@ export type SocketOptions = Partial<SocketLimits> & {
 
     /** Who a socket's caller is counted as, where the http side names no `from`. */
     from?: ((c: HeaderCarrier) => string) | undefined;
+
+    /** The address to listen on; every address when left out. A test names the one it dials, 127.0.0.1, so no other process on the machine can take the port there. */
+    hostname?: string | undefined;
 };
 
 const DEFAULTS: SocketLimits = {
@@ -51,10 +54,10 @@ export function listen(api: StartedApp, port: number, options: SocketOptions = {
 
     if (sockets === undefined)
     {
-        return serve({ fetch: api.fetch, port });
+        return serve({ fetch: api.fetch, port, ...(options.hostname !== undefined && { hostname: options.hostname }) });
     }
 
-    const { log: _log, from: _from, ...given } = options;
+    const { log: _log, from: _from, hostname: _hostname, ...given } = options;
     const limits: SocketLimits = { ...DEFAULTS, ...Object.fromEntries(Object.entries(given).filter(([, value]) => value !== undefined)) };
     const log = options.log ?? ((): void => undefined);
     const open: OpenSockets = { all: new Set(), perCaller: new Map() };
@@ -94,6 +97,7 @@ export function listen(api: StartedApp, port: number, options: SocketOptions = {
     const server = serve({
         fetch: app.fetch,
         port,
+        ...(options.hostname !== undefined && { hostname: options.hostname }),
         websocket: { server: new WebSocketServer({ noServer: true, maxPayload: api.served.bodyBytes }) as unknown as WebSocketServerLike },
     });
 

@@ -62,7 +62,7 @@ const partner = definePlugin("partner", {
 const serve = async (bodyBytes = 2_000): Promise<string> =>
 {
     app = await start({ plugins: [partner], database: await testDatabase(), sockets: false, http: { bodyBytes } });
-    const server = Server.listen(app, 0) as HttpServer;
+    const server = Server.listen(app, 0, { hostname: "127.0.0.1" }) as HttpServer;
 
     if (!server.listening)
     {

@@ -94,7 +94,7 @@ describe("a status that carries no body", () =>
     const serving = async (withSession = true): Promise<number> =>
     {
         app = await start({ plugins: [things], database: await testDatabase(), sockets: false, ...(withSession && { http: { session: { name: "sid", secure: true } } }) });
-        const server = Server.listen(app, 0) as HttpServer;
+        const server = Server.listen(app, 0, { hostname: "127.0.0.1" }) as HttpServer;
 
         if (!server.listening)
         {

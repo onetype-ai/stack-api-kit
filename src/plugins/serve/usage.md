@@ -24,7 +24,7 @@ await Server.open(api, { port: 7280, log, watchSeconds: 60 });
 
 ```ts
 http: { from: Server.from({ trustedProxies: ["10.0.0.0/8"] }) }
-Server.listen(api, port)     // the socket alone, for a caller doing its own
+Server.listen(api, port, { hostname })  // the socket alone; a test names 127.0.0.1
 ```
 
 - `from` is who a rate limit counts an unknown caller by: the rightmost
