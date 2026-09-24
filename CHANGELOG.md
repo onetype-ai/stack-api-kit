@@ -6,7 +6,9 @@
   do) wait in one line: a transaction another store left open no longer
   takes in this store's work, nor rolls it back, and each turn reads its own
   schema; a transaction a plugin opens through its handle waits in the same
-  line. In 9.0.0 they could, silently.
+  line. In 9.0.0 they could, silently. A failed statement a plugin turns
+  into its own error inside `ctx.tx` still rolls the transaction back and
+  leaves the connection working.
 - A statement Postgres refuses because an earlier one failed in the same
   transaction is reported with that earlier failure, not only "current
   transaction is aborted".

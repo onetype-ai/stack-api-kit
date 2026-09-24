@@ -70,3 +70,28 @@ test(`each store reads its own schema however the stores' calls interleave, on $
 
     expect([a, b, c]).toEqual([["in-first"], ["in-second"], ["in-first"]]);
 });
+
+test(`a statement failing inside a transaction the plugin turns into its own error leaves the store working, on ${dialect()}`, async () =>
+{
+    const only = await store();
+    const insert = (db: Db, id: string) => db.insert(rows).values({ id });
+
+    await only.tx("items", async (db) => insert(db as Db, "a"));
+
+    const refused = only.tx("items", async (db) =>
+    {
+        try
+        {
+            await insert(db as Db, "a");
+        }
+        catch
+        {
+            throw new Error("that id is taken");
+        }
+    });
+
+    await expect(refused).rejects.toThrow("that id is taken");
+    await only.tx("items", async (db) => insert(db as Db, "b"));
+    expect((await ids(only)).sort()).toEqual(["a", "b"]);
+});
+

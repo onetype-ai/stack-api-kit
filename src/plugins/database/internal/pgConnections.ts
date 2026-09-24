@@ -175,6 +175,13 @@ export function singleConnection(database: PGlite, schema?: string): PgConnectio
     const turns = {
         run: <Result,>(work: () => Promise<Result>): Promise<Result> =>
         {
+            // inside a turn already running the connection points where this store left it; a SET there would be
+            // refused in a transaction a failed statement aborted, before its ROLLBACK could run
+            if (lineOf(database).holding.getStore()?.isActive === true)
+            {
+                return work();
+            }
+
             return exclusively(database, async () =>
             {
                 if (pointed !== undefined)
