@@ -634,6 +634,7 @@ export function createKernel(options: KernelOptions): Kernel
         registryStore: options.registries,
         runs: options.runs,
         jobs: new Map(),
+        pushes: new Map(),
         outbox: options.outbox,
         isRunning: () => running,
         warned: new Set<string>(),

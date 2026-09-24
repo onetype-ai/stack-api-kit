@@ -1,5 +1,13 @@
 # Changelog
 
+## 9.0.2
+
+- `ctx.push` inside a transaction waits for the commit, as `events.emit`
+  does, and is dropped if the transaction rolls back. A client refetching
+  on it reads the work it announces; in 9.0.1 it could arrive first, and
+  work rolled back was announced anyway. Outside a transaction it goes at
+  once, as before.
+
 ## 9.0.1
 
 - `Server.listen(api, port, { hostname })` listens on one address. The

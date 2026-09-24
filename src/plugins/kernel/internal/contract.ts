@@ -380,7 +380,7 @@ export type Context<Config = unknown, Services = unknown, Db = unknown> = {
         emit: (event: string, payload: unknown) => void;
     };
 
-    /** Sends a message on a channel this plugin declared, as far as its `reach` says and no further. Nothing waits for it. */
+    /** Sends a message on a channel this plugin declared, as far as its `reach` says and no further. Inside a transaction it waits for the commit, and is dropped if it rolls back; outside one it goes at once. Nothing waits for it to arrive. */
     push: (channel: string, message: unknown, options?: {
         /** The identity a channel reaching "identity" is pushed to; refused for any other reach. */
         to?: string;

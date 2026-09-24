@@ -14,7 +14,7 @@ import { stop, stoppedWith, type pipelines } from "./pipelines";
 import { orderedEntries, type registries, type RegistryEntry } from "./registries";
 import { ABANDON, ADVANCE, FAIL, KEEP, type DurableSteps } from "./durable";
 import { createPermissions } from "./permissions";
-import type { HttpClient, ScopeFilter, Outbox, PipelineStore, QueuedJob, RegistryStore, Schedule, Sockets, KernelStore, WorkWatch } from "./store";
+import type { ChannelMessage, HttpClient, ScopeFilter, Outbox, PipelineStore, QueuedJob, RegistryStore, Schedule, Sockets, KernelStore, WorkWatch } from "./store";
 
 /** Everything a context is built from. One object, so the shape is one line. */
 export type KernelWiring = {
@@ -39,6 +39,9 @@ export type KernelWiring = {
 
     /** Commands asked for later inside each open transaction, written by it before it commits. */
     jobs: Map<object, QueuedJob[]>;
+
+    /** Pushes made inside each open transaction, sent once it commits and dropped if it rolls back. */
+    pushes: Map<object, ChannelMessage[]>;
 
     /** What each plugin owns: one thing, living as long as the kernel does. */
     owned: Map<string, unknown>;
@@ -328,6 +331,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
 
             wiring.pending.set(mark, []);
             wiring.jobs.set(mark, []);
+            wiring.pushes.set(mark, []);
 
             try
             {
@@ -368,8 +372,15 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
                 {
                     wiring.pending.get(outer)?.push(...announced);
                     wiring.jobs.get(outer)?.push(...(wiring.jobs.get(mark) ?? []));
+                    wiring.pushes.get(outer)?.push(...(wiring.pushes.get(mark) ?? []));
 
                     return returned;
+                }
+
+                // committed: a client hearing it now reads what the push is about
+                for (const sending of wiring.pushes.get(mark) ?? [])
+                {
+                    wiring.sockets?.push(sending);
                 }
 
                 for (const announcement of announced)
@@ -407,6 +418,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
             {
                 wiring.pending.delete(mark);
                 wiring.jobs.delete(mark);
+                wiring.pushes.delete(mark);
             }
         },
 
@@ -584,7 +596,7 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
                 throw new KernelFault("INVALID_CALL", `"${plugin}" pushed on "${channel}" to one identity, and the channel reaches "${declared.reach}". Declare reach: "identity" for a channel that names its listener.`, { plugin });
             }
 
-            wiring.sockets.push({
+            const sending: ChannelMessage = {
                 channel,
                 message: declared.schema.parse(message),
                 reach: declared.reach,
@@ -596,7 +608,21 @@ export function context(wiring: KernelWiring, plugin: string, identity?: Identit
                 // the request path does not carry which socket asked, so a
                 // "connection" push reaches nobody rather than every tab
                 fromConnection: undefined,
-            });
+            };
+
+            // inside a transaction it waits for the commit, as an event does: a client refetching on it must read the
+            // work it announces, and work rolled back announces nothing
+            const mark = openTransaction?.mark ?? wiring.open.getStore();
+            const held = mark === undefined ? undefined : wiring.pushes.get(mark);
+
+            if (held !== undefined)
+            {
+                held.push(sending);
+
+                return;
+            }
+
+            wiring.sockets.push(sending);
         },
 
         presence: {
