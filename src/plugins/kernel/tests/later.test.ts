@@ -58,20 +58,21 @@ describe("work asked for later", () =>
             db: store,
             schedule: jobs,
             now: () => clock,
-            beatMs: 5,
+            // the test runs what is due itself, so nothing rests on how soon a timer fires
+            beatMs: 24 * 60 * 60 * 1000,
         });
 
         await kernel.start();
 
         await later(kernel, "holds.release", { id: "one" }, 600);
 
-        await new Promise((done) => setTimeout(done, 30));
+        await kernel.due();
 
         expect(ran).toEqual([]);
 
         clock += 601_000;
 
-        await new Promise((done) => setTimeout(done, 30));
+        await kernel.due();
 
         expect(ran).toEqual(["one"]);
 
@@ -92,21 +93,22 @@ describe("work asked for later", () =>
             db: store,
             schedule: jobs,
             now: () => clock,
-            beatMs: 5,
+            // the test runs what is due itself, so nothing rests on how soon a timer fires
+            beatMs: 24 * 60 * 60 * 1000,
         });
 
         await kernel.start();
 
         await later(kernel, "holds.release", { id: "two" }, 0);
 
-        await new Promise((done) => setTimeout(done, 30));
+        await kernel.due();
 
         expect(ran).toEqual([]);
 
         // Past the backoff.
         clock += 5_000;
 
-        await new Promise((done) => setTimeout(done, 30));
+        await kernel.due();
 
         expect(ran).toEqual(["two"]);
 

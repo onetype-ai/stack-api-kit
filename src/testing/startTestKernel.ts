@@ -155,21 +155,23 @@ export function forgetTestKernelState(): void
  * nothing passed provides, in waves as their own dependencies turn up, and each name is asked for once: a resolver
  * may load only those plugins, or answer every plugin it holds. A test that passes every plugin it needs never calls it.
  */
-export function configureTestKernels(configuring: { resolve?: (missing: readonly string[]) => Promise<TestKernelFixture>; defaults?: TestKernelDefaults; pglite?: { extensions: Readonly<Record<string, unknown>> } }): void
+export function configureTestKernels(configuring: { resolve?: (missing: readonly string[]) => Promise<TestKernelFixture>; defaults?: TestKernelDefaults; pglite?: { extensions: Readonly<Record<string, unknown>> } }): Promise<void>
 {
-    if (configuring.pglite !== undefined)
-    {
-        usePgliteExtensions(configuring.pglite.extensions);
-
-        // started now, from the setup file, so no test pays the seconds it takes
-        void sharedPglite().catch(() => undefined);
-    }
-
     resolving = configuring.resolve;
     defaults = { ...configuring.defaults };
     discovered.clear();
     discoveredConfig.clear();
     asked.clear();
+
+    if (configuring.pglite === undefined)
+    {
+        return Promise.resolve();
+    }
+
+    usePgliteExtensions(configuring.pglite.extensions);
+
+    // started from the setup file, which awaits it, so no test's time pays the seconds PGlite takes to start
+    return sharedPglite().then(() => undefined);
 }
 
 /** The names a closure over these plugins needs that neither they nor the fixture's answers so far provide. */
