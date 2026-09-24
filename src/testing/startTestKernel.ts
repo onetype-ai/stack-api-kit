@@ -451,6 +451,17 @@ async function tablesIn(pglite: Awaited<ReturnType<typeof sharedPglite>>, schema
     return rows.map((row) => row.name);
 }
 
+/** A table's columns a row is written with: none Postgres generates. */
+async function writtenColumns(pglite: Awaited<ReturnType<typeof sharedPglite>>, schema: string, table: string): Promise<string[]>
+{
+    const { rows } = await pglite.query<{ name: string }>(
+        `SELECT attname AS name FROM pg_attribute WHERE attrelid = ($1 || '.' || $2)::regclass AND attnum > 0 AND NOT attisdropped AND attgenerated = '' ORDER BY attnum`,
+        [quoted(schema), quoted(table)],
+    );
+
+    return rows.map((row) => row.name);
+}
+
 /** Copies what the migrations just wrote, a migration's seed rows, aside, table by table. */
 async function keptAside(pglite: Awaited<ReturnType<typeof sharedPglite>>, schema: string): Promise<void>
 {
@@ -478,10 +489,20 @@ async function emptied(pglite: Awaited<ReturnType<typeof sharedPglite>>, schema:
             return;
         }
 
+        const copies: string[] = [];
+
+        // a generated column is computed again as the row goes back, and an identity one takes the value it had
+        for (const name of names.filter((one) => seeded.has(one)))
+        {
+            const columns = (await writtenColumns(pglite, schema, name)).map(quoted).join(", ");
+
+            copies.push(`INSERT INTO ${quoted(schema)}.${quoted(name)} (${columns}) OVERRIDING SYSTEM VALUE SELECT ${columns} FROM ${quoted(asideOf(schema))}.${quoted(name)}`);
+        }
+
         await pglite.exec([
             `TRUNCATE TABLE ${names.map((name) => `${quoted(schema)}.${quoted(name)}`).join(", ")} RESTART IDENTITY CASCADE`,
             "SET session_replication_role = replica",
-            ...names.filter((name) => seeded.has(name)).map((name) => `INSERT INTO ${quoted(schema)}.${quoted(name)} SELECT * FROM ${quoted(asideOf(schema))}.${quoted(name)}`),
+            ...copies,
             "SET session_replication_role = DEFAULT",
         ].join("; "));
     });

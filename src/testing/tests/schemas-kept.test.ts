@@ -48,12 +48,18 @@ test("a kernel on a schema another left reads the rows its migrations wrote, and
     for (const dialect of ["sqlite", "postgres"])
     {
         mkdirSync(join(from, dialect));
-        writeFileSync(join(from, dialect, "0001-create.sql"), `CREATE TABLE "seeded_models" ("id" TEXT PRIMARY KEY NOT NULL); INSERT INTO "seeded_models" VALUES ('seed');`);
+        // a generated column, as full-text search keeps one, which the put-back must leave to Postgres to compute
+        // Postgres alone has identity columns, whose seeded value goes back as it was
+        const counted = dialect === "postgres" ? `"n" INTEGER GENERATED ALWAYS AS IDENTITY` : `"n" INTEGER`;
+
+        writeFileSync(join(from, dialect, "0001-create.sql"), `CREATE TABLE "seeded_models" ("id" TEXT PRIMARY KEY NOT NULL, "upper" TEXT GENERATED ALWAYS AS (upper("id")) STORED, ${counted}); INSERT INTO "seeded_models" ("id") VALUES ('seed');`);
     }
 
+    // written without the generated column, as Postgres computes it; read with it
     const models = table("seeded_models", { id: column.id().primaryKey() });
+    const readable = table("seeded_models", { id: column.id().primaryKey(), upper: column.text("upper") });
     const seeded = definePlugin("seeded", { version: "1.0.0", describe: "Seeds its models.", migrations: from, tables: { models } });
-    const ids = async (api: Awaited<ReturnType<typeof startTestKernel>>): Promise<string[]> => (await (api.store.forPlugin("seeded") as unknown as PortableDb<{ models: typeof models }>).select().from(models)).map((row) => row.id).sort();
+    const ids = async (api: Awaited<ReturnType<typeof startTestKernel>>): Promise<string[]> => (await (api.store.forPlugin("seeded") as unknown as PortableDb<{ readable: typeof readable }>).select().from(readable)).map((row) => `${row.id}:${row.upper}`).sort();
 
     const first = await startTestKernel({ plugins: [seeded] });
     await (first.store.forPlugin("seeded") as unknown as PortableDb<{ models: typeof models }>).insert(models).values({ id: "written" });
@@ -63,6 +69,6 @@ test("a kernel on a schema another left reads the rows its migrations wrote, and
     const read = await ids(second);
     await second.stop();
 
-    expect(read).toEqual(["seed"]);
+    expect(read).toEqual(["seed:SEED"]);
 });
 
