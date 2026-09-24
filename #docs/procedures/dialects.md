@@ -15,9 +15,10 @@ refused by name (`MIXED_DIALECT`).
 
 ## Tables
 
-`table()` and `column.*` from `@onetype/stack-api-kit/tables`, never
-`sqliteTable` or `pgTable`. Times are `column.timeMs` (bigint on
-Postgres). A query is awaited: `.get()`, `.all()` and `.run()` answer on
+`table()`, `column.*`, `index`, `uniqueIndex` and `primaryKey({ columns })`
+from `@onetype/stack-api-kit/tables`, never `sqliteTable` or `pgTable`.
+Times are `column.timeMs` (bigint on Postgres). A text enum is
+`.$type<"a" | "b">()`, checked by the route's schema, not the column. A query is awaited: `.get()`, `.all()` and `.run()` answer on
 SQLite only, and `[dialect]` names each one.
 
 ## Migrations

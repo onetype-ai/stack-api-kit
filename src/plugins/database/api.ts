@@ -110,7 +110,7 @@ export function database(settings: StoreOptions): Store<DrizzleDb>
 
 export { column } from "./internal/column";
 export { dialect, refuseOtherDialect } from "./internal/dialect";
-export { index, uniqueIndex } from "./internal/indexes";
+export { index, primaryKey, uniqueIndex } from "./internal/indexes";
 export { table } from "./internal/table";
 export type { Dialect } from "./internal/dialect";
 export type { PortableDb } from "./internal/table";

@@ -1751,6 +1751,11 @@
 > An index, portable: `.on(...)` and, for a partial one, `.where(sql\`...\`)`.
 ### index: (name: string) => ReturnType<typeof lite.index>
 
+> A primary key of several columns, portable: `primaryKey({ columns: [t.workspaceId, t.visitorId] })`.
+### primaryKey(config: { columns: readonly unknown[]; name?: string }): ReturnType<typeof lite.primaryKey>
+    columns: readonly unknown[]
+    name?: string
+
 > One table for both dialects: typed as SQLite, built for the dialect this process uses. Its migrations are
 > generated from it, once for each dialect.
 ### table<Name extends string, Columns extends Record<string, lite.SQLiteColumnBuilderBase>>(name: Name, columns: Columns, extras?: (self: Portable<Name, Columns>) => unknown[]): Portable<Name, Columns>

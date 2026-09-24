@@ -71,8 +71,42 @@ describe("one table definition", () =>
     });
 });
 
+describe("a primary key of several columns", () =>
+{
+    const keyed = (tables: typeof import("../api")) => tables.table("contacts_visitors", {
+        workspaceId: tables.column.text("workspace_id").notNull(),
+        visitorId: tables.column.text("visitor_id").notNull(),
+    }, (self) => [tables.primaryKey({ columns: [self.workspaceId, self.visitorId] })]);
+
+    test("is one key over those columns on SQLite and on Postgres", async () =>
+    {
+        const lite = liteConfigOf(keyed(await load({ KIT_DIALECT: "sqlite" })) as never);
+        const pg = pgConfigOf(keyed(await load({ KIT_DIALECT: "postgres" })) as never);
+
+        expect(lite.primaryKeys.map((key) => key.columns.map((one) => one.name))).toEqual([["workspace_id", "visitor_id"]]);
+        expect(pg.primaryKeys.map((key) => key.columns.map((one) => one.name))).toEqual([["workspace_id", "visitor_id"]]);
+    });
+
+    test("keeps the name it is given", async () =>
+    {
+        const tables = await load({ KIT_DIALECT: "postgres" });
+        const named = tables.table("contacts_visitors", { workspaceId: tables.column.text("workspace_id").notNull(), visitorId: tables.column.text("visitor_id").notNull() }, (self) => [tables.primaryKey({ name: "contacts_visitors_key", columns: [self.workspaceId, self.visitorId] })]);
+
+        expect(pgConfigOf(named as never).primaryKeys[0]?.getName()).toBe("contacts_visitors_key");
+    });
+});
+
 describe("refuses", () =>
 {
+    test("an extra not made with index, uniqueIndex or primaryKey, naming them", async () =>
+    {
+        const tables = await load({ KIT_DIALECT: "sqlite" });
+
+        const foreign = tables.table("items_items", { id: tables.column.id().primaryKey() }, () => [{ something: "else" }]);
+
+        expect(() => liteConfigOf(foreign as never)).toThrow(/index, uniqueIndex or primaryKey/);
+    });
+
     test("a database of another dialect than the tables were built for, naming both", async () =>
     {
         const tables = await load({ KIT_DIALECT: "postgres" });

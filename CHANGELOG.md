@@ -1,5 +1,13 @@
 # Changelog
 
+## 9.0.1
+
+- `primaryKey({ columns, name? })` in `/tables`: a key of several columns,
+  portable to both dialects, as a table's extra.
+- A table's extras holding anything not made with `index`, `uniqueIndex` or
+  `primaryKey` are refused by name, where they failed on an unreadable
+  record before.
+
 ## 9.0.0
 
 ### Breaking
