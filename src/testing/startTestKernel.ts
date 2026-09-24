@@ -355,7 +355,7 @@ const MOST_WAITING = 3;
 
 
 /** A test kernel's store, and what gives its schema back once the kernel stops. */
-type TestStore = { store: Store; release: () => Promise<void>; discard: () => Promise<void> };
+type TestStore = { store: Store; seeded: () => Promise<void>; release: () => Promise<void>; discard: () => Promise<void> };
 
 /**
  * A test kernel's store on the database this run tests: SQLite in memory, or, under KIT_DIALECT=postgres, a schema
@@ -366,7 +366,7 @@ async function testStore(tables: Readonly<Record<string, Readonly<Record<string,
 {
     if (dialect() === "sqlite")
     {
-        return { store: database({ file: ":memory:", tables }), release: () => Promise.resolve(), discard: () => Promise.resolve() };
+        return { store: database({ file: ":memory:", tables }), seeded: () => Promise.resolve(), release: () => Promise.resolve(), discard: () => Promise.resolve() };
     }
 
     const pglite = await sharedPglite();
@@ -390,19 +390,22 @@ async function testStore(tables: Readonly<Record<string, Readonly<Record<string,
     }
 
     const kept = schema;
+    const fresh = reused === undefined;
 
     return {
         store: await postgres({ pglite, schema: kept, tables }),
 
+        // what the migrations wrote is kept aside once, so a schema emptied for the next kernel reads as freshly migrated
+        seeded: () => fresh ? keptAside(pglite, kept) : Promise.resolve(),
+
         // a kernel refused at start may have migrated part of it, so nothing takes this schema again
         discard: async () =>
         {
-            await exclusively(pglite, () => pglite.exec(`DROP SCHEMA IF EXISTS "${kept.replaceAll("\"", "\"\"")}" CASCADE`)).catch(() => undefined);
+            await exclusively(pglite, () => pglite.exec(dropped(kept))).catch(() => undefined);
         },
 
         release: async () =>
         {
-
             migrated.set(fingerprint, [...(migrated.get(fingerprint) ?? []), kept]);
             waiting.push({ fingerprint, schema: kept });
 
@@ -414,7 +417,7 @@ async function testStore(tables: Readonly<Record<string, Readonly<Record<string,
                 if (oldest !== undefined)
                 {
                     migrated.set(oldest.fingerprint, (migrated.get(oldest.fingerprint) ?? []).filter((one) => one !== oldest.schema));
-                    await exclusively(pglite, () => pglite.exec(`DROP SCHEMA "${oldest.schema.replaceAll("\"", "\"\"")}" CASCADE`));
+                    await exclusively(pglite, () => pglite.exec(dropped(oldest.schema)));
                 }
             }
         },
@@ -422,15 +425,66 @@ async function testStore(tables: Readonly<Record<string, Readonly<Record<string,
 }
 
 /** Every row of a schema gone and its sequences reset, the migration ledger kept, so it reads as freshly migrated. */
+/** A name quoted for SQL. */
+function quoted(name: string): string
+{
+    return `"${name.replaceAll("\"", "\"\"")}"`;
+}
+
+/** Where a schema's migrated rows are kept aside. */
+function asideOf(schema: string): string
+{
+    return `${schema}_seed`;
+}
+
+/** A schema gone with the rows kept aside for it. */
+function dropped(schema: string): string
+{
+    return `DROP SCHEMA IF EXISTS ${quoted(schema)} CASCADE; DROP SCHEMA IF EXISTS ${quoted(asideOf(schema))} CASCADE`;
+}
+
+/** The tables of a schema a kernel writes, the migration ledger aside. */
+async function tablesIn(pglite: Awaited<ReturnType<typeof sharedPglite>>, schema: string): Promise<string[]>
+{
+    const { rows } = await pglite.query<{ name: string }>(`SELECT tablename AS name FROM pg_tables WHERE schemaname = $1 AND tablename <> '_migrations'`, [schema]);
+
+    return rows.map((row) => row.name);
+}
+
+/** Copies what the migrations just wrote, a migration's seed rows, aside, table by table. */
+async function keptAside(pglite: Awaited<ReturnType<typeof sharedPglite>>, schema: string): Promise<void>
+{
+    await exclusively(pglite, async () =>
+    {
+        const names = await tablesIn(pglite, schema);
+
+        await pglite.exec([`CREATE SCHEMA IF NOT EXISTS ${quoted(asideOf(schema))}`, ...names.map((name) => `CREATE TABLE ${quoted(asideOf(schema))}.${quoted(name)} AS TABLE ${quoted(schema)}.${quoted(name)}`)].join("; "));
+    });
+}
+
+/**
+ * Every row of a schema gone and its sequences reset, then the rows its migrations wrote put back, so it reads as
+ * freshly migrated. Foreign keys wait until every table is back, since the seed rows went in whole and in order.
+ */
 async function emptied(pglite: Awaited<ReturnType<typeof sharedPglite>>, schema: string): Promise<void>
 {
-    const { rows } = await exclusively(pglite, () => pglite.query<{ name: string }>(`SELECT tablename AS name FROM pg_tables WHERE schemaname = $1 AND tablename <> '_migrations'`, [schema]));
-    const quoted = (name: string): string => `"${name.replaceAll("\"", "\"\"")}"`;
-
-    if (rows.length > 0)
+    await exclusively(pglite, async () =>
     {
-        await exclusively(pglite, () => pglite.exec(`TRUNCATE TABLE ${rows.map((row) => `${quoted(schema)}.${quoted(row.name)}`).join(", ")} RESTART IDENTITY CASCADE`));
-    }
+        const names = await tablesIn(pglite, schema);
+        const seeded = new Set(await tablesIn(pglite, asideOf(schema)));
+
+        if (names.length === 0)
+        {
+            return;
+        }
+
+        await pglite.exec([
+            `TRUNCATE TABLE ${names.map((name) => `${quoted(schema)}.${quoted(name)}`).join(", ")} RESTART IDENTITY CASCADE`,
+            "SET session_replication_role = replica",
+            ...names.filter((name) => seeded.has(name)).map((name) => `INSERT INTO ${quoted(schema)}.${quoted(name)} SELECT * FROM ${quoted(asideOf(schema))}.${quoted(name)}`),
+            "SET session_replication_role = DEFAULT",
+        ].join("; "));
+    });
 }
 
 /** Boots a kernel on an in-memory database with migrations already applied; a dependency the test did not pass is added from the fixture `configureTestKernels` registered, with the fixture's config under the test's own, field by field. It records every event, log line and outbound call, throws on an option it does not take, and outbound calls answer `{}` unless `respondWith` says otherwise. */
@@ -449,11 +503,11 @@ export async function startTestKernel(asked: TestKernelOptions): Promise<TestKer
     const options = await closedOver({ ...defaults, ...asked });
 
     const sources = testTables.migrations(options.plugins);
-    const { store, release, discard } = await testStore(testTables.tables(options.plugins), sources);
+    const { store, seeded, release, discard } = await testStore(testTables.tables(options.plugins), sources);
 
     try
     {
-        return await booted(options, sources, store, release);
+        return await booted(options, sources, store, seeded, release);
     }
     catch (cause)
     {
@@ -466,9 +520,10 @@ export async function startTestKernel(asked: TestKernelOptions): Promise<TestKer
 }
 
 /** Everything a test kernel is past its store: migrations, the kernel, and what a test reads of it. */
-async function booted(options: Awaited<ReturnType<typeof closedOver>>, sources: readonly MigrationSource[], store: Store, release: () => Promise<void>): Promise<TestKernel>
+async function booted(options: Awaited<ReturnType<typeof closedOver>>, sources: readonly MigrationSource[], store: Store, seeded: () => Promise<void>, release: () => Promise<void>): Promise<TestKernel>
 {
     await store.migrate(sources);
+    await seeded();
 
     const lines: LogLine[] = [];
     const calls: SentRequest[] = [];
