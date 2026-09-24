@@ -5,21 +5,21 @@ uses one of them.
 
 ## Choosing
 
-`KIT_DIALECT=sqlite|postgres`, else Postgres when `DATABASE_URL` is a
-Postgres URL, else SQLite. It is read on the first `table()`, when the
-plugins are imported, so the environment is loaded before them
-(`node --env-file=.env`). `start()` opens what was chosen:
-`{ file }`, `{ dialect: "postgres", url }` or
-`{ dialect: "postgres", pglite }`. A database of the other dialect is
-refused by name (`MIXED_DIALECT`).
+`KIT_DIALECT=sqlite|postgres`, else Postgres for a Postgres
+`DATABASE_URL`, else SQLite, read on the first `table()`: load the
+environment before the plugins (`node --env-file=.env`). `start()` opens
+`{ file }`, `{ dialect: "postgres", url }` or `{ dialect: "postgres",
+pglite }`; another dialect is refused (`MIXED_DIALECT`).
 
 ## Tables
 
 `table()`, `column.*`, `index`, `uniqueIndex` and `primaryKey({ columns })`
 from `@onetype/stack-api-kit/tables`, never `sqliteTable` or `pgTable`.
-Times are `column.timeMs` (bigint on Postgres). A text enum is
-`.$type<"a" | "b">()`, checked by the route's schema, not the column. A query is awaited: `.get()`, `.all()` and `.run()` answer on
-SQLite only, and `[dialect]` names each one.
+Times are `column.timeMs` (bigint on Postgres). A `count`, `sum` or
+`max` of a bigint reads as text from node-postgres: `.mapWith(Number)`.
+A text enum is `.$type<"a" | "b">()`, checked by the route's schema. A
+query is awaited; `.get()`, `.all()` and `.run()` are SQLite's, and
+`[dialect]` names each.
 
 ## Migrations
 
