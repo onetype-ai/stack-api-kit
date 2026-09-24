@@ -40,5 +40,5 @@ Tests run on SQLite in memory, and on PGlite (`KIT_DIALECT=postgres`)
 with `isolate: false` and `setupFiles:
 ["@onetype/stack-api-kit/testing/postgres"]`: one PGlite a worker, with
 the extensions `configureTestKernels({ pglite: { extensions } })` names,
-and a stopped kernel's schema emptied and reused. `KIT_PG_URL` runs what
-needs a server.
+a stopped kernel's schema reused; shard a large run (`--shard=1/2`).
+`KIT_PG_URL` runs what needs a server.

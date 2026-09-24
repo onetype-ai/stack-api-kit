@@ -29,7 +29,7 @@
   its schema up. Rows a migration seeds are kept aside and put back,
   generated columns computed again and identity values kept. A dropped or
   emptied schema's catalog rows are vacuumed and its log checkpointed, so
-  one PGlite stays level over a long run instead of growing with it. One PGlite holds about 1 GB: give each Postgres worker that.
+  one PGlite stays level over a long run instead of growing with it.
 - `configureTestKernels({ pglite: { extensions } })` names the extensions
   the worker's PGlite starts with (`unaccent` from
   `@electric-sql/pglite/contrib/unaccent`, …), each installed once in
