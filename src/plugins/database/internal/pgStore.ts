@@ -10,6 +10,7 @@ import { poolConnections, singleConnection } from "./pgConnections";
 import { pgOn, pgSql } from "./pgSql";
 import { registriesOver } from "./registries";
 import { runsOver } from "./runs";
+import { watchingFailures } from "./firstFailure";
 import { scheduleOver } from "./schedule";
 import { createScopeFilter } from "./scopeFilter";
 
@@ -60,7 +61,7 @@ export async function postgres(settings: PostgresOptions): Promise<PostgresStore
     const drizzle = single
         ? (await import("drizzle-orm/pglite")).drizzle as (client: PGlite, config: { schema: TablesByName }) => unknown
         : (await import("drizzle-orm/node-postgres")).drizzle as (client: Pool | PoolClient, config: { schema: TablesByName }) => unknown;
-    const connections: PgConnections & { turns?: { run: <Result>(run: () => Promise<Result>) => Promise<Result> } } = single ? singleConnection(settings.pglite) : await poolConnections(settings.url, settings.poolSize, settings.log);
+    const connections: PgConnections & { turns?: { run: <Result>(run: () => Promise<Result>) => Promise<Result> } } = single ? singleConnection(settings.pglite, "pglite" in settings ? settings.schema : undefined) : await poolConnections(settings.url, settings.poolSize, settings.log);
     const turns = connections.turns;
     const borrowed = "pglite" in settings ? settings.schema : undefined;
 
@@ -71,8 +72,8 @@ export async function postgres(settings: PostgresOptions): Promise<PostgresStore
             throw new TypeError(`database: schema "${borrowed}" is not a plain name. Use lowercase letters, digits and underscores.`);
         }
 
-        // public after the schema: tables go in the schema, and an extension installed once for the database is found
-        await connections.any.exec(`CREATE SCHEMA IF NOT EXISTS "${borrowed}"; SET search_path TO "${borrowed}", public`);
+        // each turn points the connection at this schema, public after it, so an extension installed once is found
+        await connections.any.exec(`CREATE SCHEMA IF NOT EXISTS "${borrowed}"`);
     }
 
     /** Which transaction the running code is inside, and the connection each open one holds. */
@@ -139,9 +140,11 @@ export async function postgres(settings: PostgresOptions): Promise<PostgresStore
             await client.exec(begin);
             live.set(turn, client);
 
+            const watching = watchingFailures(connections.drizzleClient(client));
+
             try
             {
-                const result = await inside.run(turn, () => run(handleOver(connections.drizzleClient(client), plugin)));
+                const result = await inside.run(turn, () => run(handleOver(watching.client, plugin)));
 
                 await client.exec(commit);
 
@@ -151,7 +154,7 @@ export async function postgres(settings: PostgresOptions): Promise<PostgresStore
             {
                 await client.exec(rollback).catch((failed: unknown) => client.ruin?.(failed));
 
-                throw cause;
+                throw watching.explained(cause);
             }
             finally
             {
@@ -198,14 +201,11 @@ export async function postgres(settings: PostgresOptions): Promise<PostgresStore
             open = false;
             handles.clear();
 
+            // a borrowed PGlite stays open for the stores still using it; each of their turns points it at its own schema
             if (borrowed === undefined)
             {
                 await connections.close();
-
-                return;
             }
-
-            await connections.any.exec("SET search_path TO public");
         },
         outbox: (leasing = {}) => outboxOver(sql, leasing, around),
         schedule: (leasing = {}) => scheduleOver(sql, leasing, around),

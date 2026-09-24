@@ -12,6 +12,8 @@ export const bothDialects = [
     "src/testing/tests/tenant-registry.test.ts",
     "src/plugins/database/tests/qualified.test.ts",
     "src/testing/tests/schemas-kept.test.ts",
+    "src/testing/tests/stop-leaves-clean.test.ts",
+    "src/plugins/database/tests/shared-connection.test.ts",
     "src/testing/tests/durable-pipeline.test.ts",
     "src/plugins/http/tests/sockets.test.ts",
     "src/plugins/kernel/tests/context.test.ts",
@@ -68,6 +70,7 @@ export const eachDatabaseItself = [
 
 /** Suites against a real Postgres server (`pnpm test:pg`, with KIT_PG_URL), where concurrency between connections shows. */
 export const postgresServer = [
+    "src/plugins/database/tests/aborted.server.ts",
     "src/plugins/database/tests/registries.server.ts",
     "src/plugins/database/tests/pubsub.server.ts",
     "src/plugins/database/tests/workers.server.ts",

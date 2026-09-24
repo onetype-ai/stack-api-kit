@@ -2,6 +2,13 @@
 
 ## 9.0.1
 
+- Stores sharing one PGlite (`postgres({ pglite, schema })`, as test kernels
+  do) wait in one line: a transaction another store left open no longer
+  takes in this store's work, nor rolls it back, and each turn reads its own
+  schema. In 9.0.0 they could, silently.
+- A statement Postgres refuses because an earlier one failed in the same
+  transaction is reported with that earlier failure, not only "current
+  transaction is aborted".
 - A lease is over at its last millisecond. An outbox row written in the
   millisecond a process starts is taken by that start's sweep, where 9.0.0
   left it until a later sweep; a job's lease the same.

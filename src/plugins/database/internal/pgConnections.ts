@@ -1,6 +1,8 @@
 import type { PGlite } from "@electric-sql/pglite";
 import type { Pool, PoolClient } from "pg";
 
+import { AsyncLocalStorage } from "node:async_hooks";
+
 import { queue } from "./queue";
 
 import type { Logger } from "../../kernel/api";
@@ -112,29 +114,112 @@ export async function poolConnections(url: string, size = 10, log?: Logger): Pro
     };
 }
 
-/** One PGlite database, in the process: a single connection, so a transaction holds it and the rest waits. */
-export function singleConnection(database: PGlite): PgConnections & { turns: ReturnType<typeof queue> }
+/** Each PGlite's one line of turns, shared by every store borrowing it, and whether the running code holds one. */
+const lines = new WeakMap<PGlite, { turns: ReturnType<typeof queue>; holding: AsyncLocalStorage<{ isActive: boolean }> }>();
+
+/** The line of turns every store on this PGlite waits in. */
+function lineOf(database: PGlite): { turns: ReturnType<typeof queue>; holding: AsyncLocalStorage<{ isActive: boolean }> }
 {
-    const turns = queue();
+    const existing = lines.get(database);
+
+    if (existing !== undefined)
+    {
+        return existing;
+    }
+
+    const made = { turns: queue(), holding: new AsyncLocalStorage<{ isActive: boolean }>() };
+
+    lines.set(database, made);
+
+    return made;
+}
+
+/**
+ * Runs work alone on a PGlite that several stores may share: one connection, so a transaction another store left
+ * open would take in this work, and its rollback would undo it. Work inside a turn still running runs as it is; work
+ * a finished turn left behind, as a promise outliving it, waits in line like any other.
+ */
+export function exclusively<Result>(database: PGlite, work: () => Promise<Result>): Promise<Result>
+{
+    const { turns, holding } = lineOf(database);
+
+    if (holding.getStore()?.isActive === true)
+    {
+        return work();
+    }
+
+    return turns.run(async () =>
+    {
+        const turn = { isActive: true };
+
+        try
+        {
+            return await holding.run(turn, work);
+        }
+        finally
+        {
+            turn.isActive = false;
+        }
+    });
+}
+
+/**
+ * One PGlite database, in the process: a single connection. Every store borrowing it waits in one line of turns, a
+ * transaction holding the turn until it ends, and each turn first points the connection at its own store's schema,
+ * since search_path belongs to the connection and another store may have moved it.
+ */
+export function singleConnection(database: PGlite, schema?: string): PgConnections & { turns: { run: <Result>(run: () => Promise<Result>) => Promise<Result> } }
+{
+    const pointed = schema === undefined ? undefined : `SET search_path TO "${schema}", public`;
+
+    const turns = {
+        run: <Result,>(work: () => Promise<Result>): Promise<Result> =>
+        {
+            return exclusively(database, async () =>
+            {
+                if (pointed !== undefined)
+                {
+                    await database.exec(pointed);
+                }
+
+                return work();
+            });
+        },
+    };
 
     const client: PgClient = {
-        query: async <Row,>(text: string, params: readonly SqlValue[] = []) =>
+        query: <Row,>(text: string, params: readonly SqlValue[] = []) => turns.run(async () =>
         {
             const answer = await database.query<Row>(text, [...params]);
 
             return { rows: answer.rows, changes: answer.affectedRows ?? 0 };
-        },
-        exec: async (script: string) =>
+        }),
+        exec: (script: string) => turns.run(async () =>
         {
             await database.exec(script);
-        },
+        }),
     };
+
+    // what a plugin's handle reads outside a transaction takes a turn too, so it reads its own schema
+    const unheld = new Proxy(database, {
+        get: (target, property, receiver) =>
+        {
+            const value: unknown = Reflect.get(target, property, receiver);
+
+            if ((property === "query" || property === "exec") && typeof value === "function")
+            {
+                return (...args: unknown[]) => turns.run(() => (value as (...given: unknown[]) => Promise<unknown>).apply(target, args));
+            }
+
+            return typeof value === "function" ? (value as (...given: unknown[]) => unknown).bind(target) : value;
+        },
+    });
 
     return {
         any: client,
-        hold: (run) => run(client),
-        drizzleClient: () => database,
-        drizzleAny: () => database,
+        hold: (run) => turns.run(() => run(client)),
+        drizzleClient: () => unheld,
+        drizzleAny: () => unheld,
         close: () => database.close(),
         turns,
     };

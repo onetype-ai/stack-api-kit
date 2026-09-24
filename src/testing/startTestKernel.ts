@@ -1,4 +1,4 @@
-import { database, dialect, postgres } from "../plugins/database/api";
+import { database, dialect, exclusively, postgres } from "../plugins/database/api";
 import { sharedPglite, usePgliteExtensions } from "./pglite";
 import { limiter } from "../plugins/guard/api";
 import { createKernel } from "../plugins/kernel/api";
@@ -405,7 +405,7 @@ async function testStore(tables: Readonly<Record<string, Readonly<Record<string,
                 if (oldest !== undefined)
                 {
                     migrated.set(oldest.fingerprint, (migrated.get(oldest.fingerprint) ?? []).filter((one) => one !== oldest.schema));
-                    await pglite.exec(`DROP SCHEMA "${oldest.schema.replaceAll("\"", "\"\"")}" CASCADE`);
+                    await exclusively(pglite, () => pglite.exec(`DROP SCHEMA "${oldest.schema.replaceAll("\"", "\"\"")}" CASCADE`));
                 }
             }
         },
@@ -415,12 +415,12 @@ async function testStore(tables: Readonly<Record<string, Readonly<Record<string,
 /** Every row of a schema gone and its sequences reset, the migration ledger kept, so it reads as freshly migrated. */
 async function emptied(pglite: Awaited<ReturnType<typeof sharedPglite>>, schema: string): Promise<void>
 {
-    const { rows } = await pglite.query<{ name: string }>(`SELECT tablename AS name FROM pg_tables WHERE schemaname = $1 AND tablename <> '_migrations'`, [schema]);
+    const { rows } = await exclusively(pglite, () => pglite.query<{ name: string }>(`SELECT tablename AS name FROM pg_tables WHERE schemaname = $1 AND tablename <> '_migrations'`, [schema]));
     const quoted = (name: string): string => `"${name.replaceAll("\"", "\"\"")}"`;
 
     if (rows.length > 0)
     {
-        await pglite.exec(`TRUNCATE TABLE ${rows.map((row) => `${quoted(schema)}.${quoted(row.name)}`).join(", ")} RESTART IDENTITY CASCADE`);
+        await exclusively(pglite, () => pglite.exec(`TRUNCATE TABLE ${rows.map((row) => `${quoted(schema)}.${quoted(row.name)}`).join(", ")} RESTART IDENTITY CASCADE`));
     }
 }
 

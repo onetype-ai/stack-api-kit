@@ -24,6 +24,10 @@ function migrating(which: number)
 
 test("a worker keeps only a few migrated schemas however many kinds of kernel its files start", async () =>
 {
+    // other files in this worker may hold schemas of their own, so what is measured is what these kernels add
+    const schemas = async (): Promise<number> => (await (await sharedPglite()).query<{ count: number }>(`SELECT count(*)::int AS count FROM pg_namespace WHERE nspname LIKE 'kernel_${String(process.pid)}_%'`)).rows[0]?.count ?? 0;
+    const before = await schemas();
+
     for (let which = 0; which < 14; which += 1)
     {
         const api = await startTestKernel({ plugins: [migrating(which)] });
@@ -31,7 +35,5 @@ test("a worker keeps only a few migrated schemas however many kinds of kernel it
         await api.stop();
     }
 
-    const { rows } = await (await sharedPglite()).query<{ count: number }>(`SELECT count(*)::int AS count FROM pg_namespace WHERE nspname LIKE 'kernel_${String(process.pid)}_%'`);
-
-    expect(rows[0]?.count ?? 0).toBeLessThanOrEqual(8);
+    expect(await schemas()).toBeLessThanOrEqual(before + 8);
 }, 120_000);
