@@ -72,3 +72,18 @@ test("a kernel on a schema another left reads the rows its migrations wrote, and
     expect(read).toEqual(["seed:SEED"]);
 });
 
+test("hands back the log a dropped schema wrote, so a long run's PGlite does not grow", async () =>
+{
+    for (let which = 200; which < 206; which += 1)
+    {
+        const api = await startTestKernel({ plugins: [migrating(which)] });
+
+        await api.stop();
+    }
+
+    // a checkpoint as the last schema dropped leaves little log behind it; without one, every migration's log stays
+    const { rows } = await (await sharedPglite()).query<{ behind: number }>("SELECT pg_wal_lsn_diff(pg_current_wal_lsn(), checkpoint_lsn)::int AS behind FROM pg_control_checkpoint()");
+
+    expect(rows[0]?.behind ?? 0).toBeLessThan(256 * 1024);
+}, 120_000);
+

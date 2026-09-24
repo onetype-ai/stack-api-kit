@@ -401,7 +401,7 @@ async function testStore(tables: Readonly<Record<string, Readonly<Record<string,
         // a kernel refused at start may have migrated part of it, so nothing takes this schema again
         discard: async () =>
         {
-            await exclusively(pglite, () => pglite.exec(dropped(kept))).catch(() => undefined);
+            await droppedAndReclaimed(pglite, kept).catch(() => undefined);
         },
 
         release: async () =>
@@ -417,7 +417,7 @@ async function testStore(tables: Readonly<Record<string, Readonly<Record<string,
                 if (oldest !== undefined)
                 {
                     migrated.set(oldest.fingerprint, (migrated.get(oldest.fingerprint) ?? []).filter((one) => one !== oldest.schema));
-                    await exclusively(pglite, () => pglite.exec(dropped(oldest.schema)));
+                    await droppedAndReclaimed(pglite, oldest.schema);
                 }
             }
         },
@@ -441,6 +441,21 @@ function asideOf(schema: string): string
 function dropped(schema: string): string
 {
     return `DROP SCHEMA IF EXISTS ${quoted(schema)} CASCADE; DROP SCHEMA IF EXISTS ${quoted(asideOf(schema))} CASCADE`;
+}
+
+/**
+ * A schema dropped, and the memory it held handed back. PGlite keeps its files and write-ahead log in memory, so a
+ * dropped table's catalog rows and the log it wrote stay until the catalog is vacuumed and a checkpoint recycles the
+ * log: without both, a long run grows past what a worker may hold.
+ */
+async function droppedAndReclaimed(pglite: Awaited<ReturnType<typeof sharedPglite>>, schema: string): Promise<void>
+{
+    await exclusively(pglite, async () =>
+    {
+        await pglite.exec(dropped(schema));
+        await pglite.exec("VACUUM pg_catalog.pg_class, pg_catalog.pg_attribute, pg_catalog.pg_type, pg_catalog.pg_depend, pg_catalog.pg_index, pg_catalog.pg_constraint, pg_catalog.pg_namespace");
+        await pglite.exec("CHECKPOINT");
+    });
 }
 
 /** The tables of a schema a kernel writes, the migration ledger aside. */
@@ -505,6 +520,9 @@ async function emptied(pglite: Awaited<ReturnType<typeof sharedPglite>>, schema:
             ...copies,
             "SET session_replication_role = DEFAULT",
         ].join("; "));
+
+        // a truncated table's old files and the log that wrote them go too, as for a dropped schema
+        await pglite.exec("CHECKPOINT");
     });
 }
 
