@@ -1721,6 +1721,8 @@
     shape: string
     field: string
 
+# @onetype/stack-api-kit/testing/postgres
+
 # @onetype/stack-api-kit/tables
 
 ## Functions

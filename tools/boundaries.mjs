@@ -18,7 +18,7 @@ const entry = "src/index.ts";
 
 // The package's entries. Each names plugins because that is what an entry is
 // for: assembling them is the one job nothing else in here may do.
-const entries = ["src/index.ts", "src/testing.ts", "src/tables.ts"];
+const entries = ["src/index.ts", "src/testing.ts", "src/tables.ts", "src/testing-postgres.ts"];
 let failed = 0;
 
 function fault(message)

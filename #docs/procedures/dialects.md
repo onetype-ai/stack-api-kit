@@ -30,14 +30,14 @@ from the same tables, once a dialect, never written twice by hand.
 
 ## What differs, and is handled
 
-A transaction holds one connection. On a Postgres pool, work outside it
-takes another client; on SQLite and PGlite, one connection each, it waits.
-Claims lock with SKIP LOCKED on Postgres. Migrations and the kit's own
-tables take an advisory lock, so two processes starting together take
-turns.
+A transaction holds one connection; outside it, a pool takes another
+client, SQLite and PGlite wait. Claims lock with SKIP LOCKED on Postgres;
+migrations and kit tables take an advisory lock.
 
 ## Proving it
 
-Tests run on SQLite in memory. Where a suite reaches a store, it also runs
-on PGlite (`KIT_DIALECT=postgres`), a schema per test kernel. What only
-two connections show runs against a server, with `KIT_PG_URL` set.
+Tests run on SQLite in memory, and where they reach a store on PGlite
+(`KIT_DIALECT=postgres`), with `isolate: false` and `setupFiles:
+["@onetype/stack-api-kit/testing/postgres"]`: one PGlite a worker, with
+`unaccent`, and a migrated schema a stopped kernel leaves is emptied and
+reused. Two connections run against a server, with `KIT_PG_URL`.

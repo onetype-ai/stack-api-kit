@@ -1,7 +1,7 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-    entry: ["src/index.ts", "src/testing.ts", "src/tables.ts"],
+    entry: ["src/index.ts", "src/testing.ts", "src/tables.ts", "src/testing-postgres.ts"],
     format: ["esm"],
     dts: true,
     clean: true,

@@ -8,6 +8,12 @@
   identifiers (`REFERENCES "public"."x"`), so it runs in a store kept in a
   schema of its own, as a test kernel's is. Quoted text and comments are
   left as written; the ledger keeps the hash of the file as it is.
+- `@onetype/stack-api-kit/testing/postgres`: a vitest setup file for a
+  project's Postgres run, with `isolate: false`, so a worker starts PGlite
+  once. A test kernel takes a schema a stopped one migrated for the same
+  migrations, emptied, rather than migrating again.
+- The test PGlite carries `unaccent`, installed once in `public`; a store
+  in its own schema reads `public` after it.
 - A table's extras holding anything not made with `index`, `uniqueIndex` or
   `primaryKey` are refused by name, where they failed on an unreadable
   record before.

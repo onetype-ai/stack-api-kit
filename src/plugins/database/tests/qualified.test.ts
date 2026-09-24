@@ -61,3 +61,39 @@ test(`runs a migration naming its tables in "public" inside a store's own schema
 
     expect(read).toEqual([{ text: "kept as \"public\".written" }]);
 });
+
+test(`runs a migration using unaccent in every store's schema, on ${dialect()}`, async () =>
+{
+    const words = table("items_words", { id: column.id().primaryKey(), plain: column.text("plain").notNull() });
+    const from = mkdtempSync(join(tmpdir(), "kit-unaccent-"));
+    const steps = {
+        "sqlite/0000_words.sql": `CREATE TABLE "items_words" ("id" TEXT PRIMARY KEY NOT NULL, "plain" TEXT NOT NULL); INSERT INTO "items_words" VALUES ('w', 'Cacak');`,
+        "postgres/0000_words.sql": `CREATE EXTENSION IF NOT EXISTS unaccent; CREATE TABLE "items_words" ("id" text PRIMARY KEY NOT NULL, "plain" text NOT NULL); INSERT INTO "items_words" VALUES ('w', unaccent('Čačak'));`,
+    };
+
+    for (const [path, text] of Object.entries(steps))
+    {
+        mkdirSync(join(from, path, ".."), { recursive: true });
+        writeFileSync(join(from, path), text);
+    }
+
+    const readIn = async (): Promise<unknown> =>
+    {
+        const opened = await openStore({ items: { words } });
+
+        try
+        {
+            await opened.migrate([{ plugin: "items", from }]);
+
+            return await (opened.forPlugin("items") as PortableDb<{ words: typeof words }>).select({ plain: words.plain }).from(words);
+        }
+        finally
+        {
+            await opened.close();
+        }
+    };
+
+    expect(await readIn()).toEqual([{ plain: "Cacak" }]);
+    expect(await readIn()).toEqual([{ plain: "Cacak" }]);
+});
+

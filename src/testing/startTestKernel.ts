@@ -4,7 +4,7 @@ import { limiter } from "../plugins/guard/api";
 import { createKernel } from "../plugins/kernel/api";
 import { SECRET } from "../plugins/kernel/internal/validate";
 
-import type { DrizzleDb, Store } from "../plugins/database/api";
+import type { DrizzleDb, MigrationSource, Store } from "../plugins/database/api";
 import type { Identity, HttpClient, Kernel, HttpRequest, Lookup, Plugin, ChannelMessage, ResolvedAddress } from "../plugins/kernel/api";
 
 /** One line a plugin logged, flattened: `level`, `plugin` and `line` are always there, and whatever the call passed as `about` is spread alongside them. */
@@ -336,20 +336,60 @@ async function closedOver(options: TestKernelOptions): Promise<TestKernelOptions
 
 let kernels = 0;
 
+/** Schemas a stopped test kernel left migrated, by the migrations they hold, for the next kernel needing the same. */
+const migrated = new Map<string, string[]>();
+
+/** A test kernel's store, and what gives its schema back once the kernel stops. */
+type TestStore = { store: Store; release: () => void };
+
 /**
  * A test kernel's store on the database this run tests: SQLite in memory, or, under KIT_DIALECT=postgres, a schema
- * of its own in the one PGlite database this worker keeps. Starting PGlite takes seconds; a schema takes none.
+ * of its own in the one PGlite database this worker keeps. Starting PGlite takes seconds and migrating a schema
+ * nearly as long, so a schema a stopped kernel migrated for the same migrations is emptied and taken again.
  */
-async function testStore(tables: Readonly<Record<string, Readonly<Record<string, unknown>>>>): Promise<Store>
+async function testStore(tables: Readonly<Record<string, Readonly<Record<string, unknown>>>>, sources: readonly MigrationSource[]): Promise<TestStore>
 {
     if (dialect() === "sqlite")
     {
-        return database({ file: ":memory:", tables });
+        return { store: database({ file: ":memory:", tables }), release: () => undefined };
     }
 
-    kernels += 1;
+    const pglite = await sharedPglite();
+    const fingerprint = JSON.stringify(sources.map((source) => [source.plugin, source.from]));
+    const reused = migrated.get(fingerprint)?.pop();
+    let schema = reused;
 
-    return postgres({ pglite: await sharedPglite(), schema: `kernel_${String(process.pid)}_${String(kernels)}`, tables });
+    if (schema === undefined)
+    {
+        kernels += 1;
+        schema = `kernel_${String(process.pid)}_${String(kernels)}`;
+    }
+    else
+    {
+        await emptied(pglite, schema);
+    }
+
+    const kept = schema;
+
+    return {
+        store: await postgres({ pglite, schema: kept, tables }),
+        release: () =>
+        {
+            migrated.set(fingerprint, [...(migrated.get(fingerprint) ?? []), kept]);
+        },
+    };
+}
+
+/** Every row of a schema gone and its sequences reset, the migration ledger kept, so it reads as freshly migrated. */
+async function emptied(pglite: Awaited<ReturnType<typeof sharedPglite>>, schema: string): Promise<void>
+{
+    const { rows } = await pglite.query<{ name: string }>(`SELECT tablename AS name FROM pg_tables WHERE schemaname = $1 AND tablename <> '_migrations'`, [schema]);
+    const quoted = (name: string): string => `"${name.replaceAll("\"", "\"\"")}"`;
+
+    if (rows.length > 0)
+    {
+        await pglite.exec(`TRUNCATE TABLE ${rows.map((row) => `${quoted(schema)}.${quoted(row.name)}`).join(", ")} RESTART IDENTITY CASCADE`);
+    }
 }
 
 /** Boots a kernel on an in-memory database with migrations already applied; a dependency the test did not pass is added from the fixture `configureTestKernels` registered, with the fixture's config under the test's own, field by field. It records every event, log line and outbound call, throws on an option it does not take, and outbound calls answer `{}` unless `respondWith` says otherwise. */
@@ -367,9 +407,10 @@ export async function startTestKernel(asked: TestKernelOptions): Promise<TestKer
     // a test's own options win over the process's defaults, key by key
     const options = await closedOver({ ...defaults, ...asked });
 
-    const store = await testStore(testTables.tables(options.plugins));
+    const sources = testTables.migrations(options.plugins);
+    const { store, release } = await testStore(testTables.tables(options.plugins), sources);
 
-    await store.migrate(testTables.migrations(options.plugins));
+    await store.migrate(sources);
 
     const lines: LogLine[] = [];
     const calls: SentRequest[] = [];
@@ -515,6 +556,7 @@ export async function startTestKernel(asked: TestKernelOptions): Promise<TestKer
         {
             await kernel.stop();
             await store.close();
+            release();
         },
     };
 }

@@ -71,7 +71,8 @@ export async function postgres(settings: PostgresOptions): Promise<PostgresStore
             throw new TypeError(`database: schema "${borrowed}" is not a plain name. Use lowercase letters, digits and underscores.`);
         }
 
-        await connections.any.exec(`CREATE SCHEMA IF NOT EXISTS "${borrowed}"; SET search_path TO "${borrowed}"`);
+        // public after the schema: tables go in the schema, and an extension installed once for the database is found
+        await connections.any.exec(`CREATE SCHEMA IF NOT EXISTS "${borrowed}"; SET search_path TO "${borrowed}", public`);
     }
 
     /** Which transaction the running code is inside, and the connection each open one holds. */

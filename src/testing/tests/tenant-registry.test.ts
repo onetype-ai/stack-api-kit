@@ -103,6 +103,23 @@ describe("a tenant registry", () =>
     });
 });
 
+describe("a test kernel after another stopped", () =>
+{
+    test("starts from nothing the other wrote: no entry, no version, no event", async () =>
+    {
+        const first = await startTestKernel({ plugins: [createEditor(), quotes], outbox: true });
+        await set(first, member("a"), { id: "quote", label: "Quote" });
+        await first.stop();
+
+        api = await startTestKernel({ plugins: [createEditor(), quotes], outbox: true });
+        await set(api, member("a"), { id: "table", label: "Table" });
+        await api.flush();
+
+        expect(await api.kernel.context("quotes", member("a")).scopedRegistry("editor.blocks").snapshot()).toEqual({ version: 1, entries: [{ id: "table", label: "Table" }] });
+        expect(api.emittedEvents().map((seen) => seen.payload)).toEqual([{ op: "set", key: "table", version: 1, scope: "a", requires: [] }]);
+    });
+});
+
 describe("a tenant registry's snapshot route", () =>
 {
     test("answers this caller's scope and version, without what it may not see", async () =>
