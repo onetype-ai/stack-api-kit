@@ -200,13 +200,14 @@ export function singleConnection(database: PGlite, schema?: string): PgConnectio
         }),
     };
 
-    // what a plugin's handle reads outside a transaction takes a turn too, so it reads its own schema
+    // what a plugin's handle runs takes a turn too, its own transactions included: PGlite's transaction is a BEGIN on
+    // the one connection, and another store's turn inside it would move its schema and share its rollback
     const unheld = new Proxy(database, {
         get: (target, property, receiver) =>
         {
             const value: unknown = Reflect.get(target, property, receiver);
 
-            if ((property === "query" || property === "exec") && typeof value === "function")
+            if ((property === "query" || property === "exec" || property === "transaction" || property === "sql") && typeof value === "function")
             {
                 return (...args: unknown[]) => turns.run(() => (value as (...given: unknown[]) => Promise<unknown>).apply(target, args));
             }

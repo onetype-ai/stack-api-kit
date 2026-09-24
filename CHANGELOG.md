@@ -5,7 +5,8 @@
 - Stores sharing one PGlite (`postgres({ pglite, schema })`, as test kernels
   do) wait in one line: a transaction another store left open no longer
   takes in this store's work, nor rolls it back, and each turn reads its own
-  schema. In 9.0.0 they could, silently.
+  schema; a transaction a plugin opens through its handle waits in the same
+  line. In 9.0.0 they could, silently.
 - A statement Postgres refuses because an earlier one failed in the same
   transaction is reported with that earlier failure, not only "current
   transaction is aborted".
