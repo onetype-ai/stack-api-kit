@@ -36,8 +36,9 @@ migrations and kit tables take an advisory lock.
 
 ## Proving it
 
-Tests run on SQLite in memory, and where they reach a store on PGlite
-(`KIT_DIALECT=postgres`), with `isolate: false` and `setupFiles:
+Tests run on SQLite in memory, and on PGlite (`KIT_DIALECT=postgres`)
+with `isolate: false` and `setupFiles:
 ["@onetype/stack-api-kit/testing/postgres"]`: one PGlite a worker, with
-`unaccent`, and a migrated schema a stopped kernel leaves is emptied and
-reused. Two connections run against a server, with `KIT_PG_URL`.
+the extensions `configureTestKernels({ pglite: { extensions } })` names,
+and a stopped kernel's schema emptied and reused. `KIT_PG_URL` runs what
+needs a server.

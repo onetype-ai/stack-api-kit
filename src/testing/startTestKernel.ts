@@ -1,5 +1,5 @@
 import { database, dialect, postgres } from "../plugins/database/api";
-import { sharedPglite } from "./pglite";
+import { sharedPglite, usePgliteExtensions } from "./pglite";
 import { limiter } from "../plugins/guard/api";
 import { createKernel } from "../plugins/kernel/api";
 import { SECRET } from "../plugins/kernel/internal/validate";
@@ -155,8 +155,16 @@ export function forgetTestKernelState(): void
  * nothing passed provides, in waves as their own dependencies turn up, and each name is asked for once: a resolver
  * may load only those plugins, or answer every plugin it holds. A test that passes every plugin it needs never calls it.
  */
-export function configureTestKernels(configuring: { resolve?: (missing: readonly string[]) => Promise<TestKernelFixture>; defaults?: TestKernelDefaults }): void
+export function configureTestKernels(configuring: { resolve?: (missing: readonly string[]) => Promise<TestKernelFixture>; defaults?: TestKernelDefaults; pglite?: { extensions: Readonly<Record<string, unknown>> } }): void
 {
+    if (configuring.pglite !== undefined)
+    {
+        usePgliteExtensions(configuring.pglite.extensions);
+
+        // started now, from the setup file, so no test pays the seconds it takes
+        void sharedPglite().catch(() => undefined);
+    }
+
     resolving = configuring.resolve;
     defaults = { ...configuring.defaults };
     discovered.clear();

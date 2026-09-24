@@ -1397,9 +1397,12 @@
 > Registers, once per test process (a setup file), where missing dependencies come from. `resolve` is given the names
 > nothing passed provides, in waves as their own dependencies turn up, and each name is asked for once: a resolver
 > may load only those plugins, or answer every plugin it holds. A test that passes every plugin it needs never calls it.
-### configureTestKernels(configuring: { resolve?: (missing: readonly string[]) => Promise<TestKernelFixture>; defaults?: TestKernelDefaults }): void
+### configureTestKernels(configuring: { resolve?: (missing: readonly string[]) => Promise<TestKernelFixture>; defaults?: TestKernelDefaults; pglite?: { extensions: Readonly<Record<string, unknown>> } }): void
     resolve?: (missing: readonly string[]) => Promise<TestKernelFixture>
     defaults?: TestKernelDefaults
+    pglite?: {
+    extensions: Readonly<Record<string, unknown>>
+    }
 
 > An identity a test controls.
 ### createIdentity(permissions?: readonly string[], id?: string, claims?: Readonly<Record<string, unknown>>): Identity

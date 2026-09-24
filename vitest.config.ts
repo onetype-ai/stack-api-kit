@@ -13,8 +13,8 @@ export default defineConfig({
             },
             {
                 extends: true,
-                // one PGlite a worker, started before its first suite: isolation off keeps it across the worker's files
-                test: { name: "postgres", include: bothDialects, env: { KIT_DIALECT: "postgres" }, isolate: false, setupFiles: ["src/testing/tests/pglite.setup.ts"] },
+                // one PGlite a worker, through the setup file projects use: isolation off keeps it across the worker's files
+                test: { name: "postgres", include: bothDialects, env: { KIT_DIALECT: "postgres" }, isolate: false, setupFiles: ["src/testing-postgres.ts", "src/testing/tests/extensions.setup.ts"] },
             },
         ],
     },

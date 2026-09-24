@@ -12,8 +12,10 @@
   project's Postgres run, with `isolate: false`, so a worker starts PGlite
   once. A test kernel takes a schema a stopped one migrated for the same
   migrations, emptied, rather than migrating again.
-- The test PGlite carries `unaccent`, installed once in `public`; a store
-  in its own schema reads `public` after it.
+- `configureTestKernels({ pglite: { extensions } })` names the extensions
+  the worker's PGlite starts with (`unaccent` from
+  `@electric-sql/pglite/contrib/unaccent`, …), each installed once in
+  `public`, which a store in its own schema reads after its own.
 - A table's extras holding anything not made with `index`, `uniqueIndex` or
   `primaryKey` are refused by name, where they failed on an unreadable
   record before.

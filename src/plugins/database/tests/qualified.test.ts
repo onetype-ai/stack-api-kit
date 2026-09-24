@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
 
 import { column, dialect, table } from "../api";
+import { configureTestKernels } from "../../../testing";
+import { sharedPglite } from "../../../testing/pglite";
 import { openStore, type OpenedStore } from "./openStore";
 
 import type { PortableDb } from "../api";
@@ -95,5 +97,13 @@ test(`runs a migration using unaccent in every store's schema, on ${dialect()}`,
 
     expect(await readIn()).toEqual([{ plain: "Cacak" }]);
     expect(await readIn()).toEqual([{ plain: "Cacak" }]);
+});
+
+test("refuses naming other PGlite extensions once the worker's PGlite started, naming the fix", async () =>
+{
+    configureTestKernels({ pglite: { extensions: { unaccent: (await import("@electric-sql/pglite/contrib/unaccent")).unaccent } } });
+    await sharedPglite();
+
+    expect(() => configureTestKernels({ pglite: { extensions: {} } })).toThrow(/already started with unaccent\. Name them once, in a setup file/);
 });
 
