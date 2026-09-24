@@ -17,7 +17,7 @@ let store: PostgresStore;
 
 beforeEach(async () =>
 {
-    store = await postgres({ url, tables: {} });
+    store = await postgres({ url, tables: { items: {} } });
     await store.migrate([]);
 });
 
