@@ -10,6 +10,7 @@ export const bothDialects = [
     "src/testing/tests/pubsub.test.ts",
     "src/testing/tests/openApi.test.ts",
     "src/testing/tests/tenant-registry.test.ts",
+    "src/plugins/database/tests/qualified.test.ts",
     "src/testing/tests/durable-pipeline.test.ts",
     "src/plugins/http/tests/sockets.test.ts",
     "src/plugins/kernel/tests/context.test.ts",

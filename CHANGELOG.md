@@ -4,6 +4,10 @@
 
 - `primaryKey({ columns, name? })` in `/tables`: a key of several columns,
   portable to both dialects, as a table's extra.
+- A Postgres migration runs without drizzle-kit's `"public".` prefix on
+  identifiers (`REFERENCES "public"."x"`), so it runs in a store kept in a
+  schema of its own, as a test kernel's is. Quoted text and comments are
+  left as written; the ledger keeps the hash of the file as it is.
 - A table's extras holding anything not made with `index`, `uniqueIndex` or
   `primaryKey` are refused by name, where they failed on an unreadable
   record before.

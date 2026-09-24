@@ -11,6 +11,8 @@ import { dialect } from "./dialect";
 import type { Dialect } from "./dialect";
 import type { Sql } from "./sql";
 
+import { unqualified } from "./unqualified";
+
 /** Where one plugin keeps its migrations. */
 export type MigrationSource = {
     plugin: string;
@@ -250,7 +252,8 @@ async function applyMigrations(sql: Sql, sources: readonly MigrationSource[]): P
 
             try
             {
-                await sql.exec(step.sql);
+                // the ledger keeps the hash of the file as written; only what runs loses drizzle-kit's schema prefix
+                await sql.exec(sql.dialect === "postgres" ? unqualified(step.sql) : step.sql);
                 await sql.run(`INSERT INTO "_migrations" ("plugin", "name", "hash", "ran_at") VALUES (?, ?, ?, ?)`, [step.plugin, step.name, step.hash, new Date().toISOString()]);
             }
             catch (cause)
