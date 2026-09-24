@@ -66,6 +66,7 @@ export const freshProcess = [
 export const eachDatabaseItself = [
     "src/plugins/database/tests/portable.test.ts",
     "src/plugins/database/tests/sql.test.ts",
+    "src/plugins/database/tests/pglite-line.test.ts",
 ];
 
 /** Suites against a real Postgres server (`pnpm test:pg`, with KIT_PG_URL), where concurrency between connections shows. */

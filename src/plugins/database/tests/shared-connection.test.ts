@@ -70,30 +70,3 @@ test(`each store reads its own schema however the stores' calls interleave, on $
 
     expect([a, b, c]).toEqual([["in-first"], ["in-second"], ["in-first"]]);
 });
-
-test(`a transaction a plugin opens through its own handle keeps another store's work out of it, on ${dialect()}`, async () =>
-{
-    const first = await store();
-    const second = await store();
-    let release: () => void = () => undefined;
-    const held = new Promise<void>((resolve) =>
-    {
-        release = resolve;
-    });
-
-    const committed = (first.forPlugin("items") as Db).transaction(async (tx) =>
-    {
-        await tx.insert(rows).values({ id: "first" });
-        await held;
-        await tx.insert(rows).values({ id: "first-again" });
-    });
-    const written = second.write(() => (second.forPlugin("items") as Db).insert(rows).values({ id: "second" }));
-
-    release();
-    await committed;
-    await written;
-
-    expect((await ids(first)).sort()).toEqual(["first", "first-again"]);
-    expect(await ids(second)).toEqual(["second"]);
-});
-
