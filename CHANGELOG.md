@@ -1,6 +1,6 @@
 # Changelog
 
-## 9.0.0 (unreleased)
+## 9.0.0
 
 ### Breaking
 
