@@ -14,7 +14,8 @@
 - `@onetype/stack-api-kit/testing/postgres`: a vitest setup file for a
   project's Postgres run, with `isolate: false`, so a worker starts PGlite
   once. A test kernel takes a schema a stopped one migrated for the same
-  migrations, emptied, rather than migrating again.
+  migrations, emptied, rather than migrating again; a worker keeps at most
+  eight waiting, dropping the oldest, so a long run's memory stays level.
 - `configureTestKernels({ pglite: { extensions } })` names the extensions
   the worker's PGlite starts with (`unaccent` from
   `@electric-sql/pglite/contrib/unaccent`, …), each installed once in

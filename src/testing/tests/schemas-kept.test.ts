@@ -1,0 +1,37 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { expect, test } from "vitest";
+
+import { definePlugin } from "../../index";
+import { sharedPglite } from "../pglite";
+import { startTestKernel } from "../startTestKernel";
+
+// a plugin whose migrations are its own, so each gives its test kernel a schema no other kernel can take again
+function migrating(which: number)
+{
+    const from = mkdtempSync(join(tmpdir(), "kit-kept-"));
+
+    for (const dialect of ["sqlite", "postgres"])
+    {
+        mkdirSync(join(from, dialect));
+        writeFileSync(join(from, dialect, "0001-create.sql"), `CREATE TABLE "kept${String(which)}_rows" ("id" TEXT PRIMARY KEY NOT NULL);`);
+    }
+
+    return definePlugin(`kept${String(which)}`, { version: "1.0.0", describe: "Keeps rows.", migrations: from });
+}
+
+test("a worker keeps only a few migrated schemas however many kinds of kernel its files start", async () =>
+{
+    for (let which = 0; which < 14; which += 1)
+    {
+        const api = await startTestKernel({ plugins: [migrating(which)] });
+
+        await api.stop();
+    }
+
+    const { rows } = await (await sharedPglite()).query<{ count: number }>(`SELECT count(*)::int AS count FROM pg_namespace WHERE nspname LIKE 'kernel_${String(process.pid)}_%'`);
+
+    expect(rows[0]?.count ?? 0).toBeLessThanOrEqual(8);
+}, 120_000);

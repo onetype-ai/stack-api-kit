@@ -347,8 +347,14 @@ let kernels = 0;
 /** Schemas a stopped test kernel left migrated, by the migrations they hold, for the next kernel needing the same. */
 const migrated = new Map<string, string[]>();
 
+/** Every schema waiting to be taken again, oldest first, so a worker's PGlite never holds more than a few. */
+const waiting: { fingerprint: string; schema: string }[] = [];
+
+/** How many migrated schemas a worker keeps waiting: one PGlite holds every schema in memory, so a long run keeps a few. */
+const MOST_WAITING = 8;
+
 /** A test kernel's store, and what gives its schema back once the kernel stops. */
-type TestStore = { store: Store; release: () => void };
+type TestStore = { store: Store; release: () => Promise<void> };
 
 /**
  * A test kernel's store on the database this run tests: SQLite in memory, or, under KIT_DIALECT=postgres, a schema
@@ -359,12 +365,17 @@ async function testStore(tables: Readonly<Record<string, Readonly<Record<string,
 {
     if (dialect() === "sqlite")
     {
-        return { store: database({ file: ":memory:", tables }), release: () => undefined };
+        return { store: database({ file: ":memory:", tables }), release: () => Promise.resolve() };
     }
 
     const pglite = await sharedPglite();
     const fingerprint = JSON.stringify(sources.map((source) => [source.plugin, source.from]));
     const reused = migrated.get(fingerprint)?.pop();
+
+    if (reused !== undefined)
+    {
+        waiting.splice(waiting.findIndex((one) => one.schema === reused), 1);
+    }
     let schema = reused;
 
     if (schema === undefined)
@@ -381,9 +392,22 @@ async function testStore(tables: Readonly<Record<string, Readonly<Record<string,
 
     return {
         store: await postgres({ pglite, schema: kept, tables }),
-        release: () =>
+        release: async () =>
         {
             migrated.set(fingerprint, [...(migrated.get(fingerprint) ?? []), kept]);
+            waiting.push({ fingerprint, schema: kept });
+
+            // past the cap the oldest goes: a kernel needing it again migrates afresh, which is slower and never wrong
+            while (waiting.length > MOST_WAITING)
+            {
+                const oldest = waiting.shift();
+
+                if (oldest !== undefined)
+                {
+                    migrated.set(oldest.fingerprint, (migrated.get(oldest.fingerprint) ?? []).filter((one) => one !== oldest.schema));
+                    await pglite.exec(`DROP SCHEMA "${oldest.schema.replaceAll("\"", "\"\"")}" CASCADE`);
+                }
+            }
         },
     };
 }
@@ -564,7 +588,7 @@ export async function startTestKernel(asked: TestKernelOptions): Promise<TestKer
         {
             await kernel.stop();
             await store.close();
-            release();
+            await release();
         },
     };
 }
