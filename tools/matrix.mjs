@@ -11,7 +11,6 @@ export const bothDialects = [
     "src/testing/tests/openApi.test.ts",
     "src/testing/tests/tenant-registry.test.ts",
     "src/plugins/database/tests/qualified.test.ts",
-    "src/testing/tests/schemas-kept.test.ts",
     "src/testing/tests/stop-leaves-clean.test.ts",
     "src/plugins/database/tests/shared-connection.test.ts",
     "src/testing/tests/durable-pipeline.test.ts",
@@ -66,7 +65,6 @@ export const freshProcess = [
 export const eachDatabaseItself = [
     "src/plugins/database/tests/portable.test.ts",
     "src/plugins/database/tests/sql.test.ts",
-    "src/plugins/database/tests/pglite-line.test.ts",
 ];
 
 /** Suites against a real Postgres server (`pnpm test:pg`, with KIT_PG_URL), where concurrency between connections shows. */
@@ -75,6 +73,12 @@ export const postgresServer = [
     "src/plugins/database/tests/registries.server.ts",
     "src/plugins/database/tests/pubsub.server.ts",
     "src/plugins/database/tests/workers.server.ts",
+];
+
+/** Suites about the test PGlite itself, run on Postgres alone: each holds a PGlite, too large to start in every SQLite worker. */
+export const pgliteOnly = [
+    "src/plugins/database/tests/pglite-line.test.ts",
+    "src/testing/tests/schemas-kept.test.ts",
 ];
 
 /** Suites about SQLite's own behaviour: its busy wait, its one connection, the layout before 9.0. */

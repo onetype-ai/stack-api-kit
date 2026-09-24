@@ -9,7 +9,7 @@ import { definePlugin } from "../../index";
 
 import type { PortableDb } from "../../plugins/database/api";
 import { sharedPglite } from "../pglite";
-import { startTestKernel } from "../startTestKernel";
+import { configureTestKernels, startTestKernel } from "../startTestKernel";
 
 // a plugin whose migrations are its own, so each gives its test kernel a schema no other kernel can take again
 function migrating(which: number)
@@ -86,4 +86,12 @@ test("hands back the log a dropped schema wrote, so a long run's PGlite does not
 
     expect(rows[0]?.behind ?? 0).toBeLessThan(256 * 1024);
 }, 120_000);
+
+test("refuses naming other PGlite extensions once the worker's PGlite started, naming the fix", async () =>
+{
+    configureTestKernels({ pglite: { extensions: { unaccent: (await import("@electric-sql/pglite/contrib/unaccent")).unaccent } } });
+    await sharedPglite();
+
+    expect(() => configureTestKernels({ pglite: { extensions: {} } })).toThrow(/already started with unaccent\. Name them once, in a setup file/);
+}, 60_000);
 

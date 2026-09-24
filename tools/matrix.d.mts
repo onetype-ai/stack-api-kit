@@ -10,3 +10,5 @@ export declare const sqliteOnly: readonly string[];
 export declare const notYetOnPostgres: readonly string[];
 /** Suites about what happens once in a fresh process. */
 export declare const freshProcess: readonly string[];
+/** Suites about the test PGlite itself, run on Postgres alone. */
+export declare const pgliteOnly: readonly string[];

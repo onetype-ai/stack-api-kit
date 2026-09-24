@@ -1,12 +1,13 @@
 import { PGlite } from "@electric-sql/pglite";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, expect, test } from "vitest";
 
+import { column, postgres, table } from "../api";
 import { migrationsOf } from "./openStore";
 
 import type { PortableDb, PostgresStore } from "../api";
 
-// PGlite's own: a plugin's async transaction through its handle, which SQLite's driver does not take. The entry is
-// loaded afresh under Postgres, since a table is built for the dialect of the moment it is made.
+// PGlite's own: a plugin's async transaction through its handle, which SQLite's driver does not take. It opens a
+// PGlite of its own, beside the worker's, so two stores share one connection and nothing else.
 let database: PGlite | undefined;
 let stores: PostgresStore[] = [];
 
@@ -16,14 +17,10 @@ afterEach(async () =>
     stores = [];
     await database?.close();
     database = undefined;
-    vi.unstubAllEnvs();
 });
 
 test("a transaction a plugin opens through its own handle keeps another store's work out of it", async () =>
 {
-    vi.stubEnv("KIT_DIALECT", "postgres");
-    vi.resetModules();
-    const { column, postgres, table } = await import("../api");
     const rows = table("items_rows", { id: column.id().primaryKey() });
     type Db = PortableDb<{ rows: typeof rows }>;
     const shared = await PGlite.create();
