@@ -9,6 +9,7 @@
 export const bothDialects = [
     "src/testing/tests/pubsub.test.ts",
     "src/testing/tests/openApi.test.ts",
+    "src/testing/tests/drizzle-kit-files.test.ts",
     "src/plugins/kernel/tests/push-after-commit.test.ts",
     "src/testing/tests/tenant-registry.test.ts",
     "src/plugins/database/tests/qualified.test.ts",

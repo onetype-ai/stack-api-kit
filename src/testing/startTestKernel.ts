@@ -1,4 +1,5 @@
 import { database, dialect, exclusively, postgres } from "../plugins/database/api";
+import { refuseUnmigrated } from "../plugins/mount/api";
 import { sharedPglite, usePgliteExtensions } from "./pglite";
 import { limiter } from "../plugins/guard/api";
 import { createKernel } from "../plugins/kernel/api";
@@ -563,6 +564,8 @@ export async function startTestKernel(asked: TestKernelOptions): Promise<TestKer
 /** Everything a test kernel is past its store: migrations, the kernel, and what a test reads of it. */
 async function booted(options: Awaited<ReturnType<typeof closedOver>>, sources: readonly MigrationSource[], store: Store, seeded: () => Promise<void>, release: () => Promise<void>): Promise<TestKernel>
 {
+    // what start refuses, a test kernel refuses too, so a suite cannot pass where a real start would not
+    refuseUnmigrated(options.plugins, sources);
     await store.migrate(sources);
     await seeded();
 

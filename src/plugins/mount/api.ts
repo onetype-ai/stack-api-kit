@@ -95,4 +95,5 @@ export type StartedApp = {
 };
 
 export { discover, discoverFrom, start };
+export { refuseUnmigrated } from "./internal/migrationChecks";
 export type { DiscoveryResult, PluginModules, SkippedFolder } from "./internal/discover";

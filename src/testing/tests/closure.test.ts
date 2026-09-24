@@ -7,6 +7,7 @@ import { configureTestKernels, startTestKernel, withDependencies } from "../star
 import type { Plugin } from "../../index";
 import type { TestKernel } from "../startTestKernel";
 import { column, table } from "../../plugins/database/api";
+import { migrationsOf } from "../../plugins/database/tests/openStore";
 
 const accounts = definePlugin("accounts", {
     version: "1.0.0",
@@ -216,6 +217,7 @@ describe("the scope a plugin acts in", () =>
             version: "1.0.0",
             describe: "Holds halls and scopes none.",
             tables: { halls: table("halls", { id: column.text("id").primaryKey(), workspace: column.text("workspace").notNull() }) },
+            migrations: migrationsOf(`CREATE TABLE "halls" ("id" text PRIMARY KEY NOT NULL, "workspace" text NOT NULL);`),
             scope: { describe: "A workspace's halls.", claim: "workspace", tables: {} },
         });
 

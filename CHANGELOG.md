@@ -7,6 +7,13 @@
   on it reads the work it announces; in 9.0.1 it could arrive first, and
   work rolled back was announced anyway. Outside a transaction it goes at
   once, as before.
+- `start()` reads the tables and indexes a migration creates in every quoting
+  a migration uses: bare, "double", `back` (as drizzle-kit writes SQLite) or
+  [bracketed], after an optional schema. In 9.0.1 a drizzle-kit SQLite
+  migration was read as creating nothing, and start refused it.
+- `startTestKernel` refuses what `start()` refuses about migrations (a
+  declared table or index none creates, a read of another plugin's table
+  without depending on it), so a suite cannot pass where a start would not.
 
 ## 9.0.1
 

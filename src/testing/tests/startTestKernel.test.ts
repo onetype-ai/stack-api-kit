@@ -176,7 +176,6 @@ describe("what startTestKernel gives a test", () =>
         const announcing = definePlugin("announcing", {
             version: "1.0.0",
             describe: "Emits inside a transaction.",
-            tables: { items },
             emits: { "announcing.done": { describe: "Done.", schema: z.object({ id: z.string() }) } },
         });
 
