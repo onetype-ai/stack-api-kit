@@ -141,11 +141,11 @@ export function scheduleOver(sql: Sql, settings: { leaseMs?: number } = {}, arou
                 SET "takenAt" = ?, "takenBy" = ?, "attempts" = CASE WHEN "takenAt" IS NULL THEN "attempts" ELSE "attempts" + 1 END
                 WHERE "id" IN (
                     SELECT "id" FROM "kit_schedule"
-                    WHERE "runAt" <= ? AND ("takenAt" IS NULL OR "takenAt" < ?)
+                    WHERE "runAt" <= ? AND ("takenAt" IS NULL OR "takenAt" <= ?)
                     ORDER BY "runAt"
                     LIMIT ?${lockingOf(sql)}
                 )
-                AND ("takenAt" IS NULL OR "takenAt" < ?)
+                AND ("takenAt" IS NULL OR "takenAt" <= ?)
                 RETURNING "id", "plugin", "command", "input", "runAt", "attempts", "takenBy"
             `, [now, randomUUID(), now, now - leaseMs, limit, now - leaseMs]);
 
@@ -169,7 +169,7 @@ export function scheduleOver(sql: Sql, settings: { leaseMs?: number } = {}, arou
                     SUM(CASE WHEN "takenAt" IS NULL AND "runAt" <= ? THEN 1 ELSE 0 END) AS "due",
                     SUM(CASE WHEN "takenAt" IS NULL AND "runAt" > ? THEN 1 ELSE 0 END) AS "later",
                     SUM(CASE WHEN "takenAt" IS NOT NULL AND "takenAt" >= ? THEN 1 ELSE 0 END) AS "running",
-                    SUM(CASE WHEN "takenAt" IS NOT NULL AND "takenAt" < ? THEN 1 ELSE 0 END) AS "abandoned"
+                    SUM(CASE WHEN "takenAt" IS NOT NULL AND "takenAt" <= ? THEN 1 ELSE 0 END) AS "abandoned"
                 FROM "kit_schedule"
             `, [now, now, now - leaseMs, now - leaseMs]);
 

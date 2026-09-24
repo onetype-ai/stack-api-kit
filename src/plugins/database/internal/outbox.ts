@@ -146,6 +146,7 @@ export function outboxOver(sql: Sql, settings: { leaseMs?: number } = {}, around
 
         leaseMs,
 
+        // a lease is over at its last millisecond: a start sweeping at the moment a row was written takes it
         claim: async (now: number, limit: number) =>
         {
             await ready;
@@ -154,11 +155,11 @@ export function outboxOver(sql: Sql, settings: { leaseMs?: number } = {}, around
                 UPDATE "kit_outbox" SET "takenAt" = ?, "takenBy" = ?
                 WHERE "id" IN (
                     SELECT "id" FROM "kit_outbox"
-                    WHERE "failedAt" IS NULL AND ("retryAt" IS NULL OR "retryAt" <= ?) AND ("takenAt" IS NULL OR "takenAt" < ?)
+                    WHERE "failedAt" IS NULL AND ("retryAt" IS NULL OR "retryAt" <= ?) AND ("takenAt" IS NULL OR "takenAt" <= ?)
                     ORDER BY "writtenAt"
                     LIMIT ?${lockingOf(sql)}
                 )
-                AND "failedAt" IS NULL AND ("retryAt" IS NULL OR "retryAt" <= ?) AND ("takenAt" IS NULL OR "takenAt" < ?)
+                AND "failedAt" IS NULL AND ("retryAt" IS NULL OR "retryAt" <= ?) AND ("takenAt" IS NULL OR "takenAt" <= ?)
                 RETURNING "id", "plugin", "name", "payload", "heard", "attempts"
             `, [now, holder, now, now - leaseMs, limit, now, now - leaseMs]);
 

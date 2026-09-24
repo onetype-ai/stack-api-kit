@@ -2,6 +2,9 @@
 
 ## 9.0.1
 
+- A lease is over at its last millisecond. An outbox row written in the
+  millisecond a process starts is taken by that start's sweep, where 9.0.0
+  left it until a later sweep; a job's lease the same.
 - `primaryKey({ columns, name? })` in `/tables`: a key of several columns,
   portable to both dialects, as a table's extra.
 - A Postgres migration runs without drizzle-kit's `"public".` prefix on

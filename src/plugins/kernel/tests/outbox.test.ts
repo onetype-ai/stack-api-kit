@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 
 import { createKernel, definePlugin } from "../api";
@@ -33,6 +33,30 @@ function recorder(heard: string[]): Plugin
 
 describe("an event kept in an outbox", () =>
 {
+    test("reaches the next process even when it starts in the same millisecond the row was written", async () =>
+    {
+        const store = await openStore({ orders: {} });
+        const unsent = store.outbox?.() ?? expect.unreachable("a store keeps an outbox");
+        const heard: string[] = [];
+        const frozen = vi.spyOn(Date, "now").mockReturnValue(Date.UTC(2030, 0, 1));
+
+        try
+        {
+            await unsent.save({}, [{ id: "a1", plugin: "orders", name: "orders.placed", payload: { id: "order-1" } }]);
+            const restarted = createKernel({ plugins: [emitter(), recorder(heard)], outbox: unsent });
+
+            await restarted.start();
+
+            expect(heard).toEqual(["order-1"]);
+            await restarted.stop();
+        }
+        finally
+        {
+            frozen.mockRestore();
+            await store.close();
+        }
+    });
+
     test("outlives the process that emitted it, and reaches the next one", async () =>
     {
         const store = await openStore({ orders: {} });
